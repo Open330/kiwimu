@@ -3,7 +3,10 @@ __pycache__/
 .venv/
 *.egg-info/
 dist/
-build/
+/build/
 _site/
 kiwi.db
+
+# Override global gitignore for src build assets
+!src/kiwimu/build/
 

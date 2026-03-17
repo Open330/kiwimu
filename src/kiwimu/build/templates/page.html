@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ page_title }} - {{ wiki_name }}{% endblock %}
+
+{% block content %}
+<article class="wiki-page">
+    <header class="page-header">
+        <h1>{{ page_title }}</h1>
+    </header>
+
+    {% if toc %}
+    <details class="toc-box" open>
+        <summary>목차</summary>
+        {{ toc | safe }}
+    </details>
+    {% endif %}
+
+    <div class="page-body">
+        {{ content | safe }}
+    </div>
+
+    {% if backlinks %}
+    <aside class="backlinks">
+        <h3>이 문서를 참조하는 문서</h3>
+        <ul>
+            {% for bl in backlinks %}
+            <li><a href="/wiki/{{ bl.slug }}.html">{{ bl.title }}</a></li>
+            {% endfor %}
+        </ul>
+    </aside>
+    {% endif %}
+</article>
+{% endblock %}

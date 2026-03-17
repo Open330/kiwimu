@@ -1,6 +1,8 @@
 <div align="center">
 
-# 🥝 kiwimu
+<img src="assets/logos/logo_2_minimalist_icon.png" alt="kiwimu logo" width="128">
+
+# kiwimu
 
 **나만의 학습 위키를 만드세요**
 
