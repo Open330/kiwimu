@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/logos/logo_2_minimalist_icon.png" alt="kiwimu logo" width="128">
+<img src="assets/logos/logo_2_minimalist_icon_transparent.png" alt="kiwimu logo" width="128">
 
 # kiwimu
 
