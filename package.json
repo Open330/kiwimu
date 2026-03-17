@@ -1,12 +1,13 @@
 {
-  "name": "kiwimu",
-  "version": "0.3.0",
+  "name": "@open330/kiwimu",
+  "version": "0.3.3",
   "description": "Turn textbooks, PDFs, and web content into your own interlinked learning wiki powered by LLM",
   "type": "module",
   "bin": {
-    "kiwimu": "./src/index.ts"
+    "kiwimu": "./bin/kiwimu"
   },
   "files": [
+    "bin/**/*",
     "src/**/*",
     "assets/**/*",
     "README.md",
