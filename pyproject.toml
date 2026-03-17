@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kiwimu"
+version = "0.1.0"
+description = "Turn textbooks and web content into your own interlinked wiki"
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.1",
+    "requests>=2.31",
+    "beautifulsoup4>=4.12",
+    "markdownify>=0.13",
+    "jinja2>=3.1",
+    "markdown>=3.5",
+    "pymupdf>=1.24",
+    "tomli-w>=1.0",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+llm = ["anthropic>=0.40", "openai>=1.50"]
+
+[project.scripts]
+kiwimu = "kiwimu.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kiwimu"]
