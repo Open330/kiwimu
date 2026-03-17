@@ -1,12 +1,7 @@
-__pycache__/
-*.pyc
-.venv/
-*.egg-info/
+node_modules/
 dist/
-/build/
 _site/
 kiwi.db
-
-# Override global gitignore for src build assets
-!src/kiwimu/build/
-
+kiwi.toml
+*.tgz
+bun.lock

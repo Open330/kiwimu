@@ -1,16 +1,14 @@
 <div align="center">
 
-<img src="assets/logos/logo_2_minimalist_icon_transparent.png" alt="kiwimu logo" width="128">
-
-# kiwimu
+# 🥝 kiwimu
 
 **나만의 학습 위키를 만드세요**
 
 전공책, PDF, 웹 콘텐츠를 넣으면 — 나무위키처럼 상호 링크된 개인 위키가 만들어집니다.
 
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![Bun](https://img.shields.io/badge/Bun-1.0+-fbf0df?style=flat-square&logo=bun&logoColor=black)](https://bun.sh)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://typescriptlang.org)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
-
 
 </div>
 
@@ -21,12 +19,11 @@
 <div><img src="https://quickstart-for-agents.vercel.app/api/header.svg?theme=claude-code&logo=kiwimu&title=Set+up+a+learning+wiki+from+any+textbook+or+URL&lang=Agents&font=mono&mascot=hat" width="100%" /></div>
 
 ```
-git clone https://github.com/jiunbae/kiwimu.git && cd kiwimu
-python3 -m venv .venv && source .venv/bin/activate && pip install -e .
+git clone https://github.com/jiunbae/kiwimu.git && cd kiwimu && bun install
 mkdir my-wiki && cd my-wiki
-kiwimu init "My Study Wiki"
-kiwimu add "<YOUR_URL_OR_PDF>"
-kiwimu build && kiwimu serve
+bunx kiwimu init "My Study Wiki"
+bunx kiwimu add "<YOUR_URL_OR_PDF>"
+bunx kiwimu build && bunx kiwimu deploy
 ```
 
 <div><img src="https://quickstart-for-agents.vercel.app/api/footer.svg?theme=claude-code&text=copy+this+prompt+%C2%B7+paste+into+your+agent+%C2%B7+get+a+learning+wiki&font=mono" width="100%" /></div>
@@ -43,25 +40,28 @@ kiwimu는 이 연결을 **자동으로** 만들어, 지식을 빠르게 탐색�
 - **지식 그래프** — Obsidian 스타일 D3.js 인터랙티브 그래프
 - **검색** — 즉시 검색되는 퍼지 매칭
 - **LLM 확장** — Claude, GPT 등으로 문서를 더 풍부하게 (선택사항)
-- **100% 로컬** — API 키 없이도 완전히 동작
+- **원클릭 배포** — GitHub Pages로 바로 퍼블리싱
 
 ## Quick Start
 
 ```bash
 # 설치
 git clone https://github.com/jiunbae/kiwimu.git
-cd kiwimu
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e .
+cd kiwimu && bun install
 
 # 위키 생성
 mkdir my-wiki && cd my-wiki
-kiwimu init "Radio Astronomy"
-kiwimu add "https://www.cv.nrao.edu/~sransom/web/Ch1.html"
-kiwimu add "https://www.cv.nrao.edu/~sransom/web/Ch2.html"
-kiwimu build
-kiwimu serve
-# → http://localhost:8000 에서 위키 확인
+bunx kiwimu init "Radio Astronomy"
+bunx kiwimu add "https://www.cv.nrao.edu/~sransom/web/Ch1.html"
+bunx kiwimu add "https://www.cv.nrao.edu/~sransom/web/Ch2.html"
+bunx kiwimu build
+
+# 로컬에서 확인
+bunx kiwimu serve
+# → http://localhost:8000
+
+# GitHub Pages에 배포
+bunx kiwimu deploy
 ```
 
 ## Commands
@@ -72,7 +72,8 @@ kiwimu serve
 | `kiwimu add <source>` | URL 또는 PDF 추가 (자동 파싱 + 링크) |
 | `kiwimu expand` | LLM으로 문서 확장 (선택사항) |
 | `kiwimu build` | 정적 위키 사이트 빌드 |
-| `kiwimu serve` | 로컬 서버 실행 (`http://localhost:8000`) |
+| `kiwimu deploy` | GitHub Pages에 배포 |
+| `kiwimu serve` | 개발용 로컬 서버 (`http://localhost:8000`) |
 | `kiwimu status` | 현재 위키 상태 표시 |
 
 ## Features
@@ -87,6 +88,16 @@ kiwimu serve
 D3.js force-directed 그래프로 문서 간 관계를 시각화합니다.
 노드 크기는 연결 수에 비례하고, 클릭하면 해당 문서로 이동합니다.
 
+### 배포
+
+```bash
+# GitHub Pages (기본)
+bunx kiwimu deploy
+
+# Vercel
+bunx kiwimu deploy --target vercel
+```
+
 ### LLM 확장 (선택)
 
 API 키가 있다면 문서를 자동으로 풍부하게 만들 수 있습니다.
@@ -94,17 +105,14 @@ API 키가 있다면 문서를 자동으로 풍부하게 만들 수 있습니다
 ```bash
 # Anthropic API
 export ANTHROPIC_API_KEY="sk-..."
-kiwimu expand --provider anthropic
+bunx kiwimu expand --provider anthropic
 
 # OpenAI API
 export OPENAI_API_KEY="sk-..."
-kiwimu expand --provider openai
+bunx kiwimu expand --provider openai
 
 # Claude Code CLI
-kiwimu expand --provider claude-cli
-
-# 특정 문서만 확장
-kiwimu expand --provider anthropic --pages blackbody-radiation --pages polarization
+bunx kiwimu expand --provider claude-cli
 ```
 
 ## Architecture
@@ -112,15 +120,15 @@ kiwimu expand --provider anthropic --pages blackbody-radiation --pages polarizat
 ```
 소스 (URL/PDF)
     ↓
-[ Ingest ] ── 웹 스크래핑 / PDF 파싱
+[ Ingest ]  ── Cheerio / pdf-parse
     ↓
-[ Chunk ]  ── 섹션 단위로 문서 분할
+[ Chunk ]   ── 섹션 단위로 문서 분할
     ↓
-[ Link ]   ── 문서 간 자동 링크 생성
+[ Link ]    ── 문서 간 자동 링크 생성
     ↓
-[ Build ]  ── Jinja2 → 정적 HTML
+[ Build ]   ── TypeScript 템플릿 → 정적 HTML
     ↓
-[ Serve ]  ── http://localhost:8000
+[ Deploy ]  ── GitHub Pages / Vercel
 ```
 
 ```
@@ -137,12 +145,14 @@ project-dir/
 
 ## Tech Stack
 
-- **Python 3.11+** — Click CLI, Jinja2 템플릿, Markdown 렌더링
-- **SQLite** — 문서/링크/소스 저장 (파일 하나, 서버 불필요)
-- **BeautifulSoup** — 웹 페이지 파싱
-- **PyMuPDF** — PDF 텍스트 추출
+- **Bun** — 런타임, 패키지 매니저, 빌트인 SQLite (`bun:sqlite`)
+- **TypeScript** — 타입 안전한 파이프라인
+- **Cheerio** — 웹 페이지 파싱
+- **Turndown** — HTML → Markdown 변환
+- **Marked** — Markdown → HTML 렌더링
 - **D3.js** — 지식 그래프 시각화
 - **KaTeX** — 수학 수식 렌더링
+- **gh-pages** — GitHub Pages 배포
 
 ## License
 
