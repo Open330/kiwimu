@@ -1,7 +1,7 @@
 import type { Store } from "../store";
 
 export interface GraphData {
-  nodes: Array<{ id: string; title: string; degree: number }>;
+  nodes: Array<{ id: string; title: string; degree: number; type: string }>;
   links: Array<{ source: string; target: string }>;
 }
 
@@ -23,6 +23,7 @@ export function buildGraphData(store: Store): GraphData {
       id: p.slug,
       title: p.title,
       degree: degree.get(p.id) || 0,
+      type: p.page_type,
     })),
     links: links
       .filter((l) => slugMap.has(l.from_page_id) && slugMap.has(l.to_page_id))

@@ -7,33 +7,85 @@ import { Store } from "./store";
 
 const program = new Command()
   .name("kiwimu")
-  .description("🥝 kiwimu — 나만의 학습 위키를 만드세요")
+  .description("🥝 Kiwi Mu — 나만의 학습 위키를 만드세요")
   .version("0.2.0");
 
 // --- init ---
 program
   .command("init [name]")
-  .description("빈 키위(위키 프로젝트)를 생성합니다")
-  .action((name: string = "My Kiwi") => {
+  .description("새 Kiwi Mu 프로젝트를 생성합니다")
+  .action(async (name?: string) => {
     const root = process.cwd();
     if (Bun.file(join(root, CONFIG_FILE)).size > 0) {
       try {
-        // Check if file actually exists by trying to read
         require("fs").accessSync(join(root, CONFIG_FILE));
         console.log("\x1b[33m이미 초기화된 프로젝트입니다.\x1b[0m");
         return;
       } catch {}
     }
 
-    const config = defaultConfig(name);
+    const p = await import("@clack/prompts");
+
+    p.intro("🥝 Kiwi Mu — 새 학습 위키 만들기");
+
+    const values = await p.group({
+      name: () =>
+        p.text({
+          message: "위키 이름",
+          placeholder: "My Study Wiki",
+          initialValue: name || "",
+          validate: (v) => (!v.trim() ? "이름을 입력해주세요" : undefined),
+        }),
+      provider: () =>
+        p.select({
+          message: "LLM 프로바이더",
+          options: [
+            { value: "gemini", label: "Google Gemini", hint: "무료 API key (aistudio.google.com)" },
+            { value: "azure-openai", label: "Azure OpenAI" },
+            { value: "openai", label: "OpenAI" },
+            { value: "anthropic", label: "Anthropic Claude" },
+          ],
+        }),
+      model: ({ results }) =>
+        p.text({
+          message: "모델명",
+          placeholder:
+            results.provider === "gemini" ? "gemini-2.0-flash-lite" :
+            results.provider === "azure-openai" ? "gpt-5-nano" :
+            results.provider === "openai" ? "gpt-4o-mini" : "claude-sonnet-4-20250514",
+          initialValue:
+            results.provider === "gemini" ? "gemini-2.0-flash-lite" :
+            results.provider === "azure-openai" ? "gpt-5-nano" :
+            results.provider === "openai" ? "gpt-4o-mini" : "claude-sonnet-4-20250514",
+        }),
+      apiKey: () =>
+        p.password({
+          message: "API Key",
+          validate: (v) => (!v.trim() ? "API Key를 입력해주세요" : undefined),
+        }),
+      endpoint: ({ results }) =>
+        results.provider === "azure-openai"
+          ? p.text({ message: "Azure Endpoint", placeholder: "https://..." })
+          : Promise.resolve(""),
+    });
+
+    if (p.isCancel(values)) {
+      p.cancel("취소되었습니다.");
+      process.exit(0);
+    }
+
+    const config = defaultConfig(values.name as string);
+    config.llm.provider = values.provider as string;
+    config.llm.model = values.model as string;
+    config.llm.api_key = values.apiKey as string;
+    config.llm.endpoint = (values.endpoint as string) || "";
     saveConfig(root, config);
 
     const store = new Store(join(root, DB_FILE));
     store.initSchema();
     store.close();
 
-    console.log(`\x1b[32m🥝 '${name}' 키위가 생성되었습니다!\x1b[0m`);
-    console.log("  다음 단계: \x1b[1mkiwimu add <URL 또는 PDF>\x1b[0m");
+    p.outro(`🥝 '${values.name}' 위키가 생성되었습니다! 다음: kiwimu add <URL 또는 파일>`);
   });
 
 // --- add ---
@@ -61,31 +113,39 @@ program
     store.close();
   });
 
+async function initLLM(root: string) {
+  const config = loadConfig(root);
+  const { setLLMConfig } = await import("./llm-client");
+  setLLMConfig(config.llm);
+}
+
 async function addUrl(store: Store, url: string) {
-  const { fetchPage, extractSections } = await import("./ingest/web");
-  const { chunkSections } = await import("./pipeline/chunker");
-  const { autoLinkPages } = await import("./pipeline/linker");
+  const { fetchPage } = await import("./ingest/web");
+  const { llmChunkDocument, htmlToRawText } = await import("./pipeline/llm-chunker");
+
+  const root = findProjectRoot();
+  await initLLM(root);
 
   console.log(`\x1b[34m📥 URL 가져오는 중: ${url}\x1b[0m`);
   const { title, html } = await fetchPage(url);
   console.log(`  제목: ${title}`);
 
   const source = store.addSource(url, "web", title, html);
+  const rawText = htmlToRawText(html);
 
-  console.log("\x1b[34m📄 문서 분할 중...\x1b[0m");
-  const sections = extractSections(html);
-  const count = chunkSections(sections, source.id, store);
-  console.log(`\x1b[32m✅ ${count}개 문서가 생성되었습니다.\x1b[0m`);
+  console.log("\x1b[34m📄 LLM 기반 문서 분석 중...\x1b[0m");
+  const { sourceCount, conceptCount } = await llmChunkDocument(rawText, title, source.id, store);
+  console.log(`\x1b[32m✅ 📖 ${sourceCount}개 원본 + 📝 ${conceptCount}개 개념 문서 생성\x1b[0m`);
 
-  console.log("\x1b[34m🔗 자동 링크 생성 중...\x1b[0m");
-  const linkCount = autoLinkPages(store);
-  console.log(`\x1b[32m  ${linkCount}개 링크가 생성되었습니다.\x1b[0m`);
+  const { getUsageStats, getEstimatedCost, printUsageSummary } = await import("./llm-client");
+  printUsageSummary();
+  const u = getUsageStats();
+  store.addUsageLog(source.id, u.totalCalls, u.promptTokens, u.completionTokens, u.totalTokens, getEstimatedCost());
 }
 
 async function addPdf(store: Store, pdfPath: string) {
-  const { extractFromPdf } = await import("./ingest/pdf");
-  const { chunkSections } = await import("./pipeline/chunker");
-  const { autoLinkPages } = await import("./pipeline/linker");
+  const { extractTextFromPdf } = await import("./ingest/pdf");
+  const { llmChunkDocument } = await import("./pipeline/llm-chunker");
   const { resolve } = await import("path");
 
   const absPath = resolve(pdfPath);
@@ -95,19 +155,24 @@ async function addPdf(store: Store, pdfPath: string) {
     return;
   }
 
+  const root = findProjectRoot();
+  await initLLM(root);
+
   console.log(`\x1b[34m📥 PDF 처리 중: ${pdfPath}\x1b[0m`);
-  const { title, sections } = await extractFromPdf(absPath);
+  const { title, text } = await extractTextFromPdf(absPath);
   console.log(`  제목: ${title}`);
+  console.log(`  텍스트 길이: ${text.length.toLocaleString()} 자`);
 
   const source = store.addSource(absPath, "pdf", title, "(PDF)");
 
-  console.log("\x1b[34m📄 문서 분할 중...\x1b[0m");
-  const count = chunkSections(sections, source.id, store);
-  console.log(`\x1b[32m✅ ${count}개 문서가 생성되었습니다.\x1b[0m`);
+  console.log("\x1b[34m📄 LLM 기반 문서 분석 중...\x1b[0m");
+  const { sourceCount, conceptCount } = await llmChunkDocument(text, title, source.id, store);
+  console.log(`\x1b[32m✅ 📖 ${sourceCount}개 원본 + 📝 ${conceptCount}개 개념 문서 생성\x1b[0m`);
 
-  console.log("\x1b[34m🔗 자동 링크 생성 중...\x1b[0m");
-  const linkCount = autoLinkPages(store);
-  console.log(`\x1b[32m  ${linkCount}개 링크가 생성되었습니다.\x1b[0m`);
+  const { getUsageStats, getEstimatedCost, printUsageSummary } = await import("./llm-client");
+  printUsageSummary();
+  const u = getUsageStats();
+  store.addUsageLog(source.id, u.totalCalls, u.promptTokens, u.completionTokens, u.totalTokens, getEstimatedCost());
 }
 
 // --- expand ---
@@ -225,28 +290,276 @@ program
 // --- serve (dev) ---
 program
   .command("serve")
-  .description("개발용 로컬 서버를 실행합니다")
+  .description("위키 서버를 실행합니다 (웹에서 문서 추가 가능)")
   .option("-p, --port <port>", "포트 번호", "8000")
+  .option("-H, --host <host>", "바인드 주소", "localhost")
   .action(async (opts) => {
     const root = findProjectRoot();
     const config = loadConfig(root);
     const siteDir = join(root, config.build.output_dir);
 
     const { existsSync } = await import("fs");
+
+    // Auto-build if needed
     if (!existsSync(siteDir)) {
-      console.log("\x1b[33m먼저 빌드가 필요합니다: kiwimu build\x1b[0m");
-      return;
+      const store = new Store(join(root, DB_FILE));
+      const { buildSite } = await import("./build/renderer");
+      await buildSite(store, config, root);
+      store.close();
     }
 
+    let isProcessing = false;
+    let processingStatus = "";
+
     const port = parseInt(opts.port);
-    console.log(`\x1b[32m🥝 키위 위키 서버 시작!\x1b[0m`);
-    console.log(`  http://localhost:${port}`);
-    console.log("  종료하려면 Ctrl+C를 누르세요.\n");
+    const hostname = opts.host;
+    console.log(`\x1b[32m🥝 Kiwi Mu 서버 시작!\x1b[0m`);
+    console.log(`  http://${hostname === "0.0.0.0" ? "localhost" : hostname}:${port}`);
+    if (hostname === "0.0.0.0") console.log("  네트워크에 공개됨 (0.0.0.0)");
+    console.log("  웹에서 문서 추가 가능합니다.\n");
 
     Bun.serve({
       port,
+      hostname,
       async fetch(req) {
-        let pathname = new URL(req.url).pathname;
+        const url = new URL(req.url);
+
+        // ── API endpoints ──
+
+        // File upload endpoint
+        if (url.pathname === "/api/upload" && req.method === "POST") {
+          if (isProcessing) {
+            return Response.json({ error: "이미 처리 중입니다", status: processingStatus }, { status: 409 });
+          }
+
+          const formData = await req.formData();
+          const file = formData.get("file") as File | null;
+          if (!file) {
+            return Response.json({ error: "파일이 필요합니다" }, { status: 400 });
+          }
+
+          const ext = file.name.split(".").pop()?.toLowerCase() || "";
+          const supported = ["pdf", "docx", "doc", "pptx", "ppt", "key", "rtf"];
+          if (!supported.includes(ext)) {
+            return Response.json({ error: `지원하지 않는 형식: .${ext}. 지원: ${supported.join(", ")}` }, { status: 400 });
+          }
+
+          // Save uploaded file
+          const uploadDir = join(root, "uploads");
+          const { mkdirSync } = await import("fs");
+          mkdirSync(uploadDir, { recursive: true });
+          const filePath = join(uploadDir, file.name);
+          await Bun.write(filePath, await file.arrayBuffer());
+
+          isProcessing = true;
+          processingStatus = "파일 처리 시작...";
+
+          (async () => {
+            try {
+              const store = new Store(join(root, DB_FILE));
+              const { setLLMConfig, resetUsageStats, getUsageStats, getEstimatedCost } = await import("./llm-client");
+              setLLMConfig(loadConfig(root).llm);
+              const { llmChunkDocument } = await import("./pipeline/llm-chunker");
+              resetUsageStats();
+
+              let title: string;
+              let text: string;
+
+              if (ext === "pdf") {
+                const { extractTextFromPdf } = await import("./ingest/pdf");
+                processingStatus = "PDF 텍스트 추출 중...";
+                ({ title, text } = await extractTextFromPdf(filePath));
+              } else if (ext === "docx") {
+                const { extractTextFromDocx } = await import("./ingest/docx");
+                processingStatus = "DOCX 텍스트 추출 중...";
+                ({ title, text } = await extractTextFromDocx(filePath));
+              } else if (ext === "pptx") {
+                const { extractTextFromPptx } = await import("./ingest/pptx");
+                processingStatus = "PPTX 텍스트 추출 중...";
+                ({ title, text } = await extractTextFromPptx(filePath));
+              } else {
+                const { extractWithTextutil } = await import("./ingest/legacy");
+                processingStatus = `${ext.toUpperCase()} 텍스트 추출 중...`;
+                ({ title, text } = await extractWithTextutil(filePath));
+              }
+
+              const src = store.addSource(filePath, ext, title, "(file)");
+              // Clean up old pages from previous processing of same source
+              store.deletePagesBySource(src.id);
+
+              processingStatus = "LLM 분석 중...";
+              await llmChunkDocument(text, title, src.id, store);
+
+              const u = getUsageStats();
+              store.addUsageLog(src.id, u.totalCalls, u.promptTokens, u.completionTokens, u.totalTokens, getEstimatedCost());
+
+              processingStatus = "빌드 중...";
+              const { buildSite } = await import("./build/renderer");
+              await buildSite(store, config, root);
+              store.close();
+
+              processingStatus = "완료!";
+            } catch (e: any) {
+              processingStatus = `오류: ${e.message}`;
+            } finally {
+              setTimeout(() => { isProcessing = false; }, 2000);
+            }
+          })();
+
+          return Response.json({ ok: true, message: "파일 처리 시작" });
+        }
+
+        // URL add endpoint
+        if (url.pathname === "/api/add" && req.method === "POST") {
+          if (isProcessing) {
+            return Response.json({ error: "이미 처리 중입니다", status: processingStatus }, { status: 409 });
+          }
+
+          const body = await req.json() as { source: string };
+          if (!body.source) {
+            return Response.json({ error: "source가 필요합니다" }, { status: 400 });
+          }
+
+          isProcessing = true;
+          processingStatus = "시작 중...";
+
+          (async () => {
+            try {
+              const store = new Store(join(root, DB_FILE));
+              const { setLLMConfig, resetUsageStats, getUsageStats, getEstimatedCost } = await import("./llm-client");
+              setLLMConfig(loadConfig(root).llm);
+              resetUsageStats();
+
+              const source = body.source;
+              const { fetchPage } = await import("./ingest/web");
+              const { llmChunkDocument, htmlToRawText } = await import("./pipeline/llm-chunker");
+
+              processingStatus = "URL 가져오는 중...";
+              const { title, html } = await fetchPage(source);
+              const src = store.addSource(source, "web", title, html);
+              const rawText = htmlToRawText(html);
+
+              processingStatus = "LLM 분석 중...";
+              await llmChunkDocument(rawText, title, src.id, store);
+
+              const u = getUsageStats();
+              store.addUsageLog(src.id, u.totalCalls, u.promptTokens, u.completionTokens, u.totalTokens, getEstimatedCost());
+
+              processingStatus = "빌드 중...";
+              const { buildSite } = await import("./build/renderer");
+              await buildSite(store, config, root);
+              store.close();
+
+              processingStatus = "완료!";
+            } catch (e: any) {
+              processingStatus = `오류: ${e.message}`;
+            } finally {
+              setTimeout(() => { isProcessing = false; }, 2000);
+            }
+          })();
+
+          return Response.json({ ok: true, message: "처리 시작" });
+        }
+
+        // Admin API - update LLM settings
+        if (url.pathname === "/api/settings" && req.method === "POST") {
+          const body = await req.json() as any;
+          const currentConfig = loadConfig(root);
+          if (body.wiki_name) currentConfig.project.name = body.wiki_name;
+          if (body.provider) currentConfig.llm.provider = body.provider;
+          if (body.model) currentConfig.llm.model = body.model;
+          if (body.api_key !== undefined) currentConfig.llm.api_key = body.api_key;
+          if (body.endpoint !== undefined) currentConfig.llm.endpoint = body.endpoint;
+          saveConfig(root, currentConfig);
+          // Reload config for serve
+          Object.assign(config, currentConfig);
+
+          // Auto-rebuild site with new settings
+          (async () => {
+            try {
+              const store = new Store(join(root, DB_FILE));
+              const { buildSite } = await import("./build/renderer");
+              await buildSite(store, currentConfig, root);
+              store.close();
+              console.log("\x1b[32m✅ 설정 변경 후 사이트 리빌드 완료\x1b[0m");
+            } catch (e: any) {
+              console.log(`\x1b[31m리빌드 실패: ${e.message}\x1b[0m`);
+            }
+          })();
+
+          return Response.json({ ok: true });
+        }
+
+        if (url.pathname === "/api/settings" && req.method === "GET") {
+          const currentConfig = loadConfig(root);
+          // Mask API key
+          const masked = { ...currentConfig.llm, api_key: currentConfig.llm.api_key ? "••••" + currentConfig.llm.api_key.slice(-4) : "" };
+          return Response.json(masked);
+        }
+
+        // Build API
+        if (url.pathname === "/api/build" && req.method === "POST") {
+          if (isProcessing) {
+            return Response.json({ error: "이미 처리 중입니다" }, { status: 409 });
+          }
+          isProcessing = true;
+          processingStatus = "빌드 중...";
+          (async () => {
+            try {
+              const store = new Store(join(root, DB_FILE));
+              const { buildSite } = await import("./build/renderer");
+              await buildSite(store, loadConfig(root), root);
+              store.close();
+              processingStatus = "빌드 완료!";
+              console.log("\x1b[32m✅ 수동 빌드 완료\x1b[0m");
+            } catch (e: any) {
+              processingStatus = `빌드 오류: ${e.message}`;
+            } finally {
+              setTimeout(() => { isProcessing = false; }, 2000);
+            }
+          })();
+          return Response.json({ ok: true, message: "빌드 시작" });
+        }
+
+        // Admin page
+        if (url.pathname === "/admin") {
+          const store = new Store(join(root, DB_FILE));
+          const sources = store.listSources();
+          const usage = store.getUsageSummary();
+          const configData = loadConfig(root);
+          store.close();
+
+          const { renderAdmin } = await import("./build/templates");
+          return new Response(renderAdmin({
+            wikiName: configData.project.name,
+            sources,
+            usage,
+            llmConfig: configData.llm,
+          }), { headers: { "Content-Type": "text/html" } });
+        }
+
+        if (url.pathname === "/api/status") {
+          const store = new Store(join(root, DB_FILE));
+          const sources = store.listSources();
+          const sourcePages = store.listSourcePages();
+          const conceptPages = store.listConceptPages();
+          const links = store.getAllLinks();
+          const usage = store.getUsageSummary();
+          store.close();
+
+          return Response.json({
+            processing: isProcessing,
+            processingStatus,
+            sources: sources.length,
+            sourcePages: sourcePages.length,
+            conceptPages: conceptPages.length,
+            links: links.length,
+            usage,
+          });
+        }
+
+        // ── Static file serving ──
+        let pathname = url.pathname;
         if (pathname === "/") pathname = "/index.html";
 
         const filePath = join(siteDir, pathname);
@@ -270,20 +583,27 @@ program
     const store = new Store(join(root, DB_FILE));
 
     const sources = store.listSources();
-    const pages = store.listPages();
+    const sourcePages = store.listSourcePages();
+    const conceptPages = store.listConceptPages();
     const links = store.getAllLinks();
 
     console.log(`\n\x1b[1m🥝 ${config.project.name}\x1b[0m\n`);
-    console.log(`  소스   ${sources.length}`);
-    console.log(`  문서   ${pages.length}`);
-    console.log(`  링크   ${links.length}`);
-    console.log(`  빌드   ${config.build.output_dir}`);
-    console.log(`  확장   ${config.expand.provider || "(없음)"}`);
-    console.log(`  배포   ${config.deploy.target}`);
+    console.log(`  소스     ${sources.length}`);
+    console.log(`  📖 원본  ${sourcePages.length}`);
+    console.log(`  📝 개념  ${conceptPages.length}`);
+    console.log(`  🔗 링크  ${links.length}`);
+    console.log(`  빌드     ${config.build.output_dir}`);
+    console.log(`  배포     ${config.deploy.target}`);
 
-    if (pages.length) {
-      console.log("\n\x1b[1m문서 목록:\x1b[0m");
-      for (const p of pages) {
+    if (sourcePages.length) {
+      console.log("\n\x1b[1m📖 원본 문서:\x1b[0m");
+      for (const p of sourcePages) {
+        console.log(`  • ${p.title} \x1b[2m(${p.slug})\x1b[0m`);
+      }
+    }
+    if (conceptPages.length) {
+      console.log("\n\x1b[1m📝 개념 문서:\x1b[0m");
+      for (const p of conceptPages) {
         console.log(`  • ${p.title} \x1b[2m(${p.slug})\x1b[0m`);
       }
     }

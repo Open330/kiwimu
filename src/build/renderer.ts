@@ -6,17 +6,33 @@ import type { Store } from "../store";
 import { buildGraphData } from "../pipeline/graph";
 import { renderPage, renderIndex, renderGraph } from "./templates";
 
-// Generate TOC from headings in markdown
+// Fix internal wiki links: /wiki/slug → /wiki/slug.html
+function fixWikiLinks(html: string): string {
+  return html.replace(/href="\/wiki\/([^"]+?)"/g, (match, slug) => {
+    if (slug.endsWith(".html")) return match;
+    return `href="/wiki/${slug}.html"`;
+  });
+}
+
+// Separate external reference links from body content
+function extractExternalRefs(html: string): { body: string; externalRefs: string } {
+  const marker = '<h2 id="external-references">External References</h2>';
+  const idx = html.indexOf(marker);
+  if (idx === -1) return { body: html, externalRefs: "" };
+
+  const body = html.slice(0, idx);
+  const refSection = html.slice(idx + marker.length);
+  return { body, externalRefs: refSection };
+}
+
 function generateToc(markdown: string): string {
   const headings: Array<{ level: number; text: string; id: string }> = [];
   const headingRegex = /^(#{2,4})\s+(.+)$/gm;
   let match;
   while ((match = headingRegex.exec(markdown)) !== null) {
     const text = match[2].trim();
-    const id = text
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, "")
-      .replace(/\s+/g, "-");
+    if (text === "External References") continue;
+    const id = text.toLowerCase().replace(/[^\w\s-]/g, "").replace(/\s+/g, "-");
     headings.push({ level: match[1].length, text, id });
   }
   if (!headings.length) return "";
@@ -31,56 +47,81 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
   const wikiDir = join(outputDir, "wiki");
   const staticDir = join(outputDir, "static");
 
-  // Clean and recreate
   if (existsSync(outputDir)) rmSync(outputDir, { recursive: true });
   mkdirSync(wikiDir, { recursive: true });
   mkdirSync(staticDir, { recursive: true });
 
-  // Copy static assets
   const assetsDir = join(dirname(import.meta.path), "static");
   if (existsSync(assetsDir)) {
     cpSync(assetsDir, staticDir, { recursive: true });
   }
 
+  // Copy logo
+  const logoSrc = join(projectRoot, "..", "assets", "logos", "logo_2_minimalist_icon_transparent.png");
+  const logoSrc2 = join(projectRoot, "assets", "logos", "logo_2_minimalist_icon_transparent.png");
+  const logoFile = existsSync(logoSrc) ? logoSrc : existsSync(logoSrc2) ? logoSrc2 : null;
+  if (logoFile) {
+    cpSync(logoFile, join(staticDir, "logo.png"));
+  }
+
   const pages = store.listPages();
-  const pageList = pages.map((p) => ({ slug: p.slug, title: p.title }));
+  const sourcePages = store.listSourcePages();
+  const conceptPages = store.listConceptPages();
   const wikiName = config.project.name;
 
-  // Render pages
   for (const page of pages) {
-    const htmlContent = await marked(page.content);
+    let htmlContent = await marked(page.content);
+    htmlContent = fixWikiLinks(htmlContent);
+
+    const { body, externalRefs } = extractExternalRefs(htmlContent);
     const toc = generateToc(page.content);
-    const backlinks = store.getBacklinks(page.id).map((bl) => ({ slug: bl.slug, title: bl.title }));
+    const backlinks = store.getBacklinks(page.id).map((bl) => ({
+      slug: bl.slug,
+      title: bl.title,
+      pageType: bl.page_type,
+    }));
 
     const html = renderPage({
       wikiName,
       pageTitle: page.title,
       pageSlug: page.slug,
-      content: htmlContent,
+      pageType: page.page_type,
+      content: body,
+      externalRefs,
       toc,
       backlinks,
-      allPages: pageList,
+      sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
+      conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title })),
     });
 
     await Bun.write(join(wikiDir, `${page.slug}.html`), html);
   }
 
-  // Render index
   const indexHtml = renderIndex({
     wikiName,
-    allPages: pageList,
-    pageCount: pages.length,
+    sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
+    conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title })),
     sourceCount: store.listSources().length,
   });
   await Bun.write(join(outputDir, "index.html"), indexHtml);
 
-  // Render graph
   const graphData = buildGraphData(store);
   await Bun.write(join(outputDir, "graph-data.json"), JSON.stringify(graphData));
-  await Bun.write(join(outputDir, "graph.html"), renderGraph({ wikiName, allPages: pageList }));
+  await Bun.write(
+    join(outputDir, "graph.html"),
+    renderGraph({
+      wikiName,
+      sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
+      conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title })),
+    })
+  );
 
-  // Search index
-  const searchData = pages.map((p) => ({ slug: p.slug, title: p.title, preview: p.content.slice(0, 200) }));
+  const searchData = pages.map((p) => ({
+    slug: p.slug,
+    title: p.title,
+    preview: p.content.slice(0, 200),
+    type: p.page_type,
+  }));
   await Bun.write(join(outputDir, "search-index.json"), JSON.stringify(searchData));
 
   return pages.length;

@@ -11,6 +11,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
     }
 
+    const colors = {
+        source: "#2196f3",
+        sourceHover: "#1565c0",
+        concept: "#4caf50",
+        conceptHover: "#2e7d32",
+    };
+
     const width = container.clientWidth;
     const height = container.clientHeight;
 
@@ -18,7 +25,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         .append("svg")
         .attr("viewBox", [0, 0, width, height]);
 
-    // Zoom
     const g = svg.append("g");
     svg.call(d3.zoom()
         .scaleExtent([0.3, 4])
@@ -30,7 +36,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         .force("center", d3.forceCenter(width / 2, height / 2))
         .force("collision", d3.forceCollide().radius(30));
 
-    // Links
     const link = g.append("g")
         .selectAll("line")
         .data(data.links)
@@ -39,7 +44,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         .attr("stroke-width", 1.5)
         .attr("stroke-opacity", 0.6);
 
-    // Nodes
     const node = g.append("g")
         .selectAll("g")
         .data(data.nodes)
@@ -52,7 +56,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     node.append("circle")
         .attr("r", d => Math.max(6, Math.min(20, 4 + d.degree * 2)))
-        .attr("fill", "#4caf50")
+        .attr("fill", d => d.type === "source" ? colors.source : colors.concept)
         .attr("stroke", "#fff")
         .attr("stroke-width", 2);
 
@@ -63,21 +67,22 @@ document.addEventListener("DOMContentLoaded", async () => {
         .attr("font-size", "12px")
         .attr("fill", "#212529");
 
-    // Click to navigate
     node.on("click", (event, d) => {
         window.location.href = `/wiki/${d.id}.html`;
     });
 
-    // Hover highlight
     node.on("mouseenter", function(event, d) {
-        d3.select(this).select("circle").attr("fill", "#2e7d32");
+        const hoverColor = d.type === "source" ? colors.sourceHover : colors.conceptHover;
+        const baseColor = d.type === "source" ? colors.source : colors.concept;
+        d3.select(this).select("circle").attr("fill", hoverColor);
         link.attr("stroke", l =>
-            l.source.id === d.id || l.target.id === d.id ? "#4caf50" : "#dee2e6"
+            l.source.id === d.id || l.target.id === d.id ? baseColor : "#dee2e6"
         ).attr("stroke-width", l =>
             l.source.id === d.id || l.target.id === d.id ? 2.5 : 1.5
         );
-    }).on("mouseleave", function() {
-        d3.select(this).select("circle").attr("fill", "#4caf50");
+    }).on("mouseleave", function(event, d) {
+        const baseColor = d.type === "source" ? colors.source : colors.concept;
+        d3.select(this).select("circle").attr("fill", baseColor);
         link.attr("stroke", "#dee2e6").attr("stroke-width", 1.5);
     });
 
