@@ -9,14 +9,6 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
-<br>
-
-```
-kiwimu init "양자역학"
-kiwimu add quantum-mechanics.pdf
-kiwimu add "https://feynmanlectures.caltech.edu/III_01.html"
-kiwimu build && kiwimu serve
-```
 
 </div>
 
