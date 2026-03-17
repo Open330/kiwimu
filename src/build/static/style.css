@@ -6,31 +6,33 @@
     --bg-hover: #eaeaea;
     --text: #1a1a1a;
     --text-muted: #6b6b6b;
-    --link: #0067a3;
-    --link-hover: #004b7a;
+    --link: #0275d8; /* NamuWiki blue link */
+    --link-hover: #0050a0; /* Darker blue for hover */
     --border: #dcdcdc;
-    --accent: #00a495;
+    --accent: #00a495; /* NamuWiki green */
     --accent-dark: #008c7e;
-    --accent-light: #e0f5f3;
+    --accent-light: #e0f5f3; /* Light green for backgrounds */
     --namu-green: #00a495;
     --namu-green-dark: #007a6e;
     --namu-heading-bg: #00a495;
     --sidebar-width: 250px;
     --topbar-height: 44px;
-    --radius: 4px;
+    /* --radius variable removed as all corners are sharp */
 }
 
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+    border-radius: 0; /* Enforce sharp flat edges everywhere */
+    box-shadow: none; /* Enforce no shadows */
 }
 
 body {
     font-family: "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif;
     color: var(--text);
     background: var(--bg);
-    line-height: 1.7;
+    line-height: 1.65; /* Updated line-height */
     font-size: 15px;
 }
 
@@ -57,7 +59,7 @@ a:hover {
     padding: 0 16px;
     z-index: 100;
     gap: 12px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    /* box-shadow: none; -> Handled by global reset */
 }
 
 .topbar-brand {
@@ -92,7 +94,7 @@ a:hover {
     width: 100%;
     padding: 5px 12px;
     border: none;
-    border-radius: 3px;
+    /* border-radius: 3px; -> Handled by global reset */
     font-size: 14px;
     outline: none;
     background: rgba(255,255,255,0.9);
@@ -101,7 +103,7 @@ a:hover {
 
 .topbar-search input:focus {
     background: #ffffff;
-    box-shadow: 0 0 0 2px rgba(255,255,255,0.4);
+    /* box-shadow: none; -> Handled by global reset */
 }
 
 .search-dropdown {
@@ -112,8 +114,8 @@ a:hover {
     right: 0;
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    /* border-radius: var(--radius); -> Handled by global reset */
+    /* box-shadow: none; -> Handled by global reset */
     max-height: 300px;
     overflow-y: auto;
     z-index: 200;
@@ -149,7 +151,7 @@ a:hover {
 .btn-graph {
     padding: 4px 10px;
     border: 1px solid rgba(255,255,255,0.3);
-    border-radius: 3px;
+    /* border-radius: 3px; -> Handled by global reset */
     font-size: 13px;
     color: #ffffff;
     white-space: nowrap;
@@ -238,7 +240,7 @@ a:hover {
 }
 
 .page-body {
-    line-height: 1.8;
+    /* line-height: 1.8; -> Removed to inherit from body's 1.65 */
 }
 
 .page-body h2 {
@@ -248,7 +250,7 @@ a:hover {
     padding: 4px 10px;
     background: var(--namu-green);
     color: #ffffff;
-    border-radius: 2px;
+    /* border-radius: 2px; -> Handled by global reset */
 }
 
 .page-body h3 {
@@ -257,7 +259,7 @@ a:hover {
     margin: 22px 0 8px;
     padding: 3px 8px;
     border-left: 4px solid var(--namu-green);
-    background: var(--accent-light);
+    background: none; /* Removed background */
     color: var(--text);
 }
 
@@ -293,14 +295,14 @@ a:hover {
     padding: 8px 14px;
     margin: 10px 0;
     background: #f0faf9;
-    border-radius: 0 var(--radius) var(--radius) 0;
+    /* border-radius: 0 var(--radius) var(--radius) 0; -> Handled by global reset */
     font-size: 14px;
 }
 
 .page-body code {
     background: #f0f0f0;
     padding: 2px 5px;
-    border-radius: 2px;
+    /* border-radius: 2px; -> Handled by global reset */
     font-size: 13px;
     font-family: "JetBrains Mono", "D2Coding", monospace;
 }
@@ -309,7 +311,7 @@ a:hover {
     background: #2b2b2b;
     color: #e0e0e0;
     padding: 14px;
-    border-radius: var(--radius);
+    /* border-radius: var(--radius); -> Handled by global reset */
     overflow-x: auto;
     margin: 10px 0;
 }
@@ -322,7 +324,7 @@ a:hover {
 
 .page-body img {
     max-width: 100%;
-    border-radius: var(--radius);
+    /* border-radius: var(--radius); -> Handled by global reset */
     margin: 10px 0;
 }
 
@@ -351,11 +353,11 @@ a:hover {
     font-weight: 800;
 }
 
-/* TOC - namuwiki style */
+/* TOC - namuwiki style with counters */
 .toc-box {
     background: #f5f5f5;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    /* border-radius: var(--radius); -> Handled by global reset */
     padding: 10px 14px;
     margin-bottom: 20px;
 }
@@ -367,28 +369,80 @@ a:hover {
     color: var(--namu-green-dark);
 }
 
-.toc-box .toc ul {
+.toc-box .toc {
+    counter-reset: h2; /* Reset counter for top-level headings */
+}
+
+.toc-box .toc ul { /* Use ul as the base, then li for items */
     list-style: none;
     margin: 6px 0 0 0;
     padding-left: 0;
 }
 
-.toc-box .toc ul ul {
-    padding-left: 16px;
+.toc-box .toc ul ul { /* Nested lists */
+    padding-left: 18px; /* Indent for sub-levels */
 }
 
 .toc-box .toc li {
-    margin: 1px 0;
+    margin: 2px 0; /* Slightly more space */
+    position: relative; /* For counter positioning */
 }
 
-.toc-box .toc a {
+.toc-box .toc li a {
     font-size: 13px;
     color: var(--link);
+    display: block; /* Make link clickable over full line */
+    padding-left: 20px; /* Space for counter */
 }
 
-.toc-box .toc a:hover {
+.toc-box .toc li a:hover {
     color: var(--link-hover);
 }
+
+/* Counter for h2 equivalent */
+.toc-box .toc > ul > li {
+    counter-increment: h2;
+    counter-reset: h3; /* Reset h3 counter for each new h2 */
+}
+.toc-box .toc > ul > li > a::before {
+    content: counter(h2) ". ";
+    position: absolute;
+    left: 0;
+    color: var(--text-muted);
+    font-weight: 400;
+    width: 20px; /* Fixed width for alignment */
+    text-align: right;
+}
+
+/* Counter for h3 equivalent */
+.toc-box .toc > ul > li > ul > li {
+    counter-increment: h3;
+    counter-reset: h4; /* Reset h4 counter for each new h3 */
+}
+.toc-box .toc > ul > li > ul > li > a::before {
+    content: counter(h2) "." counter(h3) ". ";
+    position: absolute;
+    left: 0;
+    color: var(--text-muted);
+    font-weight: 400;
+    width: 20px;
+    text-align: right;
+}
+
+/* Counter for h4 equivalent */
+.toc-box .toc > ul > li > ul > li > ul > li {
+    counter-increment: h4;
+}
+.toc-box .toc > ul > li > ul > li > ul > li > a::before {
+    content: counter(h2) "." counter(h3) "." counter(h4) ". ";
+    position: absolute;
+    left: 0;
+    color: var(--text-muted);
+    font-weight: 400;
+    width: 20px;
+    text-align: right;
+}
+
 
 /* Backlinks */
 .backlinks {
@@ -416,7 +470,7 @@ a:hover {
     padding: 3px 10px;
     background: var(--accent-light);
     border: 1px solid var(--namu-green);
-    border-radius: 3px;
+    /* border-radius: 3px; -> Handled by global reset */
     font-size: 13px;
     color: var(--namu-green-dark);
 }
@@ -463,7 +517,7 @@ a:hover {
     padding: 4px 10px;
     background: var(--namu-green);
     color: #ffffff;
-    border-radius: 2px;
+    /* border-radius: 2px; -> Handled by global reset */
 }
 
 .page-cards {
@@ -478,7 +532,7 @@ a:hover {
     padding: 10px 14px;
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    /* border-radius: var(--radius); -> Handled by global reset */
     color: var(--text);
     transition: all 0.15s;
 }
@@ -488,7 +542,7 @@ a:hover {
     border-color: var(--namu-green);
     text-decoration: none;
     transform: translateY(-1px);
-    box-shadow: 0 2px 6px rgba(0,164,149,0.15);
+    /* box-shadow: none; -> Handled by global reset */
 }
 
 .card-title {
@@ -506,7 +560,7 @@ a:hover {
     padding: 10px 18px;
     background: var(--accent-light);
     border: 1px solid var(--namu-green);
-    border-radius: var(--radius);
+    /* border-radius: var(--radius); -> Handled by global reset */
     font-size: 14px;
     color: var(--namu-green-dark);
     font-weight: 600;
@@ -539,7 +593,7 @@ a:hover {
     width: 100%;
     height: calc(100vh - 200px);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    /* border-radius: var(--radius); -> Handled by global reset */
     background: #fafafa;
 }
 
@@ -577,7 +631,7 @@ h4 .headerlink {
     font-size: 11px;
     font-weight: 700;
     padding: 2px 8px;
-    border-radius: 2px;
+    /* border-radius: 2px; -> Handled by global reset */
     margin-bottom: 6px;
     letter-spacing: 0.03em;
 }
@@ -656,7 +710,7 @@ h4 .headerlink {
     padding: 14px;
     background: #f0f7ff;
     border: 1px solid #bdd7ee;
-    border-radius: var(--radius);
+    /* border-radius: var(--radius); -> Handled by global reset */
 }
 
 .external-refs h3 {
@@ -678,7 +732,7 @@ h4 .headerlink {
 
 .external-refs a {
     font-size: 13px;
-    color: #1565c0;
+    color: #1565c0; /* Specific blue for external refs */
 }
 
 /* Backlink type indicators */
@@ -715,7 +769,7 @@ h4 .headerlink {
     padding: 5px 14px;
     border: 1px solid var(--border);
     background: var(--bg-alt);
-    border-radius: var(--radius);
+    /* border-radius: var(--radius); -> Handled by global reset */
     font-size: 13px;
     cursor: pointer;
     transition: all 0.15s;
@@ -744,7 +798,7 @@ h4 .headerlink {
     justify-content: center;
     padding: 18px;
     border: 2px dashed var(--border);
-    border-radius: var(--radius);
+    /* border-radius: var(--radius); -> Handled by global reset */
     cursor: pointer;
     transition: all 0.15s;
     text-align: center;
@@ -778,7 +832,7 @@ h4 .headerlink {
     flex: 1;
     padding: 8px 12px;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    /* border-radius: var(--radius); -> Handled by global reset */
     font-size: 14px;
     outline: none;
     transition: border-color 0.2s;
@@ -786,7 +840,7 @@ h4 .headerlink {
 
 .add-form input:focus {
     border-color: var(--namu-green);
-    box-shadow: 0 0 0 2px var(--accent-light);
+    /* box-shadow: none; -> Handled by global reset */
 }
 
 .add-form button {
@@ -794,7 +848,7 @@ h4 .headerlink {
     background: var(--namu-green);
     color: white;
     border: none;
-    border-radius: var(--radius);
+    /* border-radius: var(--radius); -> Handled by global reset */
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
@@ -813,7 +867,7 @@ h4 .headerlink {
 
 .add-status {
     padding: 8px 12px;
-    border-radius: var(--radius);
+    /* border-radius: var(--radius); -> Handled by global reset */
     font-size: 14px;
 }
 
@@ -849,7 +903,7 @@ h4 .headerlink {
     padding: 10px 14px;
     background: var(--bg-alt);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    /* border-radius: var(--radius); -> Handled by global reset */
     text-align: center;
 }
 
@@ -879,7 +933,7 @@ h4 .headerlink {
     display: inline-block;
     width: 12px;
     height: 12px;
-    border-radius: 50%;
+    border-radius: 50%; /* Keep for circular dot */
     vertical-align: middle;
     margin-right: 4px;
 }
