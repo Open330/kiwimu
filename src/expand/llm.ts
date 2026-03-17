@@ -1,8 +1,14 @@
 import type { Page } from "../store";
+import type { Persona } from "../config";
 
-const EXPAND_PROMPT = `You are a wiki editor for a learning platform. Given a wiki page about a topic,
+function buildPrompt(page: Page, context: Page[], persona: Persona | null = null): string {
+  const styleInstruction = persona
+    ? `\n\nIMPORTANT STYLE GUIDE:\n${persona.system_prompt}\n\n${persona.content_style}`
+    : "";
+
+  const prompt = `You are a wiki editor for a learning platform. Given a wiki page about a topic,
 expand it with more detail, examples, and related concepts. Keep the markdown format.
-Add subsections where appropriate. Be accurate and educational.
+Add subsections where appropriate. Be accurate and educational.${styleInstruction}
 
 Current page title: {title}
 Current content:
@@ -13,8 +19,7 @@ Related pages for context:
 
 Write an expanded version of this page in markdown:`;
 
-function buildPrompt(page: Page, context: Page[]): string {
-  return EXPAND_PROMPT.replace("{title}", page.title)
+  return prompt.replace("{title}", page.title)
     .replace("{content}", page.content)
     .replace("{context}", context.slice(0, 10).map((p) => `- ${p.title}`).join("\n"));
 }

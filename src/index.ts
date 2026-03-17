@@ -2,7 +2,7 @@
 
 import { Command } from "commander";
 import { join } from "path";
-import { CONFIG_FILE, DB_FILE, defaultConfig, findProjectRoot, loadConfig, saveConfig } from "./config";
+import { CONFIG_FILE, DB_FILE, defaultConfig, findProjectRoot, getActivePersona, loadConfig, saveConfig } from "./config";
 import { Store } from "./store";
 
 const program = new Command()
@@ -125,6 +125,8 @@ async function addUrl(store: Store, url: string) {
 
   const root = findProjectRoot();
   await initLLM(root);
+  const config = loadConfig(root);
+  const persona = getActivePersona(config);
 
   console.log(`\x1b[34m📥 URL 가져오는 중: ${url}\x1b[0m`);
   const { title, html } = await fetchPage(url);
@@ -134,7 +136,7 @@ async function addUrl(store: Store, url: string) {
   const rawText = htmlToRawText(html);
 
   console.log("\x1b[34m📄 LLM 기반 문서 분석 중...\x1b[0m");
-  const { sourceCount, conceptCount } = await llmChunkDocument(rawText, title, source.id, store);
+  const { sourceCount, conceptCount } = await llmChunkDocument(rawText, title, source.id, store, 0, persona);
   console.log(`\x1b[32m✅ 📖 ${sourceCount}개 원본 + 📝 ${conceptCount}개 개념 문서 생성\x1b[0m`);
 
   const { getUsageStats, getEstimatedCost, printUsageSummary } = await import("./llm-client");
@@ -157,6 +159,8 @@ async function addPdf(store: Store, pdfPath: string) {
 
   const root = findProjectRoot();
   await initLLM(root);
+  const config = loadConfig(root);
+  const persona = getActivePersona(config);
 
   console.log(`\x1b[34m📥 PDF 처리 중: ${pdfPath}\x1b[0m`);
   const { title, text } = await extractTextFromPdf(absPath);
@@ -166,7 +170,7 @@ async function addPdf(store: Store, pdfPath: string) {
   const source = store.addSource(absPath, "pdf", title, "(PDF)");
 
   console.log("\x1b[34m📄 LLM 기반 문서 분석 중...\x1b[0m");
-  const { sourceCount, conceptCount } = await llmChunkDocument(text, title, source.id, store);
+  const { sourceCount, conceptCount } = await llmChunkDocument(text, title, source.id, store, 0, persona);
   console.log(`\x1b[32m✅ 📖 ${sourceCount}개 원본 + 📝 ${conceptCount}개 개념 문서 생성\x1b[0m`);
 
   const { getUsageStats, getEstimatedCost, printUsageSummary } = await import("./llm-client");
@@ -388,7 +392,8 @@ program
               store.deletePagesBySource(src.id);
 
               processingStatus = "LLM 분석 중...";
-              await llmChunkDocument(text, title, src.id, store);
+              const currentPersona = getActivePersona(loadConfig(root));
+              await llmChunkDocument(text, title, src.id, store, 0, currentPersona);
 
               const u = getUsageStats();
               store.addUsageLog(src.id, u.totalCalls, u.promptTokens, u.completionTokens, u.totalTokens, getEstimatedCost());
@@ -440,7 +445,8 @@ program
               const rawText = htmlToRawText(html);
 
               processingStatus = "LLM 분석 중...";
-              await llmChunkDocument(rawText, title, src.id, store);
+              const currentPersona = getActivePersona(loadConfig(root));
+              await llmChunkDocument(rawText, title, src.id, store, 0, currentPersona);
 
               const u = getUsageStats();
               store.addUsageLog(src.id, u.totalCalls, u.promptTokens, u.completionTokens, u.totalTokens, getEstimatedCost());
@@ -497,6 +503,51 @@ program
           return Response.json(masked);
         }
 
+        // Persona API
+        if (url.pathname === "/api/personas" && req.method === "GET") {
+          const currentConfig = loadConfig(root);
+          return Response.json({
+            personas: currentConfig.personas || [],
+            active: currentConfig.active_persona || "",
+          });
+        }
+
+        if (url.pathname === "/api/personas" && req.method === "POST") {
+          const body = await req.json() as any;
+          const currentConfig = loadConfig(root);
+          if (!currentConfig.personas) currentConfig.personas = [];
+
+          if (body.action === "add") {
+            const { name, description, system_prompt, content_style } = body.persona;
+            if (!name) return Response.json({ error: "이름이 필요합니다" }, { status: 400 });
+            if (currentConfig.personas.find(p => p.name === name)) {
+              return Response.json({ error: "이미 존재하는 페르소나입니다" }, { status: 409 });
+            }
+            currentConfig.personas.push({ name, description: description || "", system_prompt: system_prompt || "", content_style: content_style || "" });
+          } else if (body.action === "update") {
+            const idx = currentConfig.personas.findIndex(p => p.name === body.original_name);
+            if (idx === -1) return Response.json({ error: "페르소나를 찾을 수 없습니다" }, { status: 404 });
+            currentConfig.personas[idx] = body.persona;
+            if (currentConfig.active_persona === body.original_name && body.persona.name !== body.original_name) {
+              currentConfig.active_persona = body.persona.name;
+            }
+          } else if (body.action === "delete") {
+            currentConfig.personas = currentConfig.personas.filter(p => p.name !== body.name);
+            if (currentConfig.active_persona === body.name) {
+              currentConfig.active_persona = currentConfig.personas[0]?.name || "";
+            }
+          } else if (body.action === "activate") {
+            if (!currentConfig.personas.find(p => p.name === body.name)) {
+              return Response.json({ error: "페르소나를 찾을 수 없습니다" }, { status: 404 });
+            }
+            currentConfig.active_persona = body.name;
+          }
+
+          saveConfig(root, currentConfig);
+          Object.assign(config, currentConfig);
+          return Response.json({ ok: true, personas: currentConfig.personas, active: currentConfig.active_persona });
+        }
+
         // Build API
         if (url.pathname === "/api/build" && req.method === "POST") {
           if (isProcessing) {
@@ -535,6 +586,8 @@ program
             sources,
             usage,
             llmConfig: configData.llm,
+            personas: configData.personas || [],
+            activePersona: configData.active_persona || "",
           }), { headers: { "Content-Type": "text/html" } });
         }
 

@@ -1,6 +1,7 @@
 import { chatComplete } from "../llm-client";
 import type { Store } from "../store";
 import { slugify } from "./chunker";
+import type { Persona } from "../config";
 
 // ── Phase 1: Extract original document structure ──
 
@@ -27,7 +28,8 @@ Return at most 8 sections per response to keep output manageable.`;
 
 // ── Phase 2: Extract concepts for separate pages ──
 
-const CONCEPT_SYSTEM = `You are a study wiki editor. Given source material pages, identify important concepts, terms, and definitions that deserve their own dedicated wiki pages.
+function getConceptSystem(persona: Persona | null): string {
+  const base = `You are a study wiki editor. Given source material pages, identify important concepts, terms, and definitions that deserve their own dedicated wiki pages.
 
 Rules:
 - Pick terms that appear across multiple sections OR are fundamental domain concepts
@@ -38,19 +40,42 @@ Rules:
 
 Return valid JSON only. No markdown fences.`;
 
-const CONCEPT_PROMPT = `Based on these source pages, create concept/glossary wiki pages for important terms.
+  if (persona) {
+    return `${persona.system_prompt}\n\n${base}\n\nIMPORTANT: ${persona.content_style}`;
+  }
+  return base;
+}
+
+function getConceptPrompt(persona: Persona | null): string {
+  const styleNote = persona
+    ? `\n\nWrite content in the following style:\n${persona.content_style}`
+    : "";
+
+  return `Based on these source pages, create concept/glossary wiki pages for important terms.
 
 Source pages already created:
 {sourcePages}
 
 Create 3-6 concept pages for the most important terms, definitions, laws, and equations found in these pages.
 Do NOT duplicate the source pages — instead, create focused concept pages that the source pages can link to.
-Keep each page concise (2-3 paragraphs).
+Keep each page concise (2-3 paragraphs).${styleNote}
 
 Return a JSON array where each element has:
 - "title": string — Short concept name, 1-3 words (e.g., "Synchrotron Radiation", "Flux Density", "Angular Resolution"). Keep titles short so they match naturally in text.
 - "content": string — Educational markdown content with [[wiki links]] to other concepts and source pages
 - "suggested_links": Array<{text: string, url: string}> — Wikipedia/external reference links`;
+}
+
+function getStructureSystem(persona: Persona | null): string {
+  const base = `You are a document analyzer. Extract the chapter/section structure from this textbook content, preserving the original order and hierarchy.
+
+Return valid JSON only. No markdown fences.`;
+
+  if (persona) {
+    return `${persona.system_prompt}\n\n${base}\n\nWhen converting content to markdown, apply this writing style:\n${persona.content_style}`;
+  }
+  return base;
+}
 
 interface StructurePage {
   title: string;
@@ -173,12 +198,16 @@ export async function llmChunkDocument(
   sourceTitle: string,
   sourceId: number,
   store: Store,
-  maxChunks: number = 0 // 0 = unlimited
+  maxChunks: number = 0, // 0 = unlimited
+  persona: Persona | null = null
 ): Promise<{ sourceCount: number; conceptCount: number }> {
   let chunks = splitByChapters(rawText);
   if (maxChunks > 0 && chunks.length > maxChunks) {
     console.log(`\x1b[33m⚠ ${chunks.length}개 청크 중 ${maxChunks}개만 처리합니다\x1b[0m`);
     chunks = chunks.slice(0, maxChunks);
+  }
+  if (persona) {
+    console.log(`\x1b[35m🎭 페르소나: ${persona.name}\x1b[0m`);
   }
   console.log(`\x1b[34m🧠 Phase 1: 원본 구조 추출 (${chunks.length}개 청크)...\x1b[0m`);
 
@@ -194,11 +223,12 @@ export async function llmChunkDocument(
       .replace("{sourceTitle}", sourceTitle)
       .replace("{text}", chunk.text.slice(0, 80000));
 
+    const structureSystem = getStructureSystem(persona);
     try {
-      const raw = await chatComplete(STRUCTURE_SYSTEM, prompt, 16384);
+      const raw = await chatComplete(structureSystem, prompt, 16384);
       if (!raw || raw.trim().length < 10) {
         console.log(`    \x1b[33m⚠ 빈 응답, 재시도...\x1b[0m`);
-        const retry = await chatComplete(STRUCTURE_SYSTEM, prompt, 16384);
+        const retry = await chatComplete(structureSystem, prompt, 16384);
         if (!retry || retry.trim().length < 10) {
           console.log(`    \x1b[31m✗ 재시도도 빈 응답\x1b[0m`);
           continue;
@@ -257,10 +287,12 @@ export async function llmChunkDocument(
     const existingConcepts = conceptCount > 0
       ? `\n\nAlready created concept pages (do not duplicate): ${store.listConceptPages().map(p => p.title).join(", ")}`
       : "";
-    const prompt = CONCEPT_PROMPT.replace("{sourcePages}", batch.join("\n")) + existingConcepts;
+    const conceptPrompt = getConceptPrompt(persona);
+    const prompt = conceptPrompt.replace("{sourcePages}", batch.join("\n")) + existingConcepts;
+    const conceptSystem = getConceptSystem(persona);
 
     try {
-      const raw = await chatComplete(CONCEPT_SYSTEM, prompt, 16384);
+      const raw = await chatComplete(conceptSystem, prompt, 16384);
       const concepts = parseJSON<ConceptPage[]>(raw).filter(c => c.title && c.content && c.content.length > 50);
 
       for (const concept of concepts) {

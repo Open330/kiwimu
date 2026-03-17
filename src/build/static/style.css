@@ -2,18 +2,22 @@
 
 :root {
     --bg: #ffffff;
-    --bg-alt: #f8f9fa;
-    --bg-hover: #e9ecef;
-    --text: #212529;
-    --text-muted: #6c757d;
-    --link: #0275d8;
-    --link-hover: #014c8c;
-    --border: #dee2e6;
-    --accent: #4caf50;
-    --accent-light: #e8f5e9;
-    --sidebar-width: 260px;
-    --topbar-height: 48px;
-    --radius: 6px;
+    --bg-alt: #f6f6f6;
+    --bg-hover: #eaeaea;
+    --text: #1a1a1a;
+    --text-muted: #6b6b6b;
+    --link: #0067a3;
+    --link-hover: #004b7a;
+    --border: #dcdcdc;
+    --accent: #00a495;
+    --accent-dark: #008c7e;
+    --accent-light: #e0f5f3;
+    --namu-green: #00a495;
+    --namu-green-dark: #007a6e;
+    --namu-heading-bg: #00a495;
+    --sidebar-width: 250px;
+    --topbar-height: 44px;
+    --radius: 4px;
 }
 
 * {
@@ -23,7 +27,7 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+    font-family: "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif;
     color: var(--text);
     background: var(--bg);
     line-height: 1.7;
@@ -40,26 +44,26 @@ a:hover {
     text-decoration: underline;
 }
 
-/* Topbar */
+/* Topbar - namuwiki style */
 .topbar {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     height: var(--topbar-height);
-    background: var(--bg);
-    border-bottom: 1px solid var(--border);
+    background: var(--namu-green);
     display: flex;
     align-items: center;
-    padding: 0 20px;
+    padding: 0 16px;
     z-index: 100;
-    gap: 16px;
+    gap: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
 }
 
 .topbar-brand {
     font-weight: 700;
-    font-size: 17px;
-    color: var(--text);
+    font-size: 16px;
+    color: #ffffff;
     white-space: nowrap;
     display: flex;
     align-items: center;
@@ -68,34 +72,36 @@ a:hover {
 
 .topbar-brand:hover {
     text-decoration: none;
-    color: var(--accent);
+    color: #e0f5f3;
 }
 
 .topbar-logo {
-    width: 28px;
-    height: 28px;
+    width: 26px;
+    height: 26px;
     object-fit: contain;
+    filter: brightness(10);
 }
 
 .topbar-search {
     flex: 1;
-    max-width: 400px;
+    max-width: 360px;
     position: relative;
 }
 
 .topbar-search input {
     width: 100%;
-    padding: 6px 12px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    padding: 5px 12px;
+    border: none;
+    border-radius: 3px;
     font-size: 14px;
     outline: none;
-    transition: border-color 0.2s;
+    background: rgba(255,255,255,0.9);
+    transition: background 0.2s;
 }
 
 .topbar-search input:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px var(--accent-light);
+    background: #ffffff;
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.4);
 }
 
 .search-dropdown {
@@ -107,7 +113,7 @@ a:hover {
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
     max-height: 300px;
     overflow-y: auto;
     z-index: 200;
@@ -130,26 +136,30 @@ a:hover {
 }
 
 .search-dropdown .search-highlight {
-    color: var(--accent);
+    color: var(--namu-green);
     font-weight: 600;
 }
 
 .topbar-links {
     margin-left: auto;
+    display: flex;
+    gap: 4px;
 }
 
 .btn-graph {
-    padding: 4px 12px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    padding: 4px 10px;
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 3px;
     font-size: 13px;
-    color: var(--text);
+    color: #ffffff;
     white-space: nowrap;
+    transition: background 0.15s;
 }
 
 .btn-graph:hover {
-    background: var(--bg-alt);
+    background: rgba(255,255,255,0.15);
     text-decoration: none;
+    color: #ffffff;
 }
 
 /* Layout */
@@ -159,12 +169,12 @@ a:hover {
     min-height: calc(100vh - var(--topbar-height));
 }
 
-/* Sidebar */
+/* Sidebar - namuwiki style */
 .sidebar {
     width: var(--sidebar-width);
     background: var(--bg-alt);
     border-right: 1px solid var(--border);
-    padding: 16px 0;
+    padding: 0;
     position: fixed;
     top: var(--topbar-height);
     bottom: 0;
@@ -173,13 +183,13 @@ a:hover {
 
 .sidebar-header {
     font-weight: 700;
-    font-size: 13px;
+    font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-muted);
-    padding: 0 16px 8px;
+    padding: 0 14px 8px;
     border-bottom: 1px solid var(--border);
-    margin-bottom: 8px;
+    margin-bottom: 0;
 }
 
 .page-list {
@@ -188,12 +198,13 @@ a:hover {
 
 .page-list li a {
     display: block;
-    padding: 4px 16px;
+    padding: 5px 14px;
     color: var(--text);
-    font-size: 14px;
+    font-size: 13px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    border-bottom: 1px solid #efefef;
 }
 
 .page-list li a:hover {
@@ -203,26 +214,27 @@ a:hover {
 
 .page-list li a.active {
     background: var(--accent-light);
-    color: var(--accent);
+    color: var(--namu-green-dark);
     font-weight: 600;
-    border-right: 3px solid var(--accent);
+    border-right: 3px solid var(--namu-green);
 }
 
 /* Content */
 .content {
     flex: 1;
     margin-left: var(--sidebar-width);
-    padding: 32px 48px;
-    max-width: 900px;
+    padding: 24px 40px;
+    max-width: 860px;
 }
 
-/* Wiki page */
+/* Wiki page - namuwiki style headings */
 .page-header h1 {
-    font-size: 28px;
+    font-size: 26px;
     font-weight: 700;
-    padding-bottom: 12px;
-    border-bottom: 2px solid var(--accent);
-    margin-bottom: 24px;
+    padding-bottom: 10px;
+    border-bottom: 3px solid var(--namu-green);
+    margin-bottom: 20px;
+    color: var(--text);
 }
 
 .page-body {
@@ -230,27 +242,35 @@ a:hover {
 }
 
 .page-body h2 {
-    font-size: 22px;
+    font-size: 20px;
     font-weight: 700;
-    margin: 32px 0 12px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--border);
+    margin: 28px 0 10px;
+    padding: 4px 10px;
+    background: var(--namu-green);
+    color: #ffffff;
+    border-radius: 2px;
 }
 
 .page-body h3 {
-    font-size: 18px;
-    font-weight: 600;
-    margin: 24px 0 8px;
+    font-size: 17px;
+    font-weight: 700;
+    margin: 22px 0 8px;
+    padding: 3px 8px;
+    border-left: 4px solid var(--namu-green);
+    background: var(--accent-light);
+    color: var(--text);
 }
 
 .page-body h4 {
-    font-size: 16px;
-    font-weight: 600;
-    margin: 20px 0 6px;
+    font-size: 15px;
+    font-weight: 700;
+    margin: 18px 0 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
 }
 
 .page-body p {
-    margin-bottom: 12px;
+    margin-bottom: 10px;
 }
 
 .page-body ul, .page-body ol {
@@ -258,31 +278,40 @@ a:hover {
 }
 
 .page-body li {
-    margin-bottom: 4px;
+    margin-bottom: 3px;
+}
+
+/* Namuwiki-style strikethrough (humor) */
+.page-body del {
+    color: var(--text-muted);
+    text-decoration: line-through;
+    font-size: 0.95em;
 }
 
 .page-body blockquote {
-    border-left: 4px solid var(--accent);
-    padding: 8px 16px;
-    margin: 12px 0;
-    background: var(--accent-light);
+    border-left: 3px solid var(--namu-green);
+    padding: 8px 14px;
+    margin: 10px 0;
+    background: #f0faf9;
     border-radius: 0 var(--radius) var(--radius) 0;
+    font-size: 14px;
 }
 
 .page-body code {
-    background: var(--bg-alt);
-    padding: 2px 6px;
-    border-radius: 3px;
+    background: #f0f0f0;
+    padding: 2px 5px;
+    border-radius: 2px;
     font-size: 13px;
+    font-family: "JetBrains Mono", "D2Coding", monospace;
 }
 
 .page-body pre {
-    background: #1e1e2e;
-    color: #cdd6f4;
-    padding: 16px;
+    background: #2b2b2b;
+    color: #e0e0e0;
+    padding: 14px;
     border-radius: var(--radius);
     overflow-x: auto;
-    margin: 12px 0;
+    margin: 10px 0;
 }
 
 .page-body pre code {
@@ -294,45 +323,53 @@ a:hover {
 .page-body img {
     max-width: 100%;
     border-radius: var(--radius);
-    margin: 12px 0;
+    margin: 10px 0;
 }
 
 .page-body table {
     width: 100%;
     border-collapse: collapse;
-    margin: 12px 0;
+    margin: 10px 0;
+    font-size: 14px;
 }
 
 .page-body th, .page-body td {
-    padding: 8px 12px;
+    padding: 6px 10px;
     border: 1px solid var(--border);
     text-align: left;
 }
 
 .page-body th {
-    background: var(--bg-alt);
+    background: var(--accent-light);
     font-weight: 600;
+    color: var(--namu-green-dark);
 }
 
-/* TOC */
+/* Bold emphasis - namuwiki loves bold */
+.page-body strong {
+    color: var(--text);
+    font-weight: 800;
+}
+
+/* TOC - namuwiki style */
 .toc-box {
-    background: var(--bg-alt);
+    background: #f5f5f5;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 12px 16px;
-    margin-bottom: 24px;
+    padding: 10px 14px;
+    margin-bottom: 20px;
 }
 
 .toc-box summary {
     font-weight: 700;
     cursor: pointer;
     font-size: 14px;
-    color: var(--text-muted);
+    color: var(--namu-green-dark);
 }
 
 .toc-box .toc ul {
     list-style: none;
-    margin: 8px 0 0 0;
+    margin: 6px 0 0 0;
     padding-left: 0;
 }
 
@@ -341,29 +378,29 @@ a:hover {
 }
 
 .toc-box .toc li {
-    margin: 2px 0;
+    margin: 1px 0;
 }
 
 .toc-box .toc a {
-    font-size: 14px;
-    color: var(--text);
+    font-size: 13px;
+    color: var(--link);
 }
 
 .toc-box .toc a:hover {
-    color: var(--link);
+    color: var(--link-hover);
 }
 
 /* Backlinks */
 .backlinks {
-    margin-top: 40px;
-    padding-top: 16px;
-    border-top: 1px solid var(--border);
+    margin-top: 36px;
+    padding-top: 14px;
+    border-top: 2px solid var(--namu-green);
 }
 
 .backlinks h3 {
     font-size: 14px;
-    color: var(--text-muted);
-    font-weight: 600;
+    color: var(--namu-green-dark);
+    font-weight: 700;
     margin-bottom: 8px;
 }
 
@@ -371,45 +408,48 @@ a:hover {
     list-style: none;
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
 }
 
 .backlinks li a {
     display: inline-block;
-    padding: 4px 12px;
-    background: var(--bg-alt);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    padding: 3px 10px;
+    background: var(--accent-light);
+    border: 1px solid var(--namu-green);
+    border-radius: 3px;
     font-size: 13px;
+    color: var(--namu-green-dark);
 }
 
 .backlinks li a:hover {
-    background: var(--accent-light);
+    background: var(--namu-green);
+    color: #ffffff;
     text-decoration: none;
 }
 
 /* Index page */
 .hero {
     text-align: center;
-    padding: 48px 0 32px;
+    padding: 40px 0 28px;
 }
 
 .hero-logo {
-    width: 120px;
-    height: 120px;
+    width: 100px;
+    height: 100px;
     object-fit: contain;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
 }
 
 .hero h1 {
-    font-size: 36px;
+    font-size: 32px;
     border: none;
+    color: var(--namu-green-dark);
 }
 
 .hero-sub {
     color: var(--text-muted);
-    font-size: 16px;
-    margin-top: 8px;
+    font-size: 15px;
+    margin-top: 6px;
 }
 
 .index-grid {
@@ -418,23 +458,25 @@ a:hover {
 }
 
 .index-section h2 {
-    font-size: 18px;
-    margin-bottom: 16px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--border);
+    font-size: 17px;
+    margin-bottom: 12px;
+    padding: 4px 10px;
+    background: var(--namu-green);
+    color: #ffffff;
+    border-radius: 2px;
 }
 
 .page-cards {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 10px;
-    margin-bottom: 32px;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 8px;
+    margin-bottom: 28px;
 }
 
 .page-card {
     display: block;
-    padding: 12px 16px;
-    background: var(--bg-alt);
+    padding: 10px 14px;
+    background: var(--bg);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     color: var(--text);
@@ -443,34 +485,36 @@ a:hover {
 
 .page-card:hover {
     background: var(--accent-light);
-    border-color: var(--accent);
+    border-color: var(--namu-green);
     text-decoration: none;
     transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    box-shadow: 0 2px 6px rgba(0,164,149,0.15);
 }
 
 .card-title {
     font-weight: 600;
-    font-size: 14px;
+    font-size: 13px;
 }
 
 .quick-links {
     display: flex;
-    gap: 12px;
-    margin-bottom: 32px;
+    gap: 10px;
+    margin-bottom: 28px;
 }
 
 .quick-link {
-    padding: 12px 20px;
-    background: var(--bg-alt);
-    border: 1px solid var(--border);
+    padding: 10px 18px;
+    background: var(--accent-light);
+    border: 1px solid var(--namu-green);
     border-radius: var(--radius);
     font-size: 14px;
-    color: var(--text);
+    color: var(--namu-green-dark);
+    font-weight: 600;
 }
 
 .quick-link:hover {
-    background: var(--accent-light);
+    background: var(--namu-green);
+    color: #ffffff;
     text-decoration: none;
 }
 
@@ -482,12 +526,13 @@ a:hover {
 .graph-page h1 {
     border: none;
     margin-bottom: 8px;
+    color: var(--namu-green-dark);
 }
 
 .graph-desc {
     color: var(--text-muted);
     font-size: 14px;
-    margin-bottom: 16px;
+    margin-bottom: 14px;
 }
 
 #graph-container {
@@ -495,7 +540,7 @@ a:hover {
     height: calc(100vh - 200px);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    background: var(--bg-alt);
+    background: #fafafa;
 }
 
 #graph-container svg {
@@ -505,9 +550,9 @@ a:hover {
 
 /* Permalink */
 .headerlink {
-    color: var(--text-muted);
+    color: rgba(255,255,255,0.6);
     font-size: 0.7em;
-    margin-left: 4px;
+    margin-left: 6px;
     opacity: 0;
     transition: opacity 0.2s;
 }
@@ -518,14 +563,23 @@ h4:hover .headerlink {
     opacity: 1;
 }
 
-/* Page type badge */
+h3 .headerlink {
+    color: var(--text-muted);
+}
+
+h4 .headerlink {
+    color: var(--text-muted);
+}
+
+/* Page type badge - namuwiki style */
 .page-type-badge {
     display: inline-block;
-    font-size: 12px;
-    font-weight: 600;
-    padding: 2px 10px;
-    border-radius: 12px;
-    margin-bottom: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 2px;
+    margin-bottom: 6px;
+    letter-spacing: 0.03em;
 }
 
 .page-type-badge.source {
@@ -535,10 +589,10 @@ h4:hover .headerlink {
 
 .page-type-badge.concept {
     background: var(--accent-light);
-    color: #2e7d32;
+    color: var(--namu-green-dark);
 }
 
-/* Sidebar tabs */
+/* Sidebar tabs - namuwiki style */
 .sidebar-tabs {
     display: flex;
     border-bottom: 1px solid var(--border);
@@ -551,11 +605,11 @@ h4:hover .headerlink {
 
 .sidebar-tab {
     flex: 1;
-    padding: 10px 8px;
+    padding: 8px 6px;
     border: none;
     background: none;
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 12px;
+    font-weight: 700;
     color: var(--text-muted);
     cursor: pointer;
     border-bottom: 2px solid transparent;
@@ -568,8 +622,8 @@ h4:hover .headerlink {
 }
 
 .sidebar-tab.active {
-    color: var(--accent);
-    border-bottom-color: var(--accent);
+    color: var(--namu-green);
+    border-bottom-color: var(--namu-green);
 }
 
 .sidebar-panel {
@@ -585,21 +639,21 @@ h4:hover .headerlink {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
-    margin-bottom: 8px;
+    gap: 5px;
+    margin-bottom: 6px;
 }
 
 .backlink-label {
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 700;
     color: var(--text-muted);
-    margin-right: 4px;
+    margin-right: 3px;
 }
 
 /* External refs */
 .external-refs {
-    margin-top: 32px;
-    padding: 16px;
+    margin-top: 28px;
+    padding: 14px;
     background: #f0f7ff;
     border: 1px solid #bdd7ee;
     border-radius: var(--radius);
@@ -608,8 +662,8 @@ h4:hover .headerlink {
 .external-refs h3 {
     font-size: 14px;
     color: #1565c0;
-    font-weight: 600;
-    margin-bottom: 8px;
+    font-weight: 700;
+    margin-bottom: 6px;
 }
 
 .external-refs ul {
@@ -619,7 +673,7 @@ h4:hover .headerlink {
 }
 
 .external-refs li {
-    margin-bottom: 4px;
+    margin-bottom: 3px;
 }
 
 .external-refs a {
@@ -633,7 +687,7 @@ h4:hover .headerlink {
 }
 
 .backlink-item.concept {
-    border-left: 3px solid #4caf50;
+    border-left: 3px solid var(--namu-green);
 }
 
 /* Page card types */
@@ -642,23 +696,23 @@ h4:hover .headerlink {
 }
 
 .page-card.concept {
-    border-left: 3px solid #4caf50;
+    border-left: 3px solid var(--namu-green);
 }
 
 .card-badge {
     font-size: 12px;
-    margin-right: 4px;
+    margin-right: 3px;
 }
 
 /* Add tabs */
 .add-tabs {
     display: flex;
     gap: 4px;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
 }
 
 .add-tab {
-    padding: 6px 16px;
+    padding: 5px 14px;
     border: 1px solid var(--border);
     background: var(--bg-alt);
     border-radius: var(--radius);
@@ -668,9 +722,9 @@ h4:hover .headerlink {
 }
 
 .add-tab.active {
-    background: var(--accent);
+    background: var(--namu-green);
     color: white;
-    border-color: var(--accent);
+    border-color: var(--namu-green);
 }
 
 .add-panel {
@@ -688,7 +742,7 @@ h4:hover .headerlink {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 20px;
+    padding: 18px;
     border: 2px dashed var(--border);
     border-radius: var(--radius);
     cursor: pointer;
@@ -697,7 +751,7 @@ h4:hover .headerlink {
 }
 
 .file-drop:hover, .file-drop.dragover {
-    border-color: var(--accent);
+    border-color: var(--namu-green);
     background: var(--accent-light);
 }
 
@@ -717,12 +771,12 @@ h4:hover .headerlink {
 .add-form {
     display: flex;
     gap: 8px;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
 }
 
 .add-form input {
     flex: 1;
-    padding: 10px 14px;
+    padding: 8px 12px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     font-size: 14px;
@@ -731,13 +785,13 @@ h4:hover .headerlink {
 }
 
 .add-form input:focus {
-    border-color: var(--accent);
+    border-color: var(--namu-green);
     box-shadow: 0 0 0 2px var(--accent-light);
 }
 
 .add-form button {
-    padding: 10px 20px;
-    background: var(--accent);
+    padding: 8px 18px;
+    background: var(--namu-green);
     color: white;
     border: none;
     border-radius: var(--radius);
@@ -749,7 +803,7 @@ h4:hover .headerlink {
 }
 
 .add-form button:hover {
-    background: #43a047;
+    background: var(--accent-dark);
 }
 
 .add-form button:disabled {
@@ -758,7 +812,7 @@ h4:hover .headerlink {
 }
 
 .add-status {
-    padding: 10px 14px;
+    padding: 8px 12px;
     border-radius: var(--radius);
     font-size: 14px;
 }
@@ -771,8 +825,8 @@ h4:hover .headerlink {
 
 .add-status.success {
     background: var(--accent-light);
-    color: #2e7d32;
-    border: 1px solid #a5d6a7;
+    color: var(--namu-green-dark);
+    border: 1px solid var(--namu-green);
 }
 
 .add-status.error {
@@ -784,15 +838,15 @@ h4:hover .headerlink {
 /* Usage stats */
 .stats-grid {
     display: flex;
-    gap: 10px;
+    gap: 8px;
     flex-wrap: wrap;
-    margin-top: 12px;
+    margin-top: 10px;
 }
 
 .stat-card {
     flex: 1;
-    min-width: 100px;
-    padding: 12px 16px;
+    min-width: 90px;
+    padding: 10px 14px;
     background: var(--bg-alt);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -801,23 +855,23 @@ h4:hover .headerlink {
 
 .stat-card.accent {
     background: var(--accent-light);
-    border-color: var(--accent);
+    border-color: var(--namu-green);
 }
 
 .stat-value {
-    font-size: 20px;
+    font-size: 18px;
     font-weight: 700;
     color: var(--text);
 }
 
 .stat-card.accent .stat-value {
-    color: #2e7d32;
+    color: var(--namu-green-dark);
 }
 
 .stat-label {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--text-muted);
-    margin-top: 4px;
+    margin-top: 3px;
 }
 
 /* Graph legend */
@@ -835,7 +889,7 @@ h4:hover .headerlink {
 }
 
 .legend-dot.concept {
-    background: #4caf50;
+    background: var(--namu-green);
 }
 
 /* Responsive */
@@ -845,9 +899,9 @@ h4:hover .headerlink {
     }
     .content {
         margin-left: 0;
-        padding: 20px 16px;
+        padding: 16px 14px;
     }
     .topbar-search {
-        max-width: 200px;
+        max-width: 180px;
     }
 }

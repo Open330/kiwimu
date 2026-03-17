@@ -422,6 +422,8 @@ export function renderAdmin(opts: {
   sources: Array<{ id: number; uri: string; type: string; title: string; fetched_at: string }>;
   usage: { totalCalls: number; promptTokens: number; completionTokens: number; totalTokens: number; totalCost: number };
   llmConfig: { provider: string; model: string; api_key: string; endpoint: string };
+  personas: Array<{ name: string; description: string; system_prompt: string; content_style: string }>;
+  activePersona: string;
 }): string {
   const maskedKey = opts.llmConfig.api_key ? "••••" + opts.llmConfig.api_key.slice(-4) : "(미설정)";
   const sourceRows = opts.sources
@@ -531,6 +533,62 @@ export function renderAdmin(opts: {
         </div>
 
         <div class="admin-section">
+            <h2>🎭 페르소나 설정</h2>
+            <div class="config-card" style="margin-bottom:12px">
+                <div class="config-row">
+                    <span class="config-key">활성 페르소나</span>
+                    <select id="active-persona" class="config-input" onchange="activatePersona(this.value)">
+                        ${opts.personas.map(p => `<option value="${escapeHtml(p.name)}"${p.name === opts.activePersona ? " selected" : ""}>${escapeHtml(p.name)}</option>`).join("")}
+                        <option value=""${!opts.activePersona ? " selected" : ""}>(없음 - 기본 스타일)</option>
+                    </select>
+                    <span id="persona-activate-status" style="font-size:13px;margin-left:8px;"></span>
+                </div>
+            </div>
+            <div id="persona-list">
+                ${opts.personas.map(p => `
+                <div class="config-card persona-card" style="margin-bottom:8px;" data-name="${escapeHtml(p.name)}">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                        <strong style="font-size:15px;">${escapeHtml(p.name)} ${p.name === opts.activePersona ? '<span style="color:#2e7d32;font-size:12px;">✅ 활성</span>' : ''}</strong>
+                        <div style="display:flex;gap:6px;">
+                            <button class="save-btn" style="font-size:12px;padding:4px 10px;" onclick="editPersona('${escapeHtml(p.name)}')">✏️ 편집</button>
+                            <button class="save-btn" style="font-size:12px;padding:4px 10px;background:#e53935;" onclick="deletePersona('${escapeHtml(p.name)}')">🗑️ 삭제</button>
+                        </div>
+                    </div>
+                    <div style="font-size:13px;color:var(--text-muted);">${escapeHtml(p.description)}</div>
+                </div>`).join("")}
+            </div>
+            <button class="save-btn" style="margin-top:8px;" onclick="showPersonaModal()">➕ 새 페르소나 추가</button>
+        </div>
+
+        <!-- Persona Modal -->
+        <div id="persona-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+            <div style="background:white;border-radius:8px;padding:24px;max-width:700px;width:90%;max-height:85vh;overflow-y:auto;">
+                <h3 id="persona-modal-title" style="margin-bottom:16px;">새 페르소나 추가</h3>
+                <input type="hidden" id="persona-original-name" value="">
+                <div style="margin-bottom:12px;">
+                    <label style="font-weight:600;font-size:13px;display:block;margin-bottom:4px;">이름</label>
+                    <input id="persona-name" class="config-input" style="width:100%;" placeholder="예: 나무위키, 교과서, 유머러스">
+                </div>
+                <div style="margin-bottom:12px;">
+                    <label style="font-weight:600;font-size:13px;display:block;margin-bottom:4px;">설명</label>
+                    <input id="persona-desc" class="config-input" style="width:100%;" placeholder="이 페르소나의 간단한 설명">
+                </div>
+                <div style="margin-bottom:12px;">
+                    <label style="font-weight:600;font-size:13px;display:block;margin-bottom:4px;">시스템 프롬프트</label>
+                    <textarea id="persona-system" class="config-input" style="width:100%;height:180px;resize:vertical;font-size:13px;" placeholder="LLM에게 전달할 시스템 프롬프트. 문체, 톤, 규칙 등을 지정하세요."></textarea>
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label style="font-weight:600;font-size:13px;display:block;margin-bottom:4px;">콘텐츠 스타일 지시</label>
+                    <textarea id="persona-style" class="config-input" style="width:100%;height:120px;resize:vertical;font-size:13px;" placeholder="콘텐츠 생성시 적용할 스타일 가이드"></textarea>
+                </div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;">
+                    <button class="save-btn" style="background:var(--text-muted);" onclick="closePersonaModal()">취소</button>
+                    <button class="save-btn" onclick="savePersona()">💾 저장</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="admin-section">
             <h2>📚 등록된 소스 (${opts.sources.length})</h2>
             <table class="admin-table">
                 <thead><tr><th>ID</th><th>타입</th><th>제목</th><th>URI</th><th>등록일</th></tr></thead>
@@ -610,6 +668,71 @@ export function renderAdmin(opts: {
             else { status.textContent = '❌ 실패'; status.style.color = '#c62828'; }
         } catch { status.textContent = '❌ 연결 실패'; status.style.color = '#c62828'; }
     });
+
+    // ── Persona management ──
+    let personaData = ${JSON.stringify(opts.personas)};
+
+    async function activatePersona(name) {
+        const status = document.getElementById('persona-activate-status');
+        try {
+            const r = await fetch('/api/personas', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'activate', name }) });
+            if (r.ok) { status.textContent = '✅'; status.style.color = '#2e7d32'; setTimeout(() => location.reload(), 800); }
+            else { status.textContent = '❌'; status.style.color = '#c62828'; }
+        } catch { status.textContent = '❌'; status.style.color = '#c62828'; }
+    }
+
+    function showPersonaModal(existing) {
+        document.getElementById('persona-modal').style.display = 'flex';
+        if (existing) {
+            const p = personaData.find(x => x.name === existing);
+            if (!p) return;
+            document.getElementById('persona-modal-title').textContent = '페르소나 편집';
+            document.getElementById('persona-original-name').value = existing;
+            document.getElementById('persona-name').value = p.name;
+            document.getElementById('persona-desc').value = p.description;
+            document.getElementById('persona-system').value = p.system_prompt;
+            document.getElementById('persona-style').value = p.content_style;
+        } else {
+            document.getElementById('persona-modal-title').textContent = '새 페르소나 추가';
+            document.getElementById('persona-original-name').value = '';
+            document.getElementById('persona-name').value = '';
+            document.getElementById('persona-desc').value = '';
+            document.getElementById('persona-system').value = '';
+            document.getElementById('persona-style').value = '';
+        }
+    }
+
+    function editPersona(name) { showPersonaModal(name); }
+
+    function closePersonaModal() { document.getElementById('persona-modal').style.display = 'none'; }
+
+    async function savePersona() {
+        const originalName = document.getElementById('persona-original-name').value;
+        const persona = {
+            name: document.getElementById('persona-name').value.trim(),
+            description: document.getElementById('persona-desc').value.trim(),
+            system_prompt: document.getElementById('persona-system').value,
+            content_style: document.getElementById('persona-style').value,
+        };
+        if (!persona.name) { alert('이름을 입력해주세요'); return; }
+        const body = originalName
+            ? { action: 'update', original_name: originalName, persona }
+            : { action: 'add', persona };
+        try {
+            const r = await fetch('/api/personas', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+            if (r.ok) { closePersonaModal(); location.reload(); }
+            else { const d = await r.json(); alert(d.error || '실패'); }
+        } catch { alert('연결 실패'); }
+    }
+
+    async function deletePersona(name) {
+        if (!confirm(name + ' 페르소나를 삭제하시겠습니까?')) return;
+        try {
+            const r = await fetch('/api/personas', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'delete', name }) });
+            if (r.ok) location.reload();
+            else { const d = await r.json(); alert(d.error || '실패'); }
+        } catch { alert('연결 실패'); }
+    }
     </script>
 </body>
 </html>`;

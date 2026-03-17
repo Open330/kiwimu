@@ -14,8 +14,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const colors = {
         source: "#2196f3",
         sourceHover: "#1565c0",
-        concept: "#4caf50",
-        conceptHover: "#2e7d32",
+        concept: "#00a495",
+        conceptHover: "#007a6e",
     };
 
     const width = container.clientWidth;
