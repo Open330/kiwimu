@@ -22,6 +22,23 @@ kiwimu build && kiwimu serve
 
 ---
 
+## Quickstart for Agents
+
+<div><img src="https://quickstart-for-agents.vercel.app/api/header.svg?theme=claude-code&logo=kiwimu&title=Set+up+a+learning+wiki+from+any+textbook+or+URL&lang=Agents&font=mono&mascot=hat" width="100%" /></div>
+
+```
+git clone https://github.com/jiunbae/kiwimu.git && cd kiwimu
+python3 -m venv .venv && source .venv/bin/activate && pip install -e .
+mkdir my-wiki && cd my-wiki
+kiwimu init "My Study Wiki"
+kiwimu add "<YOUR_URL_OR_PDF>"
+kiwimu build && kiwimu serve
+```
+
+<div><img src="https://quickstart-for-agents.vercel.app/api/footer.svg?theme=claude-code&text=copy+this+prompt+%C2%B7+paste+into+your+agent+%C2%B7+get+a+learning+wiki&font=mono" width="100%" /></div>
+
+---
+
 ## Why kiwimu?
 
 교과서 한 권을 읽으면 수십 개의 개념이 서로 연결됩니다.
