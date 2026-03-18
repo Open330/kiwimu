@@ -1,6 +1,6 @@
 import { parse, stringify } from "smol-toml";
-import { existsSync } from "fs";
-import { join } from "path";
+import { existsSync, readFileSync, readdirSync } from "fs";
+import { join, dirname } from "path";
 
 export const CONFIG_FILE = "kiwi.toml";
 export const DB_FILE = "kiwi.db";
@@ -29,38 +29,43 @@ export interface KiwiConfig {
   active_persona?: string; // name of the active persona
 }
 
-export const NAMUWIKI_PERSONA: Persona = {
-  name: "나무위키",
-  description: "나무위키 특유의 문체와 스타일로 문서를 작성합니다",
-  system_prompt: `당신은 나무위키 스타일의 위키 편집자입니다. 다음 특징을 반드시 지켜주세요:
+/** Directory containing built-in persona JSON files (shipped with the package) */
+function getPersonasDir(): string {
+  // Works both in dev (src/) and built (dist/) — personas/ is at project root
+  return join(dirname(__dirname), "personas");
+}
 
-1. **문체**: 해요체(~입니다/~합니다)를 기본으로 하되, 가끔 반말(~이다/~한다)을 섞어 사용
-2. **유머**: 적절한 곳에 ~~취소선 드립~~, (괄호 안의 부연설명), [1] 각주 스타일의 코멘트를 삽입
-3. **강조**: 중요한 키워드는 **굵게** 처리하고, 핵심 개념은 반복 강조
-4. **서술 톤**: 백과사전적이면서도 친근한 톤. "~라고 한다", "~라고 카더라" 등의 표현 활용
-5. **구조**: 목차가 잘 정리된 체계적 구조. 소제목을 적극 활용
-6. **부가 정보**: "여담으로~", "참고로~", "사실~" 등의 표현으로 부가 정보 추가
-7. **링크**: 관련 개념에 적극적으로 [[위키 링크]]를 사용
+/** Load a single persona from a JSON file */
+function loadPersonaFile(filePath: string): Persona {
+  return JSON.parse(readFileSync(filePath, "utf-8")) as Persona;
+}
 
-절대 딱딱한 교과서 문체로 쓰지 마세요. 읽는 사람이 재미있게 학습할 수 있도록 작성해주세요.`,
-  content_style: `Write in Korean 나무위키 style:
-- Use 해요체 with occasional 반말 mix
-- Add ~~strikethrough humor~~ and (parenthetical asides)
-- Bold **key terms** generously
-- Use phrases like "~라고 한다", "여담으로~", "참고로~"
-- Be encyclopedic yet friendly and entertaining
-- Structure with clear subsections
-- Use [[wiki links]] actively for related concepts`,
-};
+/** Load all built-in personas from the personas/ directory */
+export function loadBuiltinPersonas(): Persona[] {
+  const dir = getPersonasDir();
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter(f => f.endsWith(".json"))
+    .map(f => loadPersonaFile(join(dir, f)));
+}
+
+/** Get the default persona (first built-in, or fallback) */
+export function getDefaultPersona(): Persona {
+  const builtins = loadBuiltinPersonas();
+  if (builtins.length > 0) return builtins[0];
+  // Minimal fallback if no persona files exist
+  return { name: "default", description: "Default wiki style", system_prompt: "", content_style: "" };
+}
 
 export function defaultConfig(name: string): KiwiConfig {
+  const builtins = loadBuiltinPersonas();
   return {
     project: { name, created: new Date().toISOString().slice(0, 10) },
     build: { output_dir: SITE_DIR },
     llm: { provider: "gemini", model: "gemini-2.0-flash-lite", api_key: "", endpoint: "" },
     deploy: { target: "gh-pages" },
-    personas: [NAMUWIKI_PERSONA],
-    active_persona: "나무위키",
+    personas: builtins.length > 0 ? builtins : [getDefaultPersona()],
+    active_persona: builtins[0]?.name || "default",
   };
 }
 
@@ -82,11 +87,12 @@ export function loadConfig(root: string): KiwiConfig {
   }
   // Migrate: add default persona if missing
   if (!raw.personas || !raw.personas.length) {
-    raw.personas = [NAMUWIKI_PERSONA];
-    raw.active_persona = "나무위키";
+    const builtins = loadBuiltinPersonas();
+    raw.personas = builtins.length > 0 ? builtins : [getDefaultPersona()];
+    raw.active_persona = raw.personas[0]?.name || "default";
   }
   if (!raw.active_persona) {
-    raw.active_persona = raw.personas[0]?.name || "나무위키";
+    raw.active_persona = raw.personas[0]?.name || "default";
   }
   return raw as KiwiConfig;
 }
