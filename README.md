@@ -8,6 +8,7 @@
 
 전공책, PDF, 웹 콘텐츠를 넣으면 — LLM이 챕터/개념별로 분석하여 상호 링크된 학습 위키를 자동 생성합니다.
 
+[![npm](https://img.shields.io/npm/v/@open330/kiwimu?style=flat-square&color=cb3837&logo=npm)](https://www.npmjs.com/package/@open330/kiwimu)
 [![Bun](https://img.shields.io/badge/Bun-1.0+-fbf0df?style=flat-square&logo=bun&logoColor=black)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://typescriptlang.org)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
@@ -16,16 +17,28 @@
 
 ---
 
+## 30초 데모 체험
+
+API key 없이 바로 체험할 수 있습니다:
+
+```bash
+mkdir my-wiki && cd my-wiki
+bunx @open330/kiwimu init --demo
+# → 양자역학 샘플 위키 + 학습 퀴즈가 즉시 생성됩니다
+# → http://localhost:8000 에서 확인하세요
+```
+
+---
+
 ## Quickstart for Agents
 
 <div><img src="https://quickstart-for-agents.vercel.app/api/header.svg?theme=claude-code&logo=kiwimu&title=Set+up+a+learning+wiki+from+any+textbook+or+URL&lang=Agents&font=mono&mascot=hat" width="100%" /></div>
 
 ```
-git clone https://github.com/Open330/kiwimu.git && cd kiwimu && bun install
 mkdir my-wiki && cd my-wiki
-bunx kiwimu init
-bunx kiwimu add "<YOUR_URL_OR_PDF>"
-bunx kiwimu serve
+bunx @open330/kiwimu init
+bunx @open330/kiwimu add "<YOUR_URL_OR_PDF>"
+bunx @open330/kiwimu serve
 ```
 
 <div><img src="https://quickstart-for-agents.vercel.app/api/footer.svg?theme=claude-code&text=copy+this+prompt+%C2%B7+paste+into+your+agent+%C2%B7+get+a+learning+wiki&font=mono" width="100%" /></div>
@@ -40,10 +53,14 @@ Kiwi Mu는 LLM을 활용해 이 연결을 **자동으로** 만들어, 지식을 
 - **LLM 기반 문서 분석** — 챕터/섹션 구조를 보존한 원본 페이지 + 핵심 개념별 자동 생성 페이지
 - **원본/개념 분리** — 📖 원본 문서와 📝 개념 문서를 시각적으로 구분
 - **자동 상호 링크** — 원본↔개념 간 유기적 cross-link + 외부 참고 자료 (Wikipedia 등)
+- **학습 퀴즈** — 개념 페이지 기반 빈칸 채우기 / OX / 단답형 퀴즈 자동 생성
 - **지식 그래프** — D3.js 인터랙티브 그래프 (원본: 파란색, 개념: 초록색)
+- **데모 모드** — API key 없이 `--demo`로 즉시 체험
+- **다양한 파일 지원** — URL, PDF, DOCX, PPTX, PPT, DOC, KEY, RTF
+- **4개 LLM 프로바이더** — Google Gemini, Azure OpenAI, OpenAI, Anthropic
+- **다크 모드** — 시스템 테마에 자동 대응
+- **모바일 지원** — 햄버거 메뉴 + 슬라이드 사이드바
 - **웹 UI** — 브라우저에서 문서 추가, 설정 변경, 빌드 실행
-- **다양한 파일 지원** — URL, PDF, DOCX, PPTX, PPT, DOC, KEY
-- **다중 LLM 프로바이더** — Google Gemini, Azure OpenAI, OpenAI, Anthropic
 - **토큰 사용량 추적** — API 호출 수, 토큰, 예상 비용을 웹에서 확인
 - **원클릭 배포** — GitHub Pages / Vercel
 
@@ -52,15 +69,32 @@ Kiwi Mu는 LLM을 활용해 이 연결을 **자동으로** 만들어, 지식을 
 ### 설치
 
 ```bash
-git clone https://github.com/Open330/kiwimu.git
-cd kiwimu && bun install
+# npm/bunx로 바로 사용 (설치 불필요)
+bunx @open330/kiwimu init
+
+# 또는 글로벌 설치
+bun add -g @open330/kiwimu
 ```
+
+### 데모 모드 (API key 불필요)
+
+```bash
+mkdir my-wiki && cd my-wiki
+bunx @open330/kiwimu init --demo
+```
+
+양자역학 샘플 위키가 생성되어 바로 체험할 수 있습니다:
+- 📖 원본 문서 + 📝 개념 페이지
+- 🔗 자동 상호 링크
+- 📊 지식 그래프
+- 📝 학습 퀴즈
+- 🎲 임의 문서 탐험
 
 ### 프로젝트 생성 (Interactive CLI)
 
 ```bash
 mkdir my-wiki && cd my-wiki
-bunx kiwimu init
+bunx @open330/kiwimu init
 ```
 
 Interactive 프롬프트가 실행됩니다:
@@ -86,68 +120,68 @@ Interactive 프롬프트가 실행됩니다:
 🥝 'Radio Astronomy Wiki' 위키가 생성되었습니다!
 ```
 
-이름을 바로 지정할 수도 있습니다:
-
-```bash
-bunx kiwimu init "My Study Wiki"
-```
-
 ### 문서 추가
 
 ```bash
 # URL 추가
-bunx kiwimu add "https://www.cv.nrao.edu/~sransom/web/Ch1.html"
+bunx @open330/kiwimu add "https://www.cv.nrao.edu/~sransom/web/Ch1.html"
 
-# PDF 추가
-bunx kiwimu add textbook.pdf
+# 파일 추가 (PDF, DOCX, PPTX, DOC, PPT, KEY, RTF)
+bunx @open330/kiwimu add textbook.pdf
+bunx @open330/kiwimu add lecture.pptx
 ```
 
 LLM이 문서를 분석하여:
 1. 📖 **원본 페이지** — 원래 챕터/섹션 구조 보존
 2. 📝 **개념 페이지** — 핵심 용어·정의·법칙 자동 생성
 3. 🔗 **Cross-link** — 원본↔개념 간 유기적 연결
+4. 📝 **퀴즈** — 개념별 학습 퀴즈 자동 생성
+
+### 학습 퀴즈
+
+```bash
+# 터미널에서 퀴즈 풀기
+bunx @open330/kiwimu quiz
+
+# 문제 수 지정
+bunx @open330/kiwimu quiz -n 10
+```
+
+웹에서도 `http://localhost:8000/quiz.html`에서 카드 플립 방식으로 퀴즈를 풀 수 있습니다.
 
 ### 빌드 및 서버
 
 ```bash
 # 정적 사이트 빌드
-bunx kiwimu build
+bunx @open330/kiwimu build
 
 # 로컬 서버 실행 (웹에서 문서 추가 가능)
-bunx kiwimu serve
+bunx @open330/kiwimu serve
 # → http://localhost:8000
 
 # 포트 변경
-bunx kiwimu serve -p 3000
-
-# 네트워크에 공개 (0.0.0.0)
-bunx kiwimu serve --host 0.0.0.0
+bunx @open330/kiwimu serve -p 3000
 ```
-
-### 웹 UI에서 문서 추가
-
-`kiwimu serve` 실행 후 http://localhost:8000 에서:
-- **🔗 URL 탭** — URL 입력 후 추가
-- **📄 파일 업로드 탭** — PDF, DOCX, PPTX 등 드래그앤드롭 업로드
-- 진행 상태 실시간 표시, 완료 시 자동 새로고침
 
 ### 관리 페이지
 
-http://localhost:8000/admin 에서:
+`kiwimu serve` 실행 후 콘솔에 표시되는 admin URL로 접속:
 - 위키 이름 변경
 - LLM 프로바이더/모델/API Key 설정
 - 토큰 사용량 및 예상 비용 확인
-- 등록된 소스 목록
+- 파일 업로드 (PDF, DOCX, PPTX 등)
+- URL 추가
 - 수동 빌드 실행
+- 페르소나 관리
 
 ### 배포
 
 ```bash
 # GitHub Pages (기본)
-bunx kiwimu deploy
+bunx @open330/kiwimu deploy
 
 # Vercel
-bunx kiwimu deploy --target vercel
+bunx @open330/kiwimu deploy --target vercel
 ```
 
 ## Commands
@@ -155,10 +189,13 @@ bunx kiwimu deploy --target vercel
 | 명령 | 설명 |
 |------|------|
 | `kiwimu init [name]` | 새 위키 프로젝트 생성 (interactive CLI) |
-| `kiwimu add <source>` | URL 또는 파일 추가 (LLM 분석 + 링크 생성) |
+| `kiwimu init --demo` | 샘플 데이터로 즉시 체험 (API key 불필요) |
+| `kiwimu add <source>` | URL 또는 파일 추가 (PDF, DOCX, PPTX, DOC, PPT, KEY, RTF) |
 | `kiwimu build` | 정적 위키 사이트 빌드 |
-| `kiwimu serve [-p port] [--host host]` | 웹 서버 실행 (문서 추가/관리 가능) |
-| `kiwimu deploy` | GitHub Pages / Vercel에 배포 |
+| `kiwimu serve [-p port]` | 웹 서버 실행 (문서 추가/관리 가능) |
+| `kiwimu quiz [-n count]` | 터미널에서 학습 퀴즈 풀기 |
+| `kiwimu expand [--provider]` | LLM으로 문서 내용 확장 (선택) |
+| `kiwimu deploy [--target]` | GitHub Pages / Vercel에 배포 |
 | `kiwimu status` | 현재 위키 상태 표시 |
 
 ## Supported File Formats
@@ -178,36 +215,40 @@ bunx kiwimu deploy --target vercel
 |-----------|----------|------|
 | **Google Gemini** | `gemini-2.0-flash-lite` | [무료 API key](https://aistudio.google.com/) |
 | Azure OpenAI | `gpt-5-nano` | Azure 구독 필요 |
-| OpenAI | `gpt-4o-mini` | API key 필요 |
+| OpenAI | `gpt-4o` | API key 필요 |
 | Anthropic | `claude-sonnet-4-20250514` | API key 필요 |
 
 ## Architecture
 
 ```
-소스 (URL / PDF / DOCX / PPTX)
+소스 (URL / PDF / DOCX / PPTX / DOC / PPT / KEY / RTF)
     ↓
-[ Ingest ]    ── Cheerio / pdf-parse / mammoth / jszip
+[ Ingest ]      ── Cheerio / pdf-parse / mammoth / jszip / textutil
     ↓
-[ Phase 1 ]   ── LLM: 원본 구조 추출 (📖 원본 페이지)
+[ Phase 1 ]     ── LLM: 원본 구조 추출 (📖 원본 페이지) — 병렬 처리 (concurrency=3)
     ↓
-[ Phase 2 ]   ── LLM: 개념 추출 (📝 개념 페이지)
+[ Phase 2 ]     ── LLM: 개념 추출 (📝 개념 페이지)
     ↓
-[ Phase 3 ]   ── [[wiki link]] 해석 + 원본↔개념 cross-link
+[ Phase 2.5 ]   ── LLM: 학습 퀴즈 자동 생성 (📝 퀴즈) — 병렬 처리
     ↓
-[ Build ]     ── 정적 HTML 생성 (탭 사이드바, KaTeX, 지식 그래프)
+[ Phase 3 ]     ── [[wiki link]] 해석 + 원본↔개념 cross-link
     ↓
-[ Deploy ]    ── GitHub Pages / Vercel
+[ Build ]       ── 정적 HTML (사이드바, KaTeX, 지식 그래프, 퀴즈, 다크 모드)
+    ↓
+[ Deploy ]      ── GitHub Pages / Vercel
 ```
 
 ```
 project-dir/
 ├── kiwi.toml          # 프로젝트 + LLM 설정
-├── kiwi.db            # SQLite (문서, 링크, 사용량)
+├── kiwi.db            # SQLite (문서, 링크, 퀴즈, 사용량)
 ├── uploads/           # 업로드된 파일
 └── _site/             # 빌드 결과
-    ├── index.html     # 홈 (문서 추가 UI + 사용량 대시보드)
+    ├── index.html     # 홈 (문서 목록)
     ├── graph.html     # 지식 그래프
+    ├── quiz.html      # 학습 퀴즈
     ├── wiki/          # 각 문서 페이지
+    │   └── random.html  # 임의 문서
     ├── static/        # CSS, JS, 로고
     └── search-index.json
 ```
@@ -220,10 +261,18 @@ project-dir/
 - **Cheerio** — 웹 페이지 파싱
 - **Mammoth** — DOCX 파싱
 - **JSZip** — PPTX 파싱
-- **Marked** — Markdown → HTML
+- **Marked** + **sanitize-html** — Markdown → 안전한 HTML
 - **D3.js** — 지식 그래프
 - **KaTeX** — 수학 수식 렌더링
 - **gh-pages** — GitHub Pages 배포
+
+## Security
+
+- Bearer 토큰 인증 (serve 모드)
+- SSRF 방지 (프라이빗 IP 차단, 리다이렉트 재검증)
+- Path Traversal 방지 (resolve 검증)
+- XSS 방지 (sanitize-html, CSP 헤더, escapeHtml)
+- 파일 업로드 제한 (50MB)
 
 ## License
 
