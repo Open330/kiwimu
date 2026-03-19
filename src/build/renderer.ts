@@ -68,6 +68,7 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
   const sourcePages = store.listSourcePages();
   const conceptPages = store.listConceptPages();
   const wikiName = config.project.name;
+  const backlinksMap = store.getAllBacklinksGrouped();
 
   for (const page of pages) {
     let htmlContent = await marked(page.content);
@@ -75,7 +76,7 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
 
     const { body, externalRefs } = extractExternalRefs(htmlContent);
     const toc = generateToc(page.content);
-    const backlinks = store.getBacklinks(page.id).map((bl) => ({
+    const backlinks = (backlinksMap.get(page.id) || []).map((bl) => ({
       slug: bl.slug,
       title: bl.title,
       pageType: bl.page_type,

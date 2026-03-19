@@ -53,6 +53,9 @@ function base(opts: {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${escapeHtml(opts.title)}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
@@ -233,11 +236,11 @@ export function renderIndex(opts: {
 
         <section class="index-section">
             <h2>📖 원본 문서</h2>
-            <div class="page-cards">${sourceCards}</div>
+            <div class="page-cards">${sourceCards.length > 0 ? sourceCards : '<div class="empty-state">아직 원본 문서가 없습니다. URL이나 파일을 추가해보세요!</div>'}</div>
         </section>
         <section class="index-section">
             <h2>📝 개념 문서</h2>
-            <div class="page-cards">${conceptCards}</div>
+            <div class="page-cards">${conceptCards.length > 0 ? conceptCards : '<div class="empty-state">아직 개념 문서가 없습니다. 원본 문서를 추가하면 자동으로 생성됩니다.</div>'}</div>
         </section>
         <section class="index-section">
             <div class="quick-links">
@@ -247,6 +250,7 @@ export function renderIndex(opts: {
     </div>
 </div>
 <script>
+var _ah = window.__AUTH_HEADERS__ || {};
 // Add tabs
 document.querySelectorAll('.add-tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -296,11 +300,11 @@ document.getElementById('file-form').addEventListener('submit', async (e) => {
     formData.append('file', fileInput.files[0]);
 
     try {
-        const resp = await fetch('/api/upload', { method: 'POST', body: formData });
+        const resp = await fetch('/api/upload', { method: 'POST', headers: _ah, body: formData });
         const data = await resp.json();
         if (!resp.ok) { status.className = 'add-status error'; status.textContent = '❌ ' + data.error; uploadBtn.disabled = false; uploadBtn.textContent = '업로드'; return; }
         const poll = setInterval(async () => {
-            const r = await fetch('/api/status'); const s = await r.json();
+            const r = await fetch('/api/status', { headers: _ah }); const s = await r.json();
             status.textContent = '⏳ ' + s.processingStatus;
             if (!s.processing) { clearInterval(poll); status.className = 'add-status success'; status.textContent = '✅ 완료! 새로고침 중...'; setTimeout(() => location.reload(), 1500); }
         }, 2000);
@@ -325,7 +329,7 @@ document.getElementById('url-form').addEventListener('submit', async (e) => {
     try {
         const resp = await fetch('/api/add', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { ..._ah, 'Content-Type': 'application/json' },
             body: JSON.stringify({ source }),
         });
         const data = await resp.json();
@@ -339,7 +343,7 @@ document.getElementById('url-form').addEventListener('submit', async (e) => {
 
         // Poll for completion
         const poll = setInterval(async () => {
-            const r = await fetch('/api/status');
+            const r = await fetch('/api/status', { headers: _ah });
             const s = await r.json();
             status.textContent = '⏳ ' + s.processingStatus;
             if (!s.processing) {
@@ -363,7 +367,7 @@ document.getElementById('url-form').addEventListener('submit', async (e) => {
 // Load usage stats
 (async () => {
     try {
-        const resp = await fetch('/api/status');
+        const resp = await fetch('/api/status', { headers: _ah });
         const data = await resp.json();
         const u = data.usage;
         if (u && u.totalTokens > 0) {
@@ -424,6 +428,7 @@ export function renderAdmin(opts: {
   llmConfig: { provider: string; model: string; api_key: string; endpoint: string };
   personas: Array<{ name: string; description: string; system_prompt: string; content_style: string }>;
   activePersona: string;
+  authToken?: string;
 }): string {
   const maskedKey = opts.llmConfig.api_key ? "••••" + opts.llmConfig.api_key.slice(-4) : "(미설정)";
   const sourceRows = opts.sources
@@ -439,6 +444,9 @@ export function renderAdmin(opts: {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>관리 - ${escapeHtml(opts.wikiName)}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
     <style>
         .admin-page { max-width: 900px; margin: 80px auto; padding: 0 24px; }
@@ -617,15 +625,17 @@ export function renderAdmin(opts: {
         </div>
     </div>
     <script>
+    const AUTH_TOKEN = ${opts.authToken ? JSON.stringify(opts.authToken) : "''"};
+    const authHeaders = AUTH_TOKEN ? { 'Authorization': 'Bearer ' + AUTH_TOKEN } : {};
     async function runAction(url, label) {
         const status = document.getElementById('action-status');
         status.textContent = '⏳ ' + label + ' 중...';
         status.style.color = '#e65100';
         try {
-            const r = await fetch(url, { method: 'POST' });
+            const r = await fetch(url, { method: 'POST', headers: authHeaders });
             if (!r.ok) { const d = await r.json(); status.textContent = '❌ ' + (d.error || '실패'); status.style.color = '#c62828'; return; }
             const poll = setInterval(async () => {
-                const sr = await fetch('/api/status');
+                const sr = await fetch('/api/status', { headers: authHeaders });
                 const s = await sr.json();
                 status.textContent = '⏳ ' + s.processingStatus;
                 if (!s.processing) {
@@ -643,7 +653,7 @@ export function renderAdmin(opts: {
         const name = document.getElementById('wiki-name').value.trim();
         if (!name) return;
         try {
-            const r = await fetch('/api/settings', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ wiki_name: name }) });
+            const r = await fetch('/api/settings', { method: 'POST', headers: {...authHeaders, 'Content-Type':'application/json'}, body: JSON.stringify({ wiki_name: name }) });
             if (r.ok) { status.textContent = '✅ 저장됨'; status.style.color = '#2e7d32'; setTimeout(() => location.reload(), 1000); }
             else { status.textContent = '❌ 실패'; status.style.color = '#c62828'; }
         } catch { status.textContent = '❌ 연결 실패'; status.style.color = '#c62828'; }
@@ -663,7 +673,7 @@ export function renderAdmin(opts: {
         const ep = document.getElementById('llm-endpoint').value;
         if (ep) body.endpoint = ep;
         try {
-            const r = await fetch('/api/settings', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+            const r = await fetch('/api/settings', { method: 'POST', headers: {...authHeaders, 'Content-Type':'application/json'}, body: JSON.stringify(body) });
             if (r.ok) { status.textContent = '✅ 저장됨'; status.style.color = '#2e7d32'; setTimeout(() => location.reload(), 1000); }
             else { status.textContent = '❌ 실패'; status.style.color = '#c62828'; }
         } catch { status.textContent = '❌ 연결 실패'; status.style.color = '#c62828'; }
@@ -675,7 +685,7 @@ export function renderAdmin(opts: {
     async function activatePersona(name) {
         const status = document.getElementById('persona-activate-status');
         try {
-            const r = await fetch('/api/personas', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'activate', name }) });
+            const r = await fetch('/api/personas', { method: 'POST', headers: {...authHeaders, 'Content-Type':'application/json'}, body: JSON.stringify({ action: 'activate', name }) });
             if (r.ok) { status.textContent = '✅'; status.style.color = '#2e7d32'; setTimeout(() => location.reload(), 800); }
             else { status.textContent = '❌'; status.style.color = '#c62828'; }
         } catch { status.textContent = '❌'; status.style.color = '#c62828'; }
@@ -719,7 +729,7 @@ export function renderAdmin(opts: {
             ? { action: 'update', original_name: originalName, persona }
             : { action: 'add', persona };
         try {
-            const r = await fetch('/api/personas', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+            const r = await fetch('/api/personas', { method: 'POST', headers: {...authHeaders, 'Content-Type':'application/json'}, body: JSON.stringify(body) });
             if (r.ok) { closePersonaModal(); location.reload(); }
             else { const d = await r.json(); alert(d.error || '실패'); }
         } catch { alert('연결 실패'); }
@@ -728,7 +738,7 @@ export function renderAdmin(opts: {
     async function deletePersona(name) {
         if (!confirm(name + ' 페르소나를 삭제하시겠습니까?')) return;
         try {
-            const r = await fetch('/api/personas', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'delete', name }) });
+            const r = await fetch('/api/personas', { method: 'POST', headers: {...authHeaders, 'Content-Type':'application/json'}, body: JSON.stringify({ action: 'delete', name }) });
             if (r.ok) location.reload();
             else { const d = await r.json(); alert(d.error || '실패'); }
         } catch { alert('연결 실패'); }

@@ -2,7 +2,6 @@ import { readFileSync } from "fs";
 
 export async function extractTextFromPptx(filePath: string): Promise<{ title: string; text: string }> {
   // PPTX is a ZIP containing XML files
-  const { Decompress } = await import("bun");
   const JSZip = (await import("jszip")).default;
 
   const buffer = readFileSync(filePath);

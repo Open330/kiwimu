@@ -63,6 +63,10 @@ CREATE TABLE IF NOT EXISTS links (
   anchor_text TEXT,
   PRIMARY KEY (from_page_id, to_page_id, anchor_text)
 );
+CREATE INDEX IF NOT EXISTS idx_pages_source_id ON pages(source_id);
+CREATE INDEX IF NOT EXISTS idx_pages_page_type ON pages(page_type);
+CREATE INDEX IF NOT EXISTS idx_links_to_page ON links(to_page_id);
+CREATE INDEX IF NOT EXISTS idx_links_from_page ON links(from_page_id);
 `;
 
 export class Store {
@@ -105,6 +109,10 @@ export class Store {
 
   listSources(): Source[] {
     return this.db.prepare("SELECT * FROM sources ORDER BY fetched_at DESC").all() as Source[];
+  }
+
+  listSourcesMeta(): any[] {
+    return this.db.prepare("SELECT id, uri, type, title, fetched_at FROM sources ORDER BY id DESC").all();
   }
 
   // --- Pages ---
@@ -190,6 +198,22 @@ export class Store {
 
   getAllLinks(): Link[] {
     return this.db.prepare("SELECT * FROM links").all() as Link[];
+  }
+
+  getAllBacklinksGrouped(): Map<number, Array<{id: number; slug: string; title: string; page_type: string}>> {
+    const rows = this.db.prepare(`
+      SELECT l.to_page_id, p.id, p.slug, p.title, p.page_type
+      FROM links l
+      JOIN pages p ON p.id = l.from_page_id
+      ORDER BY l.to_page_id
+    `).all() as Array<{to_page_id: number; id: number; slug: string; title: string; page_type: string}>;
+
+    const map = new Map<number, Array<{id: number; slug: string; title: string; page_type: string}>>();
+    for (const row of rows) {
+      if (!map.has(row.to_page_id)) map.set(row.to_page_id, []);
+      map.get(row.to_page_id)!.push({ id: row.id, slug: row.slug, title: row.title, page_type: row.page_type });
+    }
+    return map;
   }
 
   // --- Usage ---

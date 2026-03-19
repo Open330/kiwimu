@@ -2,13 +2,15 @@
 
 import { Command } from "commander";
 import { join } from "path";
+import path from "path";
+import crypto from "crypto";
 import { CONFIG_FILE, DB_FILE, defaultConfig, findProjectRoot, getActivePersona, loadConfig, saveConfig } from "./config";
 import { Store } from "./store";
 
 const program = new Command()
   .name("kiwimu")
   .description("🥝 Kiwi Mu — 나만의 학습 위키를 만드세요")
-  .version("0.2.0");
+  .version("0.4.2");
 
 // --- init ---
 program
@@ -95,22 +97,24 @@ program
   .action(async (source: string) => {
     const root = findProjectRoot();
     const store = new Store(join(root, DB_FILE));
+    try {
+      const isUrl = source.startsWith("http://") || source.startsWith("https://");
+      const isPdf = source.toLowerCase().endsWith(".pdf");
 
-    const isUrl = source.startsWith("http://") || source.startsWith("https://");
-    const isPdf = source.toLowerCase().endsWith(".pdf");
-
-    if (isUrl) {
-      await addUrl(store, source);
-    } else if (isPdf) {
-      await addPdf(store, source);
-    } else {
-      console.log(`\x1b[31m지원하지 않는 소스 형식: ${source}\x1b[0m`);
-      console.log("URL (http/https) 또는 PDF 파일을 입력해주세요.");
+      if (isUrl) {
+        const { validateUrl } = await import("./ingest/web");
+        validateUrl(source);
+        await addUrl(store, source);
+      } else if (isPdf) {
+        await addPdf(store, source);
+      } else {
+        console.log(`\x1b[31m지원하지 않는 소스 형식: ${source}\x1b[0m`);
+        console.log("URL (http/https) 또는 PDF 파일을 입력해주세요.");
+        return;
+      }
+    } finally {
       store.close();
-      return;
     }
-
-    store.close();
   });
 
 async function initLLM(root: string) {
@@ -190,43 +194,44 @@ program
     const root = findProjectRoot();
     const config = loadConfig(root);
     const store = new Store(join(root, DB_FILE));
-
-    const provider: string = opts.provider || config.expand.provider;
-    if (!provider) {
-      console.log("\x1b[33m확장 프로바이더가 설정되지 않았습니다.\x1b[0m");
-      console.log("사용법: kiwimu expand --provider anthropic");
-      store.close();
-      return;
-    }
-
-    const allPages = store.listPages();
-    let pages = allPages;
-    if (opts.pages) {
-      pages = allPages.filter((p) => (opts.pages as string[]).includes(p.slug));
-    }
-
-    console.log(`\x1b[34m🧠 ${pages.length}개 문서를 확장합니다...\x1b[0m`);
-
-    const isCli = provider === "claude-cli" || provider === "codex-cli";
-    const { expandWithApi, expandWithCli } = await import("./expand/llm");
-
-    for (let i = 0; i < pages.length; i++) {
-      const page = pages[i];
-      console.log(`  [${i + 1}/${pages.length}] ${page.title}`);
-      try {
-        const newContent = isCli
-          ? await expandWithCli(page, allPages, provider.replace("-cli", ""))
-          : await expandWithApi(page, allPages, provider, opts.model);
-        store.updatePageContent(page.id, newContent);
-      } catch (e: any) {
-        console.log(`    \x1b[31m실패: ${e.message}\x1b[0m`);
+    try {
+      const provider: string = opts.provider || config.expand.provider;
+      if (!provider) {
+        console.log("\x1b[33m확장 프로바이더가 설정되지 않았습니다.\x1b[0m");
+        console.log("사용법: kiwimu expand --provider anthropic");
+        return;
       }
-    }
 
-    const { autoLinkPages } = await import("./pipeline/linker");
-    const linkCount = autoLinkPages(store);
-    console.log(`\x1b[32m✅ 확장 완료! (${linkCount}개 링크 갱신)\x1b[0m`);
-    store.close();
+      const allPages = store.listPages();
+      let pages = allPages;
+      if (opts.pages) {
+        pages = allPages.filter((p) => (opts.pages as string[]).includes(p.slug));
+      }
+
+      console.log(`\x1b[34m🧠 ${pages.length}개 문서를 확장합니다...\x1b[0m`);
+
+      const isCli = provider === "claude-cli" || provider === "codex-cli";
+      const { expandWithApi, expandWithCli } = await import("./expand/llm");
+
+      for (let i = 0; i < pages.length; i++) {
+        const page = pages[i];
+        console.log(`  [${i + 1}/${pages.length}] ${page.title}`);
+        try {
+          const newContent = isCli
+            ? await expandWithCli(page, allPages, provider.replace("-cli", ""))
+            : await expandWithApi(page, allPages, provider, opts.model);
+          store.updatePageContent(page.id, newContent);
+        } catch (e: any) {
+          console.log(`    \x1b[31m실패: ${e.message}\x1b[0m`);
+        }
+      }
+
+      const { autoLinkPages } = await import("./pipeline/linker");
+      const linkCount = autoLinkPages(store);
+      console.log(`\x1b[32m✅ 확장 완료! (${linkCount}개 링크 갱신)\x1b[0m`);
+    } finally {
+      store.close();
+    }
   });
 
 // --- build ---
@@ -237,14 +242,16 @@ program
     const root = findProjectRoot();
     const config = loadConfig(root);
     const store = new Store(join(root, DB_FILE));
+    try {
+      const { buildSite } = await import("./build/renderer");
 
-    const { buildSite } = await import("./build/renderer");
-
-    console.log("\x1b[34m🔨 위키 빌드 중...\x1b[0m");
-    const count = await buildSite(store, config, root);
-    console.log(`\x1b[32m✅ ${count}개 페이지가 빌드되었습니다!\x1b[0m`);
-    console.log(`  출력: ${join(root, config.build.output_dir)}/`);
-    store.close();
+      console.log("\x1b[34m🔨 위키 빌드 중...\x1b[0m");
+      const count = await buildSite(store, config, root);
+      console.log(`\x1b[32m✅ ${count}개 페이지가 빌드되었습니다!\x1b[0m`);
+      console.log(`  출력: ${join(root, config.build.output_dir)}/`);
+    } finally {
+      store.close();
+    }
   });
 
 // --- deploy ---
@@ -260,11 +267,14 @@ program
 
     // Auto-build before deploy
     const store = new Store(join(root, DB_FILE));
-    const { buildSite } = await import("./build/renderer");
-    console.log("\x1b[34m🔨 빌드 중...\x1b[0m");
-    const count = await buildSite(store, config, root);
-    console.log(`\x1b[32m  ${count}개 페이지 빌드 완료\x1b[0m`);
-    store.close();
+    try {
+      const { buildSite } = await import("./build/renderer");
+      console.log("\x1b[34m🔨 빌드 중...\x1b[0m");
+      const count = await buildSite(store, config, root);
+      console.log(`\x1b[32m  ${count}개 페이지 빌드 완료\x1b[0m`);
+    } finally {
+      store.close();
+    }
 
     console.log(`\x1b[34m🚀 ${opts.target}에 배포 중...\x1b[0m`);
 
@@ -317,8 +327,11 @@ program
 
     const port = parseInt(opts.port);
     const hostname = opts.host;
+    const authToken = crypto.randomUUID();
     console.log(`\x1b[32m🥝 Kiwi Mu 서버 시작!\x1b[0m`);
     console.log(`  http://${hostname === "0.0.0.0" ? "localhost" : hostname}:${port}`);
+    console.log(`  관리 페이지: http://${hostname === "0.0.0.0" ? "localhost" : hostname}:${port}/admin?token=${authToken}`);
+    console.log(`  인증 토큰: ${authToken}`);
     if (hostname === "0.0.0.0") console.log("  네트워크에 공개됨 (0.0.0.0)");
     console.log("  웹에서 문서 추가 가능합니다.\n");
 
@@ -327,6 +340,16 @@ program
       hostname,
       async fetch(req) {
         const url = new URL(req.url);
+
+        // ── Auth middleware for /api/* and /admin ──
+        if (url.pathname.startsWith("/api/") || url.pathname === "/admin") {
+          const authHeader = req.headers.get("Authorization");
+          const queryToken = url.searchParams.get("token");
+          const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+          if (bearerToken !== authToken && queryToken !== authToken) {
+            return Response.json({ error: "Unauthorized" }, { status: 401 });
+          }
+        }
 
         // ── API endpoints ──
 
@@ -342,6 +365,11 @@ program
             return Response.json({ error: "파일이 필요합니다" }, { status: 400 });
           }
 
+          const MAX_UPLOAD_SIZE = 50 * 1024 * 1024; // 50MB
+          if (file.size > MAX_UPLOAD_SIZE) {
+            return Response.json({ error: "파일 크기가 50MB를 초과합니다" }, { status: 413 });
+          }
+
           const ext = file.name.split(".").pop()?.toLowerCase() || "";
           const supported = ["pdf", "docx", "doc", "pptx", "ppt", "key", "rtf"];
           if (!supported.includes(ext)) {
@@ -352,7 +380,7 @@ program
           const uploadDir = join(root, "uploads");
           const { mkdirSync } = await import("fs");
           mkdirSync(uploadDir, { recursive: true });
-          const filePath = join(uploadDir, file.name);
+          const filePath = join(uploadDir, path.basename(file.name));
           await Bun.write(filePath, await file.arrayBuffer());
 
           isProcessing = true;
@@ -423,6 +451,13 @@ program
           const body = await req.json() as { source: string };
           if (!body.source) {
             return Response.json({ error: "source가 필요합니다" }, { status: 400 });
+          }
+
+          try {
+            const { validateUrl } = await import("./ingest/web");
+            validateUrl(body.source);
+          } catch (e: any) {
+            return Response.json({ error: e.message }, { status: 400 });
           }
 
           isProcessing = true;
@@ -575,7 +610,7 @@ program
         // Admin page
         if (url.pathname === "/admin") {
           const store = new Store(join(root, DB_FILE));
-          const sources = store.listSources();
+          const sources = store.listSourcesMeta();
           const usage = store.getUsageSummary();
           const configData = loadConfig(root);
           store.close();
@@ -588,12 +623,13 @@ program
             llmConfig: configData.llm,
             personas: configData.personas || [],
             activePersona: configData.active_persona || "",
+            authToken,
           }), { headers: { "Content-Type": "text/html" } });
         }
 
         if (url.pathname === "/api/status") {
           const store = new Store(join(root, DB_FILE));
-          const sources = store.listSources();
+          const sources = store.listSourcesMeta();
           const sourcePages = store.listSourcePages();
           const conceptPages = store.listConceptPages();
           const links = store.getAllLinks();
@@ -615,10 +651,20 @@ program
         let pathname = url.pathname;
         if (pathname === "/") pathname = "/index.html";
 
-        const filePath = join(siteDir, pathname);
-        const file = Bun.file(filePath);
+        const resolved = path.resolve(join(siteDir, pathname));
+        if (!resolved.startsWith(path.resolve(siteDir))) {
+          return new Response("Forbidden", { status: 403 });
+        }
+        const file = Bun.file(resolved);
 
         if (await file.exists()) {
+          // Inject auth token into index.html for API calls
+          if (pathname === "/index.html") {
+            let html = await file.text();
+            const tokenScript = `<script>window.__AUTH_TOKEN__=${JSON.stringify(authToken)};window.__AUTH_HEADERS__={'Authorization':'Bearer '+window.__AUTH_TOKEN__};</script>`;
+            html = html.replace("</head>", tokenScript + "</head>");
+            return new Response(html, { headers: { "Content-Type": "text/html" } });
+          }
           return new Response(file);
         }
         return new Response("Not Found", { status: 404 });
@@ -634,35 +680,37 @@ program
     const root = findProjectRoot();
     const config = loadConfig(root);
     const store = new Store(join(root, DB_FILE));
+    try {
+      const sources = store.listSources();
+      const sourcePages = store.listSourcePages();
+      const conceptPages = store.listConceptPages();
+      const links = store.getAllLinks();
 
-    const sources = store.listSources();
-    const sourcePages = store.listSourcePages();
-    const conceptPages = store.listConceptPages();
-    const links = store.getAllLinks();
+      console.log(`\n\x1b[1m🥝 ${config.project.name}\x1b[0m\n`);
+      console.log(`  소스     ${sources.length}`);
+      console.log(`  📖 원본  ${sourcePages.length}`);
+      console.log(`  📝 개념  ${conceptPages.length}`);
+      console.log(`  🔗 링크  ${links.length}`);
+      console.log(`  빌드     ${config.build.output_dir}`);
+      console.log(`  배포     ${config.deploy.target}`);
 
-    console.log(`\n\x1b[1m🥝 ${config.project.name}\x1b[0m\n`);
-    console.log(`  소스     ${sources.length}`);
-    console.log(`  📖 원본  ${sourcePages.length}`);
-    console.log(`  📝 개념  ${conceptPages.length}`);
-    console.log(`  🔗 링크  ${links.length}`);
-    console.log(`  빌드     ${config.build.output_dir}`);
-    console.log(`  배포     ${config.deploy.target}`);
-
-    if (sourcePages.length) {
-      console.log("\n\x1b[1m📖 원본 문서:\x1b[0m");
-      for (const p of sourcePages) {
-        console.log(`  • ${p.title} \x1b[2m(${p.slug})\x1b[0m`);
+      if (sourcePages.length) {
+        console.log("\n\x1b[1m📖 원본 문서:\x1b[0m");
+        for (const p of sourcePages) {
+          console.log(`  • ${p.title} \x1b[2m(${p.slug})\x1b[0m`);
+        }
       }
-    }
-    if (conceptPages.length) {
-      console.log("\n\x1b[1m📝 개념 문서:\x1b[0m");
-      for (const p of conceptPages) {
-        console.log(`  • ${p.title} \x1b[2m(${p.slug})\x1b[0m`);
+      if (conceptPages.length) {
+        console.log("\n\x1b[1m📝 개념 문서:\x1b[0m");
+        for (const p of conceptPages) {
+          console.log(`  • ${p.title} \x1b[2m(${p.slug})\x1b[0m`);
+        }
       }
-    }
 
-    console.log();
-    store.close();
+      console.log();
+    } finally {
+      store.close();
+    }
   });
 
 program.parse();

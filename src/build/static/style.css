@@ -24,8 +24,16 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-    border-radius: 0; /* Enforce sharp flat edges everywhere */
     box-shadow: none; /* Enforce no shadows */
+}
+
+/* Targeted border-radius reset for kiwimu elements only */
+.topbar, .sidebar, .content, .page-card, .toc-box,
+.search-dropdown, .backlinks li a, .stat-card, .quick-link,
+.file-drop, .add-form input, .add-form button,
+.config-card, .badge, .page-type-badge, .page-body table,
+.page-body blockquote, .page-body pre {
+    border-radius: 0;
 }
 
 body {
@@ -525,6 +533,16 @@ a:hover {
     grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
     gap: 8px;
     margin-bottom: 28px;
+}
+
+.empty-state {
+    grid-column: 1 / -1;
+    padding: 32px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 14px;
+    border: 2px dashed var(--border);
+    margin: 8px 0;
 }
 
 .page-card {

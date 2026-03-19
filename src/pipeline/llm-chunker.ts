@@ -5,10 +5,6 @@ import type { Persona } from "../config";
 
 // ── Phase 1: Extract original document structure ──
 
-const STRUCTURE_SYSTEM = `You are a document analyzer. Extract the chapter/section structure from this textbook content, preserving the original order and hierarchy.
-
-Return valid JSON only. No markdown fences.`;
-
 const STRUCTURE_PROMPT = `Extract the document structure from this text. Preserve the original chapter/section ordering.
 
 Source: "{sourceTitle}"
@@ -347,31 +343,36 @@ export async function llmChunkDocument(
   const srcPages = allPages.filter(p => p.page_type === "source");
 
   // Build search terms: full title + key words from title (2+ words long)
-  const searchTerms: Array<{ term: string; concept: typeof conceptPages[0] }> = [];
+  const searchTerms: Array<{ term: string; concept: typeof conceptPages[0]; regex: RegExp | null }> = [];
   for (const concept of conceptPages) {
-    searchTerms.push({ term: concept.title, concept });
+    searchTerms.push({ term: concept.title, concept, regex: null });
     // Also try individual significant words from multi-word titles
     const words = concept.title.split(/\s+/).filter(w => w.length >= 4 && !/^(and|the|for|with|from|into)$/i.test(w));
     if (words.length >= 2) {
       // Try pairs of consecutive words
       for (let i = 0; i < words.length - 1; i++) {
-        searchTerms.push({ term: `${words[i]} ${words[i + 1]}`, concept });
+        searchTerms.push({ term: `${words[i]} ${words[i + 1]}`, concept, regex: null });
       }
     }
   }
   // Sort by term length descending for longest match first
   searchTerms.sort((a, b) => b.term.length - a.term.length);
 
+  // Pre-compile RegExp objects outside the page loop
+  for (const entry of searchTerms) {
+    if (entry.term.length < 3) continue;
+    const escaped = entry.term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    entry.regex = new RegExp(`(?<!\\[)(?<![\\w/])(${escaped})(?![\\w])(?!\\])(?![^[]*\\])`, "i");
+  }
+
   for (const srcPage of srcPages) {
     let content = srcPage.content;
     let modified = false;
     const linkedConcepts = new Set<number>();
 
-    for (const { term, concept } of searchTerms) {
+    for (const { term, concept, regex } of searchTerms) {
       if (linkedConcepts.has(concept.id)) continue; // One link per concept per page
-      if (term.length < 3) continue;
-      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const regex = new RegExp(`(?<!\\[)(?<![\\w/])(${escaped})(?![\\w])(?!\\])(?![^[]*\\])`, "i");
+      if (term.length < 3 || !regex) continue;
       const match = regex.exec(content);
       if (match) {
         const replacement = `[${match[1]}](/wiki/${concept.slug})`;
