@@ -9,7 +9,7 @@ export async function extractWithTextutil(filePath: string): Promise<{ title: st
   const textutilFormats = new Set(["doc", "rtf", "odt"]);
 
   if (textutilFormats.has(ext)) {
-    const proc = Bun.spawn(["textutil", "-convert", "txt", "-stdout", filePath], {
+    const proc = Bun.spawn(["textutil", "-convert", "txt", "-stdout", "--", filePath], {
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -26,12 +26,12 @@ export async function extractWithTextutil(filePath: string): Promise<{ title: st
   if (ext === "key") {
     // Try to extract text using mdimport/spotlight metadata
     try {
-      const proc = Bun.spawn(["mdimport", "-d2", filePath], { stdout: "pipe", stderr: "pipe" });
+      const proc = Bun.spawn(["mdimport", "-d2", "--", filePath], { stdout: "pipe", stderr: "pipe" });
       await proc.exited;
     } catch {}
 
     // Keynote files are directories or zip-like packages. Try strings extraction.
-    const proc = Bun.spawn(["strings", filePath], { stdout: "pipe", stderr: "pipe" });
+    const proc = Bun.spawn(["strings", "--", filePath], { stdout: "pipe", stderr: "pipe" });
     const raw = await new Response(proc.stdout).text();
     await proc.exited;
 
@@ -50,7 +50,7 @@ export async function extractWithTextutil(filePath: string): Promise<{ title: st
 
   // For .ppt (legacy PowerPoint), try textutil or strings
   if (ext === "ppt") {
-    const proc = Bun.spawn(["strings", filePath], { stdout: "pipe", stderr: "pipe" });
+    const proc = Bun.spawn(["strings", "--", filePath], { stdout: "pipe", stderr: "pipe" });
     const raw = await new Response(proc.stdout).text();
     await proc.exited;
 

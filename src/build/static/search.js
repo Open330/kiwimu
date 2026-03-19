@@ -12,6 +12,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
     }
 
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
     function fuzzyMatch(query, text) {
         query = query.toLowerCase();
         text = text.toLowerCase();
@@ -39,8 +45,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
         dropdown.innerHTML = results.map(r =>
             `<a href="/wiki/${r.slug}.html">
-                <strong>${r.title}</strong>
-                <div style="font-size:12px;color:#6c757d;margin-top:2px;">${r.preview.slice(0, 80)}...</div>
+                <strong>${escapeHtml(r.title)}</strong>
+                <div style="font-size:12px;color:#6c757d;margin-top:2px;">${escapeHtml(r.preview.slice(0, 80))}...</div>
             </a>`
         ).join("");
         dropdown.classList.add("active");

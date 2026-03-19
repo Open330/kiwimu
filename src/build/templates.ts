@@ -207,31 +207,10 @@ export function renderIndex(opts: {
     </div>
 
     <div class="index-grid">
-        <!-- Add document form -->
+        <!-- Add document link -->
         <section class="index-section add-section">
             <h2>➕ 문서 추가</h2>
-            <div class="add-tabs">
-                <button class="add-tab active" data-target="url-form">🔗 URL</button>
-                <button class="add-tab" data-target="file-form">📄 파일 업로드</button>
-            </div>
-            <form id="url-form" class="add-form add-panel active">
-                <input type="text" id="add-source" placeholder="URL을 입력하세요 (https://...)" autocomplete="off">
-                <button type="submit" id="add-btn">추가</button>
-            </form>
-            <form id="file-form" class="add-form add-panel" enctype="multipart/form-data">
-                <div class="file-drop" id="file-drop">
-                    <input type="file" id="file-input" accept=".pdf,.docx,.doc,.pptx,.ppt,.key,.rtf" hidden>
-                    <span class="file-drop-text">📁 파일을 드래그하거나 클릭하세요</span>
-                    <span class="file-drop-hint">PDF, DOCX, PPTX, PPT, KEY, RTF</span>
-                </div>
-                <button type="submit" id="upload-btn" disabled>업로드</button>
-            </form>
-            <div id="add-status" class="add-status" style="display:none"></div>
-        </section>
-
-        <!-- Usage stats -->
-        <section class="index-section">
-            <div id="usage-stats" class="usage-stats"></div>
+            <p>문서를 추가하려면 <a href="/admin">관리 페이지</a>에서 문서를 추가하세요.</p>
         </section>
 
         <section class="index-section">
@@ -248,142 +227,8 @@ export function renderIndex(opts: {
             </div>
         </section>
     </div>
-</div>
-<script>
-var _ah = window.__AUTH_HEADERS__ || {};
-// Add tabs
-document.querySelectorAll('.add-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-        document.querySelectorAll('.add-tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.add-panel').forEach(p => p.classList.remove('active'));
-        tab.classList.add('active');
-        document.getElementById(tab.dataset.target).classList.add('active');
-    });
-});
+</div>`;
 
-// File upload
-const fileInput = document.getElementById('file-input');
-const fileDrop = document.getElementById('file-drop');
-const uploadBtn = document.getElementById('upload-btn');
-
-fileInput.addEventListener('change', () => {
-    if (fileInput.files.length) {
-        fileDrop.querySelector('.file-drop-text').textContent = '📄 ' + fileInput.files[0].name;
-        uploadBtn.disabled = false;
-    }
-});
-
-fileDrop.addEventListener('dragover', (e) => { e.preventDefault(); fileDrop.classList.add('dragover'); });
-fileDrop.addEventListener('dragleave', () => fileDrop.classList.remove('dragover'));
-fileDrop.addEventListener('drop', (e) => {
-    e.preventDefault();
-    fileDrop.classList.remove('dragover');
-    fileInput.files = e.dataTransfer.files;
-    if (fileInput.files.length) {
-        fileDrop.querySelector('.file-drop-text').textContent = '📄 ' + fileInput.files[0].name;
-        uploadBtn.disabled = false;
-    }
-});
-fileDrop.addEventListener('click', () => fileInput.click());
-
-document.getElementById('file-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (!fileInput.files.length) return;
-    const status = document.getElementById('add-status');
-    uploadBtn.disabled = true;
-    uploadBtn.textContent = '처리 중...';
-    status.style.display = 'block';
-    status.className = 'add-status processing';
-    status.textContent = '⏳ 업로드 중...';
-
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-
-    try {
-        const resp = await fetch('/api/upload', { method: 'POST', headers: _ah, body: formData });
-        const data = await resp.json();
-        if (!resp.ok) { status.className = 'add-status error'; status.textContent = '❌ ' + data.error; uploadBtn.disabled = false; uploadBtn.textContent = '업로드'; return; }
-        const poll = setInterval(async () => {
-            const r = await fetch('/api/status', { headers: _ah }); const s = await r.json();
-            status.textContent = '⏳ ' + s.processingStatus;
-            if (!s.processing) { clearInterval(poll); status.className = 'add-status success'; status.textContent = '✅ 완료! 새로고침 중...'; setTimeout(() => location.reload(), 1500); }
-        }, 2000);
-    } catch (err) { status.className = 'add-status error'; status.textContent = '❌ 연결 실패'; uploadBtn.disabled = false; uploadBtn.textContent = '업로드'; }
-});
-
-// URL add form
-document.getElementById('url-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const input = document.getElementById('add-source');
-    const btn = document.getElementById('add-btn');
-    const status = document.getElementById('add-status');
-    const source = input.value.trim();
-    if (!source) return;
-
-    btn.disabled = true;
-    btn.textContent = '처리 중...';
-    status.style.display = 'block';
-    status.className = 'add-status processing';
-    status.textContent = '⏳ 시작 중...';
-
-    try {
-        const resp = await fetch('/api/add', {
-            method: 'POST',
-            headers: { ..._ah, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source }),
-        });
-        const data = await resp.json();
-        if (!resp.ok) {
-            status.className = 'add-status error';
-            status.textContent = '❌ ' + data.error;
-            btn.disabled = false;
-            btn.textContent = '추가';
-            return;
-        }
-
-        // Poll for completion
-        const poll = setInterval(async () => {
-            const r = await fetch('/api/status', { headers: _ah });
-            const s = await r.json();
-            status.textContent = '⏳ ' + s.processingStatus;
-            if (!s.processing) {
-                clearInterval(poll);
-                status.className = 'add-status success';
-                status.textContent = '✅ 완료! 페이지를 새로고침합니다...';
-                btn.disabled = false;
-                btn.textContent = '추가';
-                input.value = '';
-                setTimeout(() => location.reload(), 1500);
-            }
-        }, 2000);
-    } catch (err) {
-        status.className = 'add-status error';
-        status.textContent = '❌ 연결 실패';
-        btn.disabled = false;
-        btn.textContent = '추가';
-    }
-});
-
-// Load usage stats
-(async () => {
-    try {
-        const resp = await fetch('/api/status', { headers: _ah });
-        const data = await resp.json();
-        const u = data.usage;
-        if (u && u.totalTokens > 0) {
-            document.getElementById('usage-stats').innerHTML =
-                '<h2>📊 LLM 사용량</h2>' +
-                '<div class="stats-grid">' +
-                '<div class="stat-card"><div class="stat-value">' + u.totalCalls + '</div><div class="stat-label">API 호출</div></div>' +
-                '<div class="stat-card"><div class="stat-value">' + u.promptTokens.toLocaleString() + '</div><div class="stat-label">입력 토큰</div></div>' +
-                '<div class="stat-card"><div class="stat-value">' + u.completionTokens.toLocaleString() + '</div><div class="stat-label">출력 토큰</div></div>' +
-                '<div class="stat-card"><div class="stat-value">' + u.totalTokens.toLocaleString() + '</div><div class="stat-label">총 토큰</div></div>' +
-                '<div class="stat-card accent"><div class="stat-value">$' + u.totalCost.toFixed(4) + '</div><div class="stat-label">예상 비용</div></div>' +
-                '</div>';
-        }
-    } catch {}
-})();
-</script>`;
 
   return base({
     title: `${opts.wikiName} - 대문`,
@@ -625,7 +470,7 @@ export function renderAdmin(opts: {
         </div>
     </div>
     <script>
-    const AUTH_TOKEN = ${opts.authToken ? JSON.stringify(opts.authToken) : "''"};
+    const AUTH_TOKEN = ${opts.authToken ? JSON.stringify(opts.authToken).replace(/</g, "\\u003c") : "''"};
     const authHeaders = AUTH_TOKEN ? { 'Authorization': 'Bearer ' + AUTH_TOKEN } : {};
     async function runAction(url, label) {
         const status = document.getElementById('action-status');
@@ -680,7 +525,7 @@ export function renderAdmin(opts: {
     });
 
     // ── Persona management ──
-    let personaData = ${JSON.stringify(opts.personas)};
+    let personaData = ${JSON.stringify(opts.personas).replace(/</g, "\\u003c")};
 
     async function activatePersona(name) {
         const status = document.getElementById('persona-activate-status');

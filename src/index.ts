@@ -387,8 +387,8 @@ program
           processingStatus = "파일 처리 시작...";
 
           (async () => {
+            const store = new Store(join(root, DB_FILE));
             try {
-              const store = new Store(join(root, DB_FILE));
               const { setLLMConfig, resetUsageStats, getUsageStats, getEstimatedCost } = await import("./llm-client");
               setLLMConfig(loadConfig(root).llm);
               const { llmChunkDocument } = await import("./pipeline/llm-chunker");
@@ -429,12 +429,12 @@ program
               processingStatus = "빌드 중...";
               const { buildSite } = await import("./build/renderer");
               await buildSite(store, config, root);
-              store.close();
 
               processingStatus = "완료!";
             } catch (e: any) {
               processingStatus = `오류: ${e.message}`;
             } finally {
+              store.close();
               setTimeout(() => { isProcessing = false; }, 2000);
             }
           })();
@@ -464,8 +464,8 @@ program
           processingStatus = "시작 중...";
 
           (async () => {
+            const store = new Store(join(root, DB_FILE));
             try {
-              const store = new Store(join(root, DB_FILE));
               const { setLLMConfig, resetUsageStats, getUsageStats, getEstimatedCost } = await import("./llm-client");
               setLLMConfig(loadConfig(root).llm);
               resetUsageStats();
@@ -489,12 +489,12 @@ program
               processingStatus = "빌드 중...";
               const { buildSite } = await import("./build/renderer");
               await buildSite(store, config, root);
-              store.close();
 
               processingStatus = "완료!";
             } catch (e: any) {
               processingStatus = `오류: ${e.message}`;
             } finally {
+              store.close();
               setTimeout(() => { isProcessing = false; }, 2000);
             }
           })();
@@ -517,14 +517,15 @@ program
 
           // Auto-rebuild site with new settings
           (async () => {
+            const store = new Store(join(root, DB_FILE));
             try {
-              const store = new Store(join(root, DB_FILE));
               const { buildSite } = await import("./build/renderer");
               await buildSite(store, currentConfig, root);
-              store.close();
               console.log("\x1b[32m✅ 설정 변경 후 사이트 리빌드 완료\x1b[0m");
             } catch (e: any) {
               console.log(`\x1b[31m리빌드 실패: ${e.message}\x1b[0m`);
+            } finally {
+              store.close();
             }
           })();
 
@@ -591,16 +592,16 @@ program
           isProcessing = true;
           processingStatus = "빌드 중...";
           (async () => {
+            const store = new Store(join(root, DB_FILE));
             try {
-              const store = new Store(join(root, DB_FILE));
               const { buildSite } = await import("./build/renderer");
               await buildSite(store, loadConfig(root), root);
-              store.close();
               processingStatus = "빌드 완료!";
               console.log("\x1b[32m✅ 수동 빌드 완료\x1b[0m");
             } catch (e: any) {
               processingStatus = `빌드 오류: ${e.message}`;
             } finally {
+              store.close();
               setTimeout(() => { isProcessing = false; }, 2000);
             }
           })();
@@ -658,12 +659,12 @@ program
         const file = Bun.file(resolved);
 
         if (await file.exists()) {
-          // Inject auth token into index.html for API calls
-          if (pathname === "/index.html") {
-            let html = await file.text();
-            const tokenScript = `<script>window.__AUTH_TOKEN__=${JSON.stringify(authToken)};window.__AUTH_HEADERS__={'Authorization':'Bearer '+window.__AUTH_TOKEN__};</script>`;
-            html = html.replace("</head>", tokenScript + "</head>");
-            return new Response(html, { headers: { "Content-Type": "text/html" } });
+          const isHtml = pathname.endsWith(".html");
+          const cspValue = "default-src 'self'; script-src 'self' 'unsafe-inline' cdn.jsdelivr.net d3js.org; style-src 'self' 'unsafe-inline' cdn.jsdelivr.net fonts.googleapis.com; font-src fonts.gstatic.com; img-src * data:; connect-src 'self'";
+          // index.html is served as-is without token injection (public page)
+          // Document management is done via /admin (auth required)
+          if (isHtml) {
+            return new Response(file, { headers: { "Content-Type": "text/html", "Content-Security-Policy": cspValue } });
           }
           return new Response(file);
         }

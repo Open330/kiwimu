@@ -1,6 +1,7 @@
 import { mkdirSync, rmSync, cpSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { marked } from "marked";
+import sanitizeHtml from "sanitize-html";
 import type { KiwiConfig } from "../config";
 import type { Store } from "../store";
 import { buildGraphData } from "../pipeline/graph";
@@ -72,6 +73,19 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
 
   for (const page of pages) {
     let htmlContent = await marked(page.content);
+    htmlContent = sanitizeHtml(htmlContent, {
+      allowedTags: sanitizeHtml.defaults.allowedTags.concat([
+        'img', 'details', 'summary', 'kbd', 'del', 's', 'sup', 'sub',
+        'span', 'div', 'section', 'figure', 'figcaption', 'mark'
+      ]),
+      allowedAttributes: {
+        ...sanitizeHtml.defaults.allowedAttributes,
+        '*': ['id', 'class', 'style'],
+        'img': ['src', 'alt', 'title', 'width', 'height'],
+        'a': ['href', 'title', 'target', 'rel'],
+      },
+      allowedSchemes: ['http', 'https', 'mailto'],
+    });
     htmlContent = fixWikiLinks(htmlContent);
 
     const { body, externalRefs } = extractExternalRefs(htmlContent);

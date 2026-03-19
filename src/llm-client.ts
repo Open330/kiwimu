@@ -70,11 +70,11 @@ export function printUsageSummary(): void {
 
 async function geminiComplete(system: string, userMessage: string, maxTokens: number): Promise<{ text: string; usage?: any }> {
   const config = getLLMConfig();
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.api_key}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent`;
 
   const resp = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-goog-api-key": config.api_key },
     body: JSON.stringify({
       system_instruction: { parts: [{ text: system }] },
       contents: [{ parts: [{ text: userMessage }] }],

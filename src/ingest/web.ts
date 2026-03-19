@@ -56,15 +56,35 @@ export function validateUrl(urlStr: string): void {
 
 export async function fetchPage(url: string): Promise<{ title: string; html: string }> {
   validateUrl(url);
-  const resp = await fetch(url, {
-    headers: { "User-Agent": "kiwimu/0.4 (learning wiki builder)" },
-  });
-  if (!resp.ok) throw new Error(`Failed to fetch ${url}: ${resp.status}`);
-  const html = await resp.text();
-  const $ = cheerio.load(html);
-  const title = $("title").text().trim() || url;
-  const body = $("body").html() || html;
-  return { title, html: body };
+
+  let currentUrl = url;
+  const maxRedirects = 5;
+
+  for (let i = 0; i <= maxRedirects; i++) {
+    const resp = await fetch(currentUrl, {
+      headers: { "User-Agent": "kiwimu/0.4 (learning wiki builder)" },
+      redirect: "manual",
+    });
+
+    if (resp.status >= 300 && resp.status < 400) {
+      const location = resp.headers.get("location");
+      if (!location) throw new Error(`Redirect without location header from ${currentUrl}`);
+      // Resolve relative redirect URLs
+      const redirectUrl = new URL(location, currentUrl).href;
+      validateUrl(redirectUrl); // Re-validate redirect target to prevent SSRF bypass
+      currentUrl = redirectUrl;
+      continue;
+    }
+
+    if (!resp.ok) throw new Error(`Failed to fetch ${currentUrl}: ${resp.status}`);
+    const html = await resp.text();
+    const $ = cheerio.load(html);
+    const title = $("title").text().trim() || url;
+    const body = $("body").html() || html;
+    return { title, html: body };
+  }
+
+  throw new Error(`Too many redirects fetching ${url}`);
 }
 
 export function extractSections(html: string): Section[] {

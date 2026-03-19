@@ -85,6 +85,25 @@ interface ConceptPage {
   suggested_links?: Array<{ text: string; url: string }>;
 }
 
+async function parallelMap<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const i = nextIndex++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}
+
 function splitByChapters(text: string): Array<{ chapterHint: string; text: string }> {
   const chapterPattern = /\n(?=(?:CHAPTER\s*\d+|Chapter\s+\d+)[A-Z\s])/g;
   const positions: number[] = [];
@@ -207,61 +226,55 @@ export async function llmChunkDocument(
   }
   console.log(`\x1b[34m🧠 Phase 1: 원본 구조 추출 (${chunks.length}개 청크)...\x1b[0m`);
 
-  // ── Phase 1: Extract source pages ──
-  let orderCounter = 0;
-  const sourcePageSummaries: string[] = [];
+  // ── Phase 1: Extract source pages (parallel LLM calls) ──
+  let completedCount = 0;
+  const structureSystem = getStructureSystem(persona);
 
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
-    console.log(`  [${i + 1}/${chunks.length}] ${chunk.chapterHint}`);
+  const chunkResults = await parallelMap(chunks, 3, async (chunk, i) => {
+    console.log(`  Phase 1: 처리 중 [${i + 1}/${chunks.length}] ${chunk.chapterHint}...`);
 
     const prompt = STRUCTURE_PROMPT
       .replace("{sourceTitle}", sourceTitle)
       .replace("{text}", chunk.text.slice(0, 80000));
 
-    const structureSystem = getStructureSystem(persona);
     try {
-      const raw = await chatComplete(structureSystem, prompt, 16384);
+      let raw = await chatComplete(structureSystem, prompt, 16384);
       if (!raw || raw.trim().length < 10) {
         console.log(`    \x1b[33m⚠ 빈 응답, 재시도...\x1b[0m`);
-        const retry = await chatComplete(structureSystem, prompt, 16384);
-        if (!retry || retry.trim().length < 10) {
+        raw = await chatComplete(structureSystem, prompt, 16384);
+        if (!raw || raw.trim().length < 10) {
           console.log(`    \x1b[31m✗ 재시도도 빈 응답\x1b[0m`);
-          continue;
+          completedCount++;
+          return [] as StructurePage[];
         }
-        const sections = parseJSON<StructurePage[]>(retry).filter(s => s.title && s.content && s.content.length > 30);
-        // fall through to process sections below
-        for (const section of sections) {
-          const slug = slugify(section.title);
-          if (!slug) continue;
-          const existing = store.getPage(slug);
-          if (existing) {
-            store.updatePageContent(existing.id, existing.content + "\n\n" + section.content);
-          } else {
-            store.addPage(slug, section.title, section.content, sourceId, slug, "source", orderCounter++);
-            sourcePageSummaries.push(`- ${section.title}: ${section.content.slice(0, 150).replace(/\n/g, " ")}`);
-          }
-        }
-        console.log(`    → ${sections.length}개 섹션`);
-        continue;
       }
       const sections = parseJSON<StructurePage[]>(raw).filter(s => s.title && s.content && s.content.length > 30);
-
-      for (const section of sections) {
-        const slug = slugify(section.title);
-        if (!slug) continue;
-
-        const existing = store.getPage(slug);
-        if (existing) {
-          store.updatePageContent(existing.id, existing.content + "\n\n" + section.content);
-        } else {
-          store.addPage(slug, section.title, section.content, sourceId, slug, "source", orderCounter++);
-          sourcePageSummaries.push(`- ${section.title}: ${section.content.slice(0, 150).replace(/\n/g, " ")}`);
-        }
-      }
-      console.log(`    → ${sections.length}개 섹션`);
+      completedCount++;
+      console.log(`    → ${sections.length}개 섹션 (완료 ${completedCount}/${chunks.length})`);
+      return sections;
     } catch (e: any) {
       console.log(`    \x1b[31m✗ 실패: ${e.message}\x1b[0m`);
+      completedCount++;
+      return [] as StructurePage[];
+    }
+  });
+
+  // Store results sequentially (SQLite writes must be sequential)
+  let orderCounter = 0;
+  const sourcePageSummaries: string[] = [];
+
+  for (const sections of chunkResults) {
+    for (const section of sections) {
+      const slug = slugify(section.title);
+      if (!slug) continue;
+
+      const existing = store.getPage(slug);
+      if (existing) {
+        store.updatePageContent(existing.id, existing.content + "\n\n" + section.content);
+      } else {
+        store.addPage(slug, section.title, section.content, sourceId, slug, "source", orderCounter++);
+        sourcePageSummaries.push(`- ${section.title}: ${section.content.slice(0, 150).replace(/\n/g, " ")}`);
+      }
     }
   }
 
