@@ -45,6 +45,17 @@ export const DEMO_PAGES = [
   }
 ];
 
+export const DEMO_QUIZZES = [
+  { page_slug: "하이젠베르크", question: "___은 위치와 운동량을 동시에 정확히 측정할 수 없다는 양자역학의 원리이다.", answer: "불확정성 원리", quiz_type: "fill_blank" },
+  { page_slug: "슈뢰딩거-방정식", question: "슈뢰딩거 방정식은 1926년에 발표되었다.", answer: "O", quiz_type: "ox" },
+  { page_slug: "양자-중첩", question: "양자 중첩에서 관측하면 어떤 현상이 일어나는가?", answer: "중첩이 붕괴하여 하나의 상태만 남는다", quiz_type: "short_answer" },
+  { page_slug: "양자-얽힘", question: "아인슈타인은 양자 얽힘을 '___한 원격 작용'이라 불렀다.", answer: "으스스", quiz_type: "fill_blank" },
+  { page_slug: "양자-중첩", question: "슈뢰딩거의 고양이 사고실험에서 고양이는 살아있는 상태와 죽어있는 상태의 ___에 놓인다.", answer: "중첩", quiz_type: "fill_blank" },
+  { page_slug: "양자-얽힘", question: "2022년 노벨 물리학상은 양자 얽힘의 벨 부등식 실험 검증과 관련이 있다.", answer: "O", quiz_type: "ox" },
+  { page_slug: "슈뢰딩거-방정식", question: "시간 독립 슈뢰딩거 방정식에서 E는 무엇을 나타내는가?", answer: "에너지 고유값", quiz_type: "short_answer" },
+  { page_slug: "하이젠베르크", question: "불확정성 원리에서 Δx·Δp ≥ ℏ/2 이다.", answer: "O", quiz_type: "ox" },
+];
+
 export const DEMO_LINKS = [
   // source_slug -> target_slug
   { from: "양자역학-입문", to: "슈뢰딩거-방정식" },

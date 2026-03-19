@@ -1,4 +1,4 @@
-import { DEMO_SOURCES, DEMO_PAGES, DEMO_LINKS } from "./sample-data";
+import { DEMO_SOURCES, DEMO_PAGES, DEMO_LINKS, DEMO_QUIZZES } from "./sample-data";
 import type { Store } from "../store";
 
 export async function setupDemo(store: Store): Promise<void> {
@@ -18,6 +18,14 @@ export async function setupDemo(store: Store): Promise<void> {
     const toPage = store.getPage(link.to);
     if (fromPage && toPage) {
       store.addLink(fromPage.id, toPage.id, toPage.title);
+    }
+  }
+
+  // 4. Insert demo quizzes
+  for (const quiz of DEMO_QUIZZES) {
+    const page = store.getPage(quiz.page_slug);
+    if (page) {
+      store.addQuiz(page.id, quiz.question, quiz.answer, quiz.quiz_type);
     }
   }
 }

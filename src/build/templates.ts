@@ -401,6 +401,12 @@ export function renderQuizPage(opts: {
     const ALL_QUIZZES = ${quizzesJson};
     const QUIZ_COUNT = Math.min(ALL_QUIZZES.length, 10);
 
+    function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+
+    function normalize(s) {
+        return s.trim().toLowerCase().replace(/\\s+/g, ' ');
+    }
+
     if (ALL_QUIZZES.length === 0) {
         document.getElementById('quiz-empty').style.display = 'block';
         return;
@@ -440,7 +446,7 @@ export function renderQuizPage(opts: {
         document.getElementById('quiz-progress-text').textContent = (current + 1) + ' / ' + quizzes.length;
         document.getElementById('quiz-progress-fill').style.width = ((current + 1) / quizzes.length * 100) + '%';
         document.getElementById('quiz-type-badge').textContent = typeLabel(q.quiz_type);
-        document.getElementById('quiz-question').textContent = q.question;
+        document.getElementById('quiz-question').innerHTML = esc(q.question);
 
         const inputArea = document.getElementById('quiz-input-area');
         const oxArea = document.getElementById('quiz-ox-area');
@@ -459,20 +465,24 @@ export function renderQuizPage(opts: {
 
     function checkAnswer(userAnswer) {
         const q = quizzes[current];
-        const correct = q.answer.trim().toLowerCase();
-        const user = userAnswer.trim().toLowerCase();
-        const isCorrect = user === correct || correct.includes(user) && user.length > 0;
+        const isCorrect = normalize(userAnswer) === normalize(q.answer) || normalize(q.answer).includes(normalize(userAnswer)) && normalize(userAnswer).length > 0;
 
         if (isCorrect) score++;
 
         document.getElementById('quiz-result-icon').textContent = isCorrect ? '🎉' : '😅';
-        document.getElementById('quiz-answer-text').textContent = q.answer;
+        document.getElementById('quiz-answer-text').innerHTML = esc(q.answer);
         document.getElementById('quiz-answer-text').style.color = isCorrect ? 'var(--accent, #4caf50)' : '#e53935';
 
-        const sourceLink = q.page_slug
-            ? '출처: <a href="/wiki/' + q.page_slug + '.html">' + (q.page_title || q.page_slug) + '</a>'
-            : '';
-        document.getElementById('quiz-source').innerHTML = sourceLink;
+        const sourceEl = document.getElementById('quiz-source');
+        if (q.page_slug) {
+            const a = document.createElement('a');
+            a.href = '/wiki/' + encodeURIComponent(q.page_slug) + '.html';
+            a.textContent = q.page_title || q.page_slug;
+            sourceEl.textContent = '출처: ';
+            sourceEl.appendChild(a);
+        } else {
+            sourceEl.textContent = '';
+        }
 
         document.getElementById('quiz-card-inner').classList.add('flipped');
 
