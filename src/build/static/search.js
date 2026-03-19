@@ -5,6 +5,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!input || !dropdown) return;
 
     let searchData = [];
+    let selectedIndex = -1;
     try {
         const resp = await fetch("/search-index.json");
         searchData = await resp.json();
@@ -37,6 +38,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     input.addEventListener("input", () => {
+        selectedIndex = -1;
         const results = search(input.value);
         if (results.length === 0) {
             dropdown.classList.remove("active");
@@ -67,6 +69,29 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (e.key === "Escape") {
             dropdown.classList.remove("active");
             input.blur();
+        } else if (e.key === "ArrowDown") {
+            e.preventDefault();
+            const items = dropdown.querySelectorAll("a");
+            selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+            items.forEach((a, i) => a.classList.toggle("selected", i === selectedIndex));
+            items[selectedIndex]?.scrollIntoView({ block: "nearest" });
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            const items = dropdown.querySelectorAll("a");
+            selectedIndex = Math.max(selectedIndex - 1, 0);
+            items.forEach((a, i) => a.classList.toggle("selected", i === selectedIndex));
+        } else if (e.key === "Enter" && selectedIndex >= 0) {
+            e.preventDefault();
+            dropdown.querySelectorAll("a")[selectedIndex]?.click();
+        }
+    });
+
+    // Global "/" shortcut to focus search
+    document.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === '/') {
+            e.preventDefault();
+            input.focus();
         }
     });
 });

@@ -35,7 +35,7 @@ export async function expandWithApi(page: Page, context: Page[], provider: strin
       max_tokens: 4096,
       messages: [{ role: "user", content: prompt }],
     });
-    return (resp.content[0] as any).text;
+    return (resp.content[0] as { type: string; text: string }).text;
   }
 
   if (provider === "openai") {

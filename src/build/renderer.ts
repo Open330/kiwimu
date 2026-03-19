@@ -131,6 +131,19 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
     })
   );
 
+  // Random page redirect
+  mkdirSync(join(wikiDir), { recursive: true });
+  await Bun.write(
+    join(wikiDir, "random.html"),
+    `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>임의 문서</title></head><body><script>
+fetch('/search-index.json').then(r=>r.json()).then(pages=>{
+  const p = pages[Math.floor(Math.random()*pages.length)];
+  if(p) location.href='/wiki/'+p.slug+'.html';
+  else location.href='/';
+});
+</script></body></html>`
+  );
+
   const searchData = pages.map((p) => ({
     slug: p.slug,
     title: p.title,

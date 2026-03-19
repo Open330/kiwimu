@@ -1,5 +1,5 @@
 export async function extractTextFromPdf(pdfPath: string): Promise<{ title: string; text: string }> {
-  let pdfParse: any;
+  let pdfParse: (buffer: Buffer) => Promise<{ info?: { Title?: string }; text: string }>;
   try {
     pdfParse = require("pdf-parse");
   } catch {

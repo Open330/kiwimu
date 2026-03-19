@@ -1,4 +1,4 @@
-import { chatComplete } from "../llm-client";
+import { LLMClient } from "../llm-client";
 import type { Store } from "../store";
 import { slugify } from "./chunker";
 import type { Persona } from "../config";
@@ -214,8 +214,17 @@ export async function llmChunkDocument(
   sourceId: number,
   store: Store,
   maxChunks: number = 0, // 0 = unlimited
-  persona: Persona | null = null
+  persona: Persona | null = null,
+  llmClient?: LLMClient
 ): Promise<{ sourceCount: number; conceptCount: number }> {
+  // Use provided client or fall back to deprecated global chatComplete
+  const chat = llmClient
+    ? (system: string, user: string, maxTokens?: number) => llmClient.chatComplete(system, user, maxTokens)
+    : async (system: string, user: string, maxTokens?: number) => {
+        const { chatComplete } = await import("../llm-client");
+        return chatComplete(system, user, maxTokens);
+      };
+
   let chunks = splitByChapters(rawText);
   if (maxChunks > 0 && chunks.length > maxChunks) {
     console.log(`\x1b[33m⚠ ${chunks.length}개 청크 중 ${maxChunks}개만 처리합니다\x1b[0m`);
@@ -238,10 +247,10 @@ export async function llmChunkDocument(
       .replace("{text}", chunk.text.slice(0, 80000));
 
     try {
-      let raw = await chatComplete(structureSystem, prompt, 16384);
+      let raw = await chat(structureSystem, prompt, 16384);
       if (!raw || raw.trim().length < 10) {
         console.log(`    \x1b[33m⚠ 빈 응답, 재시도...\x1b[0m`);
-        raw = await chatComplete(structureSystem, prompt, 16384);
+        raw = await chat(structureSystem, prompt, 16384);
         if (!raw || raw.trim().length < 10) {
           console.log(`    \x1b[31m✗ 재시도도 빈 응답\x1b[0m`);
           completedCount++;
@@ -252,8 +261,9 @@ export async function llmChunkDocument(
       completedCount++;
       console.log(`    → ${sections.length}개 섹션 (완료 ${completedCount}/${chunks.length})`);
       return sections;
-    } catch (e: any) {
-      console.log(`    \x1b[31m✗ 실패: ${e.message}\x1b[0m`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.log(`    \x1b[31m✗ 실패: ${message}\x1b[0m`);
       completedCount++;
       return [] as StructurePage[];
     }
@@ -301,7 +311,7 @@ export async function llmChunkDocument(
     const conceptSystem = getConceptSystem(persona);
 
     try {
-      const raw = await chatComplete(conceptSystem, prompt, 16384);
+      const raw = await chat(conceptSystem, prompt, 16384);
       const concepts = parseJSON<ConceptPage[]>(raw).filter(c => c.title && c.content && c.content.length > 50);
 
       for (const concept of concepts) {
@@ -324,8 +334,9 @@ export async function llmChunkDocument(
         conceptCount++;
       }
       console.log(`    → ${concepts.length}개 개념`);
-    } catch (e: any) {
-      console.log(`    \x1b[31m✗ 실패: ${e.message}\x1b[0m`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.log(`    \x1b[31m✗ 실패: ${message}\x1b[0m`);
     }
   }
 

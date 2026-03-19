@@ -145,6 +145,10 @@ a:hover {
     text-decoration: none;
 }
 
+.search-dropdown a.selected {
+    background: var(--accent-light);
+}
+
 .search-dropdown .search-highlight {
     color: var(--namu-green);
     font-weight: 600;
@@ -964,11 +968,49 @@ h4 .headerlink {
     background: var(--namu-green);
 }
 
+/* Hamburger menu button */
+.topbar-menu-btn {
+    display: none;
+    background: none;
+    border: none;
+    color: white;
+    font-size: 22px;
+    cursor: pointer;
+    padding: 0 8px;
+}
+
+/* Sidebar overlay */
+.sidebar-overlay {
+    display: none;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
+    .topbar-menu-btn { display: flex; align-items: center; }
+
     .sidebar {
-        display: none;
+        position: fixed;
+        left: -260px;
+        top: 46px;
+        bottom: 0;
+        width: 260px;
+        z-index: 99;
+        transition: left 0.25s ease;
+        background: var(--bg);
+        display: block !important;
     }
+    .sidebar.open { left: 0; }
+
+    .sidebar-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        top: 46px;
+        background: rgba(0,0,0,0.4);
+        z-index: 98;
+    }
+    .sidebar-overlay.active { display: block; }
+
     .content {
         margin-left: 0;
         padding: 16px 14px;
@@ -976,4 +1018,27 @@ h4 .headerlink {
     .topbar-search {
         max-width: 180px;
     }
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #1a1a2e;
+        --bg-alt: #16213e;
+        --bg-hover: #0f3460;
+        --text: #e0e0e0;
+        --text-muted: #8e8e8e;
+        --text-dark: #ffffff;
+        --border: #2a2a4a;
+        --accent-light: #1a3a3a;
+        --namu-green: #00b4a6;
+        --namu-green-dark: #008c7e;
+    }
+
+    .topbar { background: #004d40; }
+    .page-body h2 { background: #006050; }
+    .page-card { background: var(--bg-alt); }
+    .toc-box { background: var(--bg-alt); }
+    .sidebar { background: var(--bg); border-right-color: var(--border); }
+    img { opacity: 0.9; }
 }

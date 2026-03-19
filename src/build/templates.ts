@@ -63,6 +63,7 @@ function base(opts: {
 </head>
 <body>
     <nav class="topbar">
+        <button class="topbar-menu-btn" aria-label="메뉴">☰</button>
         <a href="/index.html" class="topbar-brand">
             <img src="/static/logo.png" alt="Kiwi Mu" class="topbar-logo">
             ${escapeHtml(opts.wikiName)}
@@ -72,10 +73,12 @@ function base(opts: {
             <div id="search-results" class="search-dropdown"></div>
         </div>
         <div class="topbar-links">
+            <a href="/wiki/random.html" style="color:#fff;text-decoration:none;font-size:13px;">🎲 임의</a>
             <a href="/graph.html" class="btn-graph">📊 그래프</a>
             <a href="/admin" class="btn-graph">⚙️ 관리</a>
         </div>
     </nav>
+    <div class="sidebar-overlay"></div>
     <div class="layout">
         <aside class="sidebar">
             ${sidebarHtml(opts.sourcePages, opts.conceptPages, opts.activeSlug)}
@@ -86,6 +89,22 @@ function base(opts: {
     </div>
     <script src="/static/search.js"></script>
     <script>
+        // Mobile hamburger menu
+        (function() {
+            const menuBtn = document.querySelector('.topbar-menu-btn');
+            const sidebar = document.querySelector('.sidebar');
+            const overlay = document.querySelector('.sidebar-overlay');
+            if (menuBtn && sidebar) {
+                menuBtn.addEventListener('click', () => {
+                    sidebar.classList.toggle('open');
+                    overlay?.classList.toggle('active');
+                });
+                overlay?.addEventListener('click', () => {
+                    sidebar.classList.remove('open');
+                    overlay.classList.remove('active');
+                });
+            }
+        })();
         // Sidebar tabs
         document.querySelectorAll('.sidebar-tab').forEach(tab => {
             tab.addEventListener('click', () => {

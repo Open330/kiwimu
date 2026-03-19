@@ -20,6 +20,14 @@ export interface Page {
   display_order: number;
 }
 
+export interface SourceMeta {
+  id: number;
+  uri: string;
+  type: string;
+  title: string;
+  fetched_at: string;
+}
+
 export interface Link {
   from_page_id: number;
   to_page_id: number;
@@ -111,8 +119,8 @@ export class Store {
     return this.db.prepare("SELECT * FROM sources ORDER BY fetched_at DESC").all() as Source[];
   }
 
-  listSourcesMeta(): any[] {
-    return this.db.prepare("SELECT id, uri, type, title, fetched_at FROM sources ORDER BY id DESC").all();
+  listSourcesMeta(): SourceMeta[] {
+    return this.db.prepare("SELECT id, uri, type, title, fetched_at FROM sources ORDER BY id DESC").all() as SourceMeta[];
   }
 
   // --- Pages ---
@@ -227,7 +235,7 @@ export class Store {
   getUsageSummary(): { totalCalls: number; promptTokens: number; completionTokens: number; totalTokens: number; totalCost: number } {
     const row = this.db.prepare(
       "SELECT COALESCE(SUM(llm_calls),0) as totalCalls, COALESCE(SUM(prompt_tokens),0) as promptTokens, COALESCE(SUM(completion_tokens),0) as completionTokens, COALESCE(SUM(total_tokens),0) as totalTokens, COALESCE(SUM(estimated_cost_usd),0) as totalCost FROM usage_logs"
-    ).get() as any;
+    ).get() as { totalCalls: number; promptTokens: number; completionTokens: number; totalTokens: number; totalCost: number };
     return row;
   }
 }
