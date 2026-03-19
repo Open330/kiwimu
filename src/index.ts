@@ -8,7 +8,7 @@ import { Store } from "./store";
 const program = new Command()
   .name("kiwimu")
   .description("🥝 Kiwi Mu — 나만의 학습 위키를 만드세요")
-  .version("0.4.2");
+  .version("0.7.1");
 
 // --- init ---
 program
