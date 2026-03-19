@@ -5,7 +5,7 @@ import sanitizeHtml from "sanitize-html";
 import type { KiwiConfig } from "../config";
 import type { Store } from "../store";
 import { buildGraphData } from "../pipeline/graph";
-import { renderPage, renderIndex, renderGraph } from "./templates";
+import { renderPage, renderIndex, renderGraph, renderQuizPage } from "./templates";
 
 // Fix internal wiki links: /wiki/slug → /wiki/slug.html
 function fixWikiLinks(html: string): string {
@@ -126,6 +126,25 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
     join(outputDir, "graph.html"),
     renderGraph({
       wikiName,
+      sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
+      conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title })),
+    })
+  );
+
+  // Quiz page
+  const quizzes = store.getAllQuizzes();
+  await Bun.write(
+    join(outputDir, "quiz.html"),
+    renderQuizPage({
+      wikiName,
+      quizzes: quizzes.map((q) => ({
+        id: q.id,
+        question: q.question,
+        answer: q.answer,
+        quiz_type: q.quiz_type,
+        page_title: q.page_title,
+        page_slug: q.page_slug,
+      })),
       sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
       conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title })),
     })

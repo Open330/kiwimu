@@ -342,6 +342,59 @@ export async function llmChunkDocument(
 
   console.log(`\x1b[32m  📝 ${conceptCount}개 개념 페이지 생성 완료\x1b[0m`);
 
+  // ── Phase 2.5: Generate quizzes from concept pages ──
+  let quizCount = 0;
+  try {
+    const conceptPagesForQuiz = store.listConceptPages();
+    if (conceptPagesForQuiz.length > 0) {
+      console.log(`\x1b[34m🧠 Phase 2.5: 퀴즈 생성 (${conceptPagesForQuiz.length}개 개념 페이지)...\x1b[0m`);
+
+      const quizSystem = `You are a quiz generator for a study wiki. Generate quiz questions based on wiki content.
+Return valid JSON only. No markdown fences.`;
+
+      await parallelMap(conceptPagesForQuiz, 3, async (page, i) => {
+        try {
+          const quizPrompt = `Based on this wiki content, generate 2-3 quiz questions in JSON format.
+Types: "fill_blank" (빈칸 채우기), "ox" (OX 퀴즈 - true/false), "short_answer" (단답형)
+
+Content title: ${page.title}
+Content:
+${page.content.slice(0, 3000)}
+
+Respond with a JSON array only:
+[{"question": "___은 양자역학에서 위치와 운동량을 동시에 측정할 수 없다는 원리이다.", "answer": "불확정성 원리", "type": "fill_blank"}]
+
+Rules:
+- For fill_blank: use ___ to mark the blank in the question
+- For ox: question should be a statement, answer should be "O" or "X"
+- For short_answer: question should be answerable in 1-3 words
+- Questions should test understanding, not just recall
+- Write questions in Korean when the content is in Korean`;
+
+          const raw = await chat(quizSystem, quizPrompt, 2048);
+          const quizzes = parseJSON<Array<{ question: string; answer: string; type: string }>>(raw);
+
+          for (const q of quizzes) {
+            if (q.question && q.answer && q.type) {
+              store.addQuiz(page.id, q.question, q.answer, q.type);
+              quizCount++;
+            }
+          }
+        } catch (e: unknown) {
+          // Quiz generation is non-critical; silently skip failures
+          const message = e instanceof Error ? e.message : String(e);
+          console.log(`    \x1b[33m⚠ 퀴즈 생성 실패 (${page.title}): ${message}\x1b[0m`);
+        }
+      });
+
+      console.log(`\x1b[32m  🧩 ${quizCount}개 퀴즈 생성 완료\x1b[0m`);
+    }
+  } catch (e: unknown) {
+    // Phase 2.5 is optional — don't block the pipeline
+    const message = e instanceof Error ? e.message : String(e);
+    console.log(`\x1b[33m  ⚠ 퀴즈 생성 단계 건너뜀: ${message}\x1b[0m`);
+  }
+
   // ── Phase 3: Resolve wiki links + inject concept links into source pages ──
   console.log(`\x1b[34m🔗 위키 링크 해석 중...\x1b[0m`);
   const allPages = store.listPages();

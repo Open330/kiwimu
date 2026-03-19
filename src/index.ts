@@ -14,8 +14,40 @@ const program = new Command()
 program
   .command("init [name]")
   .description("새 Kiwi Mu 프로젝트를 생성합니다")
-  .action(async (name?: string) => {
+  .option("--demo", "샘플 데이터로 즉시 체험")
+  .action(async (name: string | undefined, opts: { demo?: boolean }) => {
     const root = process.cwd();
+
+    if (opts.demo) {
+      // Demo mode: skip API key prompt, use sample data
+      const demoName = name || "Quantum Wiki Demo";
+      console.log(`\x1b[34m🥝 데모 모드로 '${demoName}' 위키를 생성합니다...\x1b[0m`);
+
+      const config = defaultConfig(demoName);
+      config.llm.provider = "demo";
+      config.llm.model = "";
+      config.llm.api_key = "";
+      config.llm.endpoint = "";
+      saveConfig(root, config);
+
+      const store = new Store(join(root, DB_FILE));
+      store.initSchema();
+
+      const { setupDemo } = await import("./demo/setup");
+      await setupDemo(store);
+
+      const { buildSite } = await import("./build/renderer");
+      const count = await buildSite(store, config, root);
+      store.close();
+
+      console.log(`\x1b[32m✅ ${count}개 페이지가 빌드되었습니다!\x1b[0m`);
+
+      const { startServer } = await import("./server");
+      console.log("🎉 데모 위키가 준비되었습니다! http://localhost:8000 에서 확인하세요");
+      startServer(root, 8000, "localhost");
+      return;
+    }
+
     if (Bun.file(join(root, CONFIG_FILE)).size > 0) {
       try {
         require("fs").accessSync(join(root, CONFIG_FILE));
@@ -263,6 +295,84 @@ program
 
     const { startServer } = await import("./server");
     startServer(root, parseInt(opts.port), opts.host);
+  });
+
+// --- quiz ---
+program
+  .command("quiz")
+  .description("학습 퀴즈를 풀어봅니다")
+  .option("-n, --count <count>", "문제 수", "5")
+  .action(async (opts) => {
+    const root = findProjectRoot();
+    const store = new Store(join(root, DB_FILE));
+    try {
+      store.initSchema(); // ensure quizzes table exists
+      const count = parseInt(opts.count) || 5;
+      const quizzes = store.getRandomQuizzes(count);
+      if (quizzes.length === 0) {
+        console.log("\x1b[33m퀴즈가 없습니다. 먼저 문서를 추가하세요.\x1b[0m");
+        return;
+      }
+
+      const p = await import("@clack/prompts");
+      p.intro("📝 학습 퀴즈");
+      console.log(`  ${quizzes.length}개 문제를 풀어봅니다.\n`);
+
+      let score = 0;
+      for (let i = 0; i < quizzes.length; i++) {
+        const q = quizzes[i];
+        const typeLabel = q.quiz_type === "fill_blank" ? "빈칸 채우기" : q.quiz_type === "ox" ? "OX 퀴즈" : "단답형";
+
+        console.log(`\x1b[1m[${i + 1}/${quizzes.length}] ${typeLabel}\x1b[0m`);
+        console.log(`  ${q.question}`);
+        if (q.page_title) {
+          console.log(`  \x1b[2m출처: ${q.page_title}\x1b[0m`);
+        }
+
+        let userAnswer: string | symbol;
+        if (q.quiz_type === "ox") {
+          userAnswer = await p.select({
+            message: "정답은?",
+            options: [
+              { value: "O", label: "⭕ O" },
+              { value: "X", label: "❌ X" },
+            ],
+          });
+        } else {
+          userAnswer = await p.text({
+            message: "정답을 입력하세요",
+            placeholder: "...",
+          });
+        }
+
+        if (p.isCancel(userAnswer)) {
+          p.cancel("퀴즈를 종료합니다.");
+          return;
+        }
+
+        const correct = q.answer.trim().toLowerCase();
+        const user = (userAnswer as string).trim().toLowerCase();
+        const isCorrect = user === correct || (correct.includes(user) && user.length > 0);
+
+        if (isCorrect) {
+          score++;
+          console.log(`  \x1b[32m✅ 정답!\x1b[0m\n`);
+        } else {
+          console.log(`  \x1b[31m❌ 오답! 정답: ${q.answer}\x1b[0m\n`);
+        }
+      }
+
+      const pct = Math.round((score / quizzes.length) * 100);
+      console.log(`\x1b[1m📊 결과: ${score}/${quizzes.length} (${pct}%)\x1b[0m`);
+      if (pct >= 90) console.log("  🏆 완벽에 가깝습니다!");
+      else if (pct >= 70) console.log("  👏 잘 하셨습니다!");
+      else if (pct >= 50) console.log("  📚 조금 더 복습해보세요!");
+      else console.log("  💪 다시 도전해보세요!");
+
+      p.outro("학습을 계속하세요! 🥝");
+    } finally {
+      store.close();
+    }
   });
 
 // --- status ---

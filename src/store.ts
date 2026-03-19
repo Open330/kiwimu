@@ -34,6 +34,17 @@ export interface Link {
   anchor_text: string;
 }
 
+export interface Quiz {
+  id: number;
+  page_id: number;
+  question: string;
+  answer: string;
+  quiz_type: string; // 'fill_blank' | 'ox' | 'short_answer'
+  created_at: string;
+  page_title?: string;
+  page_slug?: string;
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS sources (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,10 +82,20 @@ CREATE TABLE IF NOT EXISTS links (
   anchor_text TEXT,
   PRIMARY KEY (from_page_id, to_page_id, anchor_text)
 );
+CREATE TABLE IF NOT EXISTS quizzes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  page_id INTEGER NOT NULL,
+  question TEXT NOT NULL,
+  answer TEXT NOT NULL,
+  quiz_type TEXT NOT NULL DEFAULT 'fill_blank',
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (page_id) REFERENCES pages(id)
+);
 CREATE INDEX IF NOT EXISTS idx_pages_source_id ON pages(source_id);
 CREATE INDEX IF NOT EXISTS idx_pages_page_type ON pages(page_type);
 CREATE INDEX IF NOT EXISTS idx_links_to_page ON links(to_page_id);
 CREATE INDEX IF NOT EXISTS idx_links_from_page ON links(from_page_id);
+CREATE INDEX IF NOT EXISTS idx_quizzes_page_id ON quizzes(page_id);
 `;
 
 export class Store {
@@ -163,7 +184,11 @@ export class Store {
   }
 
   deletePagesBySource(sourceId: number): void {
-    // Delete links involving these pages first
+    // Delete quizzes for these pages first
+    this.db.prepare(
+      "DELETE FROM quizzes WHERE page_id IN (SELECT id FROM pages WHERE source_id = ?)"
+    ).run(sourceId);
+    // Delete links involving these pages
     this.db.prepare(
       "DELETE FROM links WHERE from_page_id IN (SELECT id FROM pages WHERE source_id = ?) OR to_page_id IN (SELECT id FROM pages WHERE source_id = ?)"
     ).run(sourceId, sourceId);
@@ -171,6 +196,7 @@ export class Store {
   }
 
   deleteAllPages(): void {
+    this.db.exec("DELETE FROM quizzes");
     this.db.exec("DELETE FROM links");
     this.db.exec("DELETE FROM pages");
   }
@@ -222,6 +248,48 @@ export class Store {
       map.get(row.to_page_id)!.push({ id: row.id, slug: row.slug, title: row.title, page_type: row.page_type });
     }
     return map;
+  }
+
+  // --- Quizzes ---
+
+  addQuiz(pageId: number, question: string, answer: string, quizType: string): void {
+    this.db
+      .prepare("INSERT INTO quizzes (page_id, question, answer, quiz_type) VALUES (?, ?, ?, ?)")
+      .run(pageId, question, answer, quizType);
+  }
+
+  getQuizzesByPage(pageId: number): Quiz[] {
+    return this.db
+      .prepare(
+        `SELECT q.*, p.title as page_title, p.slug as page_slug
+         FROM quizzes q JOIN pages p ON p.id = q.page_id
+         WHERE q.page_id = ? ORDER BY q.id`
+      )
+      .all(pageId) as Quiz[];
+  }
+
+  getAllQuizzes(): Quiz[] {
+    return this.db
+      .prepare(
+        `SELECT q.*, p.title as page_title, p.slug as page_slug
+         FROM quizzes q JOIN pages p ON p.id = q.page_id
+         ORDER BY q.id`
+      )
+      .all() as Quiz[];
+  }
+
+  getRandomQuizzes(count: number): Quiz[] {
+    return this.db
+      .prepare(
+        `SELECT q.*, p.title as page_title, p.slug as page_slug
+         FROM quizzes q JOIN pages p ON p.id = q.page_id
+         ORDER BY RANDOM() LIMIT ?`
+      )
+      .all(count) as Quiz[];
+  }
+
+  deleteQuizzesByPage(pageId: number): void {
+    this.db.prepare("DELETE FROM quizzes WHERE page_id = ?").run(pageId);
   }
 
   // --- Usage ---

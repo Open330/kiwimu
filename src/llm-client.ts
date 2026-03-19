@@ -42,66 +42,123 @@ async function geminiComplete(config: LLMConfig, system: string, userMessage: st
   };
 }
 
-async function azureOpenAIComplete(config: LLMConfig, system: string, userMessage: string, maxTokens: number): Promise<{ text: string; usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } }> {
-  // Try loading from ~/keys/openai.azure.com/ if no api_key in config
-  let apiKey = config.api_key;
-  let endpoint = config.endpoint;
-  let model = config.model;
-
-  if (!apiKey) {
-    try {
-      const keyFile = `${process.env.HOME}/keys/openai.azure.com/${config.model}.json`;
-      const raw = require("fs").readFileSync(keyFile, "utf-8");
-      const keyConfig = JSON.parse(raw)[0] as { key: string; endpoint: string; deployment: string };
-      apiKey = keyConfig.key;
-      endpoint = keyConfig.endpoint.split("/openai/")[0];
-      model = keyConfig.deployment;
-    } catch {
-      throw new Error("Azure OpenAI API key not configured");
-    }
-  }
-
-  const { AzureOpenAI } = await import("openai");
-  const client = new AzureOpenAI({ endpoint, apiKey, deployment: model, apiVersion: "2024-12-01-preview" });
-
-  const resp = await client.chat.completions.create({
-    model,
-    max_completion_tokens: maxTokens,
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: userMessage },
-    ],
-  });
-
-  return {
-    text: resp.choices[0]?.message?.content || "",
-    usage: resp.usage ? {
-      prompt_tokens: resp.usage.prompt_tokens || 0,
-      completion_tokens: resp.usage.completion_tokens || 0,
-      total_tokens: resp.usage.total_tokens || 0,
-    } : undefined,
-  };
-}
-
 // ── Class-based LLM client ──
+
+type ProviderResult = { text: string; usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } };
 
 export class LLMClient {
   private config: LLMConfig;
   private usage: UsageStats = { totalCalls: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  private _openaiClient: InstanceType<typeof import("openai").default> | null = null;
+  private _anthropicClient: InstanceType<typeof import("@anthropic-ai/sdk").default> | null = null;
+  private _azureClient: InstanceType<typeof import("openai").AzureOpenAI> | null = null;
 
   constructor(config: LLMConfig) {
     this.config = config;
   }
 
+  private async azureComplete(system: string, userMessage: string, maxTokens: number): Promise<ProviderResult> {
+    let apiKey = this.config.api_key;
+    let endpoint = this.config.endpoint;
+    let model = this.config.model;
+
+    if (!apiKey) {
+      try {
+        const keyFile = `${process.env.HOME}/keys/openai.azure.com/${this.config.model}.json`;
+        const raw = require("fs").readFileSync(keyFile, "utf-8");
+        const keyConfig = JSON.parse(raw)[0] as { key: string; endpoint: string; deployment: string };
+        apiKey = keyConfig.key;
+        endpoint = keyConfig.endpoint.split("/openai/")[0];
+        model = keyConfig.deployment;
+      } catch {
+        throw new Error("Azure OpenAI API key not configured");
+      }
+    }
+
+    if (!this._azureClient) {
+      const { AzureOpenAI } = await import("openai");
+      this._azureClient = new AzureOpenAI({ endpoint, apiKey, deployment: model, apiVersion: "2024-12-01-preview" });
+    }
+
+    const resp = await this._azureClient.chat.completions.create({
+      model: model,
+      max_completion_tokens: maxTokens,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: userMessage },
+      ],
+    });
+
+    return {
+      text: resp.choices[0]?.message?.content || "",
+      usage: resp.usage ? {
+        prompt_tokens: resp.usage.prompt_tokens || 0,
+        completion_tokens: resp.usage.completion_tokens || 0,
+        total_tokens: resp.usage.total_tokens || 0,
+      } : undefined,
+    };
+  }
+
+  private async openaiComplete(system: string, userMessage: string, maxTokens: number): Promise<ProviderResult> {
+    const { default: OpenAI } = await import("openai");
+    if (!this._openaiClient) {
+      this._openaiClient = new OpenAI({ apiKey: this.config.api_key });
+    }
+    const resp = await this._openaiClient.chat.completions.create({
+      model: this.config.model || "gpt-4o",
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: userMessage },
+      ],
+      max_tokens: maxTokens,
+    });
+    return {
+      text: resp.choices[0]?.message?.content || "",
+      usage: resp.usage ? {
+        prompt_tokens: resp.usage.prompt_tokens || 0,
+        completion_tokens: resp.usage.completion_tokens || 0,
+        total_tokens: resp.usage.total_tokens || 0,
+      } : undefined,
+    };
+  }
+
+  private async anthropicComplete(system: string, userMessage: string, maxTokens: number): Promise<ProviderResult> {
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    if (!this._anthropicClient) {
+      this._anthropicClient = new Anthropic({ apiKey: this.config.api_key });
+    }
+    const resp = await this._anthropicClient.messages.create({
+      model: this.config.model || "claude-sonnet-4-20250514",
+      max_tokens: maxTokens,
+      system: system,
+      messages: [{ role: "user", content: userMessage }],
+    });
+    const content = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+    return {
+      text: content,
+      usage: resp.usage ? {
+        prompt_tokens: resp.usage.input_tokens || 0,
+        completion_tokens: resp.usage.output_tokens || 0,
+        total_tokens: (resp.usage.input_tokens || 0) + (resp.usage.output_tokens || 0),
+      } : undefined,
+    };
+  }
+
   async chatComplete(system: string, userMessage: string, maxTokens = 8192): Promise<string> {
-    let result: { text: string; usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } };
+    let result: ProviderResult;
 
     switch (this.config.provider) {
       case "gemini":
         result = await geminiComplete(this.config, system, userMessage, maxTokens);
         break;
       case "azure-openai":
-        result = await azureOpenAIComplete(this.config, system, userMessage, maxTokens);
+        result = await this.azureComplete(system, userMessage, maxTokens);
+        break;
+      case "openai":
+        result = await this.openaiComplete(system, userMessage, maxTokens);
+        break;
+      case "anthropic":
+        result = await this.anthropicComplete(system, userMessage, maxTokens);
         break;
       default:
         throw new Error(`Unknown LLM provider: ${this.config.provider}`);
@@ -134,7 +191,7 @@ export class LLMClient {
     const pricing: Record<string, { input: number; output: number }> = {
       "gemini": { input: 0.075, output: 0.30 },
       "azure-openai": { input: 0.10, output: 0.40 },
-      "openai": { input: 0.15, output: 0.60 },
+      "openai": { input: 2.50, output: 10.00 },
       "anthropic": { input: 3.00, output: 15.00 },
     };
     const p = pricing[this.config.provider] || pricing["gemini"];

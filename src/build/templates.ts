@@ -74,6 +74,7 @@ function base(opts: {
         </div>
         <div class="topbar-links">
             <a href="/wiki/random.html" style="color:#fff;text-decoration:none;font-size:13px;">🎲 임의</a>
+            <a href="/quiz.html" class="btn-graph">📝 퀴즈</a>
             <a href="/graph.html" class="btn-graph">📊 그래프</a>
             <a href="/admin" class="btn-graph">⚙️ 관리</a>
         </div>
@@ -242,6 +243,7 @@ export function renderIndex(opts: {
         </section>
         <section class="index-section">
             <div class="quick-links">
+                <a href="/quiz.html" class="quick-link">📝 학습 퀴즈</a>
                 <a href="/graph.html" class="quick-link">📊 지식 그래프 보기</a>
             </div>
         </section>
@@ -278,6 +280,250 @@ export function renderGraph(opts: {
 
   return base({
     title: `지식 그래프 - ${opts.wikiName}`,
+    wikiName: opts.wikiName,
+    sourcePages: opts.sourcePages,
+    conceptPages: opts.conceptPages,
+    content,
+  });
+}
+
+export function renderQuizPage(opts: {
+  wikiName: string;
+  quizzes: Array<{ id: number; question: string; answer: string; quiz_type: string; page_title?: string; page_slug?: string }>;
+  sourcePages: PageLink[];
+  conceptPages: PageLink[];
+}): string {
+  const quizzesJson = JSON.stringify(opts.quizzes).replace(/</g, "\\u003c");
+
+  const content = `
+<div class="quiz-page">
+    <h1>📝 학습 퀴즈</h1>
+    <p class="quiz-desc">위키 내용을 기반으로 생성된 퀴즈입니다. 학습한 내용을 확인해보세요!</p>
+
+    <div id="quiz-container">
+        <div id="quiz-empty" style="display:none;">
+            <p style="text-align:center;color:var(--text-muted);padding:40px 0;">퀴즈가 없습니다. 먼저 문서를 추가하세요.</p>
+        </div>
+        <div id="quiz-active" style="display:none;">
+            <div class="quiz-progress">
+                <span id="quiz-progress-text">1 / 5</span>
+                <div class="quiz-progress-bar"><div id="quiz-progress-fill" class="quiz-progress-fill"></div></div>
+            </div>
+            <div class="quiz-card" id="quiz-card">
+                <div class="quiz-card-inner" id="quiz-card-inner">
+                    <div class="quiz-card-front">
+                        <span class="quiz-type-badge" id="quiz-type-badge">빈칸 채우기</span>
+                        <p class="quiz-question" id="quiz-question"></p>
+                        <div class="quiz-input-area" id="quiz-input-area">
+                            <input type="text" id="quiz-answer-input" placeholder="정답을 입력하세요..." autocomplete="off">
+                            <button id="quiz-submit-btn" class="quiz-btn primary">확인</button>
+                        </div>
+                        <div class="quiz-ox-area" id="quiz-ox-area" style="display:none;">
+                            <button class="quiz-btn ox-btn" data-answer="O">⭕ O</button>
+                            <button class="quiz-btn ox-btn" data-answer="X">❌ X</button>
+                        </div>
+                    </div>
+                    <div class="quiz-card-back">
+                        <div id="quiz-result-icon" class="quiz-result-icon"></div>
+                        <p class="quiz-answer-label">정답</p>
+                        <p class="quiz-answer-text" id="quiz-answer-text"></p>
+                        <p class="quiz-source" id="quiz-source"></p>
+                        <button id="quiz-next-btn" class="quiz-btn primary">다음 문제 →</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="quiz-done" style="display:none;">
+            <div class="quiz-score-card">
+                <h2>🎉 퀴즈 완료!</h2>
+                <div class="quiz-score">
+                    <span id="quiz-score-text">0 / 5</span>
+                </div>
+                <div class="quiz-score-bar-container">
+                    <div id="quiz-score-bar" class="quiz-score-bar"></div>
+                </div>
+                <p id="quiz-score-msg" class="quiz-score-msg"></p>
+                <button id="quiz-restart-btn" class="quiz-btn primary">🔄 다시 풀기</button>
+            </div>
+        </div>
+    </div>
+</div>
+<style>
+    .quiz-page { max-width: 700px; margin: 0 auto; padding: 24px 16px; }
+    .quiz-page h1 { font-size: 24px; margin-bottom: 8px; }
+    .quiz-desc { color: var(--text-muted); font-size: 14px; margin-bottom: 24px; }
+    .quiz-progress { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+    #quiz-progress-text { font-size: 14px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+    .quiz-progress-bar { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    .quiz-progress-fill { height: 100%; background: var(--accent, #4caf50); border-radius: 3px; transition: width 0.3s ease; }
+    .quiz-card { perspective: 1000px; min-height: 300px; }
+    .quiz-card-inner { position: relative; transition: transform 0.5s ease; transform-style: preserve-3d; }
+    .quiz-card-inner.flipped { transform: rotateY(180deg); }
+    .quiz-card-front, .quiz-card-back {
+        background: var(--bg-alt, #fff); border: 1px solid var(--border); border-radius: 12px;
+        padding: 32px 24px; backface-visibility: hidden;
+    }
+    .quiz-card-back { position: absolute; top: 0; left: 0; right: 0; transform: rotateY(180deg); text-align: center; }
+    .quiz-type-badge {
+        display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600;
+        background: var(--accent-light, #e8f5e9); color: #2e7d32; margin-bottom: 16px;
+    }
+    .quiz-question { font-size: 18px; line-height: 1.6; margin-bottom: 24px; font-weight: 500; }
+    .quiz-input-area { display: flex; gap: 8px; }
+    #quiz-answer-input {
+        flex: 1; padding: 10px 14px; border: 2px solid var(--border); border-radius: 8px;
+        font-size: 16px; outline: none; transition: border-color 0.2s;
+    }
+    #quiz-answer-input:focus { border-color: var(--accent, #4caf50); }
+    .quiz-btn {
+        padding: 10px 20px; border: none; border-radius: 8px; font-size: 15px; font-weight: 600;
+        cursor: pointer; transition: all 0.2s;
+    }
+    .quiz-btn.primary { background: var(--accent, #4caf50); color: white; }
+    .quiz-btn.primary:hover { opacity: 0.9; transform: translateY(-1px); }
+    .quiz-ox-area { display: flex; gap: 16px; justify-content: center; }
+    .ox-btn { padding: 16px 32px; font-size: 20px; border: 2px solid var(--border); border-radius: 12px; background: var(--bg-alt, #fff); }
+    .ox-btn:hover { border-color: var(--accent, #4caf50); background: var(--accent-light, #e8f5e9); }
+    .quiz-result-icon { font-size: 48px; margin-bottom: 12px; }
+    .quiz-answer-label { font-size: 13px; color: var(--text-muted); margin-bottom: 4px; }
+    .quiz-answer-text { font-size: 22px; font-weight: 700; color: var(--accent, #4caf50); margin-bottom: 16px; }
+    .quiz-source { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
+    .quiz-source a { color: var(--accent, #4caf50); text-decoration: none; }
+    .quiz-source a:hover { text-decoration: underline; }
+    .quiz-score-card { text-align: center; background: var(--bg-alt, #fff); border: 1px solid var(--border); border-radius: 12px; padding: 40px 24px; }
+    .quiz-score { font-size: 48px; font-weight: 800; color: var(--accent, #4caf50); margin: 16px 0; }
+    .quiz-score-bar-container { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin: 16px 0 20px; }
+    .quiz-score-bar { height: 100%; background: var(--accent, #4caf50); border-radius: 4px; transition: width 0.5s ease; }
+    .quiz-score-msg { font-size: 16px; color: var(--text-muted); margin-bottom: 24px; }
+</style>
+<script>
+(function() {
+    const ALL_QUIZZES = ${quizzesJson};
+    const QUIZ_COUNT = Math.min(ALL_QUIZZES.length, 10);
+
+    if (ALL_QUIZZES.length === 0) {
+        document.getElementById('quiz-empty').style.display = 'block';
+        return;
+    }
+
+    let quizzes = [];
+    let current = 0;
+    let score = 0;
+
+    function shuffle(arr) {
+        const a = [...arr];
+        for (let i = a.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
+    }
+
+    function startQuiz() {
+        quizzes = shuffle(ALL_QUIZZES).slice(0, QUIZ_COUNT);
+        current = 0;
+        score = 0;
+        document.getElementById('quiz-active').style.display = 'block';
+        document.getElementById('quiz-done').style.display = 'none';
+        showQuestion();
+    }
+
+    function typeLabel(t) {
+        return t === 'fill_blank' ? '빈칸 채우기' : t === 'ox' ? 'OX 퀴즈' : '단답형';
+    }
+
+    function showQuestion() {
+        const q = quizzes[current];
+        const inner = document.getElementById('quiz-card-inner');
+        inner.classList.remove('flipped');
+
+        document.getElementById('quiz-progress-text').textContent = (current + 1) + ' / ' + quizzes.length;
+        document.getElementById('quiz-progress-fill').style.width = ((current + 1) / quizzes.length * 100) + '%';
+        document.getElementById('quiz-type-badge').textContent = typeLabel(q.quiz_type);
+        document.getElementById('quiz-question').textContent = q.question;
+
+        const inputArea = document.getElementById('quiz-input-area');
+        const oxArea = document.getElementById('quiz-ox-area');
+        const answerInput = document.getElementById('quiz-answer-input');
+
+        if (q.quiz_type === 'ox') {
+            inputArea.style.display = 'none';
+            oxArea.style.display = 'flex';
+        } else {
+            inputArea.style.display = 'flex';
+            oxArea.style.display = 'none';
+            answerInput.value = '';
+            setTimeout(() => answerInput.focus(), 100);
+        }
+    }
+
+    function checkAnswer(userAnswer) {
+        const q = quizzes[current];
+        const correct = q.answer.trim().toLowerCase();
+        const user = userAnswer.trim().toLowerCase();
+        const isCorrect = user === correct || correct.includes(user) && user.length > 0;
+
+        if (isCorrect) score++;
+
+        document.getElementById('quiz-result-icon').textContent = isCorrect ? '🎉' : '😅';
+        document.getElementById('quiz-answer-text').textContent = q.answer;
+        document.getElementById('quiz-answer-text').style.color = isCorrect ? 'var(--accent, #4caf50)' : '#e53935';
+
+        const sourceLink = q.page_slug
+            ? '출처: <a href="/wiki/' + q.page_slug + '.html">' + (q.page_title || q.page_slug) + '</a>'
+            : '';
+        document.getElementById('quiz-source').innerHTML = sourceLink;
+
+        document.getElementById('quiz-card-inner').classList.add('flipped');
+
+        const nextBtn = document.getElementById('quiz-next-btn');
+        nextBtn.textContent = current < quizzes.length - 1 ? '다음 문제 →' : '결과 보기 →';
+    }
+
+    function nextQuestion() {
+        current++;
+        if (current >= quizzes.length) {
+            showResults();
+        } else {
+            showQuestion();
+        }
+    }
+
+    function showResults() {
+        document.getElementById('quiz-active').style.display = 'none';
+        document.getElementById('quiz-done').style.display = 'block';
+
+        const pct = Math.round(score / quizzes.length * 100);
+        document.getElementById('quiz-score-text').textContent = score + ' / ' + quizzes.length;
+        document.getElementById('quiz-score-bar').style.width = pct + '%';
+
+        const msgs = pct >= 90 ? '🏆 완벽에 가깝습니다!' : pct >= 70 ? '👏 잘 하셨습니다!' : pct >= 50 ? '📚 조금 더 복습해보세요!' : '💪 다시 도전해보세요!';
+        document.getElementById('quiz-score-msg').textContent = msgs;
+    }
+
+    // Event listeners
+    document.getElementById('quiz-submit-btn').addEventListener('click', function() {
+        const val = document.getElementById('quiz-answer-input').value;
+        if (val.trim()) checkAnswer(val);
+    });
+
+    document.getElementById('quiz-answer-input').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && this.value.trim()) checkAnswer(this.value);
+    });
+
+    document.querySelectorAll('.ox-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() { checkAnswer(this.dataset.answer); });
+    });
+
+    document.getElementById('quiz-next-btn').addEventListener('click', nextQuestion);
+    document.getElementById('quiz-restart-btn').addEventListener('click', startQuiz);
+
+    startQuiz();
+})();
+</script>`;
+
+  return base({
+    title: `학습 퀴즈 - ${opts.wikiName}`,
     wikiName: opts.wikiName,
     sourcePages: opts.sourcePages,
     conceptPages: opts.conceptPages,
