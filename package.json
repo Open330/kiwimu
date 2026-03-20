@@ -1,6 +1,6 @@
 {
   "name": "@open330/kiwimu",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "Turn textbooks, PDFs, and web content into your own interlinked learning wiki powered by LLM",
   "type": "module",
   "bin": {

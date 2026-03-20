@@ -25,7 +25,7 @@ export async function setupDemo(store: Store): Promise<void> {
   for (const quiz of DEMO_QUIZZES) {
     const page = store.getPage(quiz.page_slug);
     if (page) {
-      store.addQuiz(page.id, quiz.question, quiz.answer, quiz.quiz_type);
+      store.addQuiz(page.id, quiz.question, quiz.answer, quiz.quiz_type, (quiz as any).explanation || "");
     }
   }
 }

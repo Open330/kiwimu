@@ -141,6 +141,7 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
         id: q.id,
         question: q.question,
         answer: q.answer,
+        explanation: q.explanation || "",
         quiz_type: q.quiz_type,
         page_title: q.page_title,
         page_slug: q.page_slug,

@@ -289,7 +289,7 @@ export function renderGraph(opts: {
 
 export function renderQuizPage(opts: {
   wikiName: string;
-  quizzes: Array<{ id: number; question: string; answer: string; quiz_type: string; page_title?: string; page_slug?: string }>;
+  quizzes: Array<{ id: number; question: string; answer: string; explanation?: string; quiz_type: string; page_title?: string; page_slug?: string }>;
   sourcePages: PageLink[];
   conceptPages: PageLink[];
 }): string {
@@ -327,6 +327,9 @@ export function renderQuizPage(opts: {
                         <div id="quiz-result-icon" class="quiz-result-icon"></div>
                         <p class="quiz-answer-label">정답</p>
                         <p class="quiz-answer-text" id="quiz-answer-text"></p>
+                        <div id="quiz-explanation" class="quiz-explanation" style="display:none;">
+                            <p id="quiz-explanation-text" class="explanation-text"></p>
+                        </div>
                         <p class="quiz-source" id="quiz-source"></p>
                         <button id="quiz-next-btn" class="quiz-btn primary">다음 문제 →</button>
                     </div>
@@ -343,6 +346,11 @@ export function renderQuizPage(opts: {
                     <div id="quiz-score-bar" class="quiz-score-bar"></div>
                 </div>
                 <p id="quiz-score-msg" class="quiz-score-msg"></p>
+                <div id="quiz-stats" class="quiz-stats" style="display:none;">
+                    <h3>📊 학습 통계</h3>
+                    <p id="quiz-stats-summary"></p>
+                    <p id="quiz-stats-weak" style="display:none;"></p>
+                </div>
                 <button id="quiz-restart-btn" class="quiz-btn primary">🔄 다시 풀기</button>
             </div>
         </div>
@@ -395,6 +403,11 @@ export function renderQuizPage(opts: {
     .quiz-score-bar-container { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin: 16px 0 20px; }
     .quiz-score-bar { height: 100%; background: var(--accent, #4caf50); border-radius: 4px; transition: width 0.5s ease; }
     .quiz-score-msg { font-size: 16px; color: var(--text-muted); margin-bottom: 24px; }
+    .quiz-explanation { background: var(--accent-light, #e8f5e9); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; text-align: left; }
+    .explanation-text { font-size: 14px; line-height: 1.6; color: var(--text, #333); margin: 0; }
+    .quiz-stats { background: var(--bg-alt, #f5f5f5); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 20px; text-align: left; }
+    .quiz-stats h3 { font-size: 15px; margin: 0 0 8px; }
+    .quiz-stats p { font-size: 14px; color: var(--text-muted); margin: 4px 0; }
 </style>
 <script>
 (function() {
@@ -469,15 +482,29 @@ export function renderQuizPage(opts: {
 
         if (isCorrect) score++;
 
+        // Record attempt in localStorage
+        var attempts = JSON.parse(localStorage.getItem('kiwimu-quiz-attempts') || '[]');
+        attempts.push({ quizId: q.id, isCorrect: isCorrect, timestamp: new Date().toISOString() });
+        localStorage.setItem('kiwimu-quiz-attempts', JSON.stringify(attempts));
+
         document.getElementById('quiz-result-icon').textContent = isCorrect ? '🎉' : '😅';
         document.getElementById('quiz-answer-text').innerHTML = esc(q.answer);
         document.getElementById('quiz-answer-text').style.color = isCorrect ? 'var(--accent, #4caf50)' : '#e53935';
+
+        // Show explanation if available
+        var explanationEl = document.getElementById('quiz-explanation');
+        if (q.explanation) {
+            document.getElementById('quiz-explanation-text').textContent = '💡 ' + q.explanation;
+            explanationEl.style.display = 'block';
+        } else {
+            explanationEl.style.display = 'none';
+        }
 
         const sourceEl = document.getElementById('quiz-source');
         if (q.page_slug) {
             const a = document.createElement('a');
             a.href = '/wiki/' + encodeURIComponent(q.page_slug) + '.html';
-            a.textContent = q.page_title || q.page_slug;
+            a.textContent = '📖 ' + (q.page_title || q.page_slug) + ' 보기';
             sourceEl.textContent = '출처: ';
             sourceEl.appendChild(a);
         } else {
@@ -509,6 +536,35 @@ export function renderQuizPage(opts: {
 
         const msgs = pct >= 90 ? '🏆 완벽에 가깝습니다!' : pct >= 70 ? '👏 잘 하셨습니다!' : pct >= 50 ? '📚 조금 더 복습해보세요!' : '💪 다시 도전해보세요!';
         document.getElementById('quiz-score-msg').textContent = msgs;
+
+        // Show cumulative stats from localStorage
+        var allAttempts = JSON.parse(localStorage.getItem('kiwimu-quiz-attempts') || '[]');
+        if (allAttempts.length > 0) {
+            var totalAttempts = allAttempts.length;
+            var correctAttempts = allAttempts.filter(function(a) { return a.isCorrect; }).length;
+            var overallPct = Math.round(correctAttempts / totalAttempts * 100);
+
+            var statsEl = document.getElementById('quiz-stats');
+            statsEl.style.display = 'block';
+            document.getElementById('quiz-stats-summary').textContent = '전체 시도: ' + totalAttempts + '회 | 정답률: ' + overallPct + '%';
+
+            // Find weak concepts (most wrong answers by page)
+            var wrongByPage = {};
+            allAttempts.forEach(function(a) {
+                if (!a.isCorrect) {
+                    var q = ALL_QUIZZES.find(function(quiz) { return quiz.id === a.quizId; });
+                    if (q && q.page_title) {
+                        wrongByPage[q.page_title] = (wrongByPage[q.page_title] || 0) + 1;
+                    }
+                }
+            });
+            var weakConcepts = Object.keys(wrongByPage).sort(function(a, b) { return wrongByPage[b] - wrongByPage[a]; }).slice(0, 3);
+            if (weakConcepts.length > 0) {
+                var weakEl = document.getElementById('quiz-stats-weak');
+                weakEl.style.display = 'block';
+                weakEl.textContent = '💪 약한 개념: ' + weakConcepts.join(', ');
+            }
+        }
     }
 
     // Event listeners

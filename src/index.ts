@@ -8,7 +8,7 @@ import { Store } from "./store";
 const program = new Command()
   .name("kiwimu")
   .description("🥝 Kiwi Mu — 나만의 학습 위키를 만드세요")
-  .version("0.7.1");
+  .version("0.8.0");
 
 // --- init ---
 program
@@ -144,8 +144,15 @@ program
         const absPath = resolve(source);
         const file = Bun.file(absPath);
         if (!(await file.exists())) {
-          console.log(`\x1b[31m파일을 찾을 수 없습니다: ${source}\x1b[0m`);
-          return;
+          console.error(`\x1b[31m❌ 파일을 찾을 수 없습니다: ${source}\x1b[0m`);
+          process.exit(1);
+        }
+        const ext = source.split(".").pop()?.toLowerCase() || "";
+        const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'pptx', 'doc', 'ppt', 'key', 'rtf'];
+        if (!SUPPORTED_EXTENSIONS.includes(ext)) {
+          console.error(`\x1b[31m❌ 지원하지 않는 파일 형식입니다: .${ext}\x1b[0m`);
+          console.error(`   지원 형식: ${SUPPORTED_EXTENSIONS.join(', ')}`);
+          process.exit(1);
         }
         console.log(`\x1b[34m📥 파일 처리 중: ${source}\x1b[0m`);
         const { ingestFile } = await import("./services/ingest");
@@ -153,6 +160,10 @@ program
         console.log(`\x1b[32m✅ 📖 ${result.sourceCount}개 원본 + 📝 ${result.conceptCount}개 개념 문서 생성\x1b[0m`);
         console.log(`\x1b[34m📊 LLM: ${result.usage.totalCalls}회 호출, ~$${result.usage.estimatedCostUsd.toFixed(4)}\x1b[0m`);
       }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error(`\x1b[31m❌ ${message}\x1b[0m`);
+      process.exit(1);
     } finally {
       store.close();
     }
@@ -198,7 +209,7 @@ program
           store.updatePageContent(page.id, newContent);
         } catch (e: unknown) {
           const message = e instanceof Error ? e.message : String(e);
-          console.log(`    \x1b[31m실패: ${message}\x1b[0m`);
+          console.error(`    \x1b[31m❌ 실패: ${message}\x1b[0m`);
         }
       }
 
@@ -270,7 +281,8 @@ program
       await deployVercel(siteDir);
       console.log("\x1b[32m✅ Vercel에 배포되었습니다!\x1b[0m");
     } else {
-      console.log(`\x1b[31m지원하지 않는 배포 대상: ${opts.target}\x1b[0m`);
+      console.error(`\x1b[31m❌ 지원하지 않는 배포 대상: ${opts.target}\x1b[0m`);
+      process.exit(1);
     }
   });
 
@@ -308,7 +320,7 @@ program
     try {
       store.initSchema(); // ensure quizzes table exists
       const count = parseInt(opts.count) || 5;
-      const quizzes = store.getRandomQuizzes(count);
+      const quizzes = store.getSmartQuizzes(count);
       if (quizzes.length === 0) {
         console.log("\x1b[33m퀴즈가 없습니다. 먼저 문서를 추가하세요.\x1b[0m");
         return;
@@ -350,16 +362,21 @@ program
           return;
         }
 
-        const correct = q.answer.trim().toLowerCase();
-        const user = (userAnswer as string).trim().toLowerCase();
-        const isCorrect = user === correct || (correct.includes(user) && user.length > 0);
+        const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+        const isCorrect = norm(userAnswer as string) === norm(q.answer);
+
+        store.addQuizAttempt(q.id, isCorrect);
 
         if (isCorrect) {
           score++;
-          console.log(`  \x1b[32m✅ 정답!\x1b[0m\n`);
+          console.log(`  \x1b[32m✅ 정답!\x1b[0m`);
         } else {
-          console.log(`  \x1b[31m❌ 오답! 정답: ${q.answer}\x1b[0m\n`);
+          console.log(`  \x1b[31m❌ 오답! 정답: ${q.answer}\x1b[0m`);
         }
+        if (q.explanation) {
+          console.log(`  \x1b[36m💡 ${q.explanation}\x1b[0m`);
+        }
+        console.log();
       }
 
       const pct = Math.round((score / quizzes.length) * 100);
@@ -368,6 +385,15 @@ program
       else if (pct >= 70) console.log("  👏 잘 하셨습니다!");
       else if (pct >= 50) console.log("  📚 조금 더 복습해보세요!");
       else console.log("  💪 다시 도전해보세요!");
+
+      const stats = store.getQuizStats();
+      if (stats.total > 0) {
+        const overallPct = Math.round(stats.correct / stats.total * 100);
+        console.log(`\n📊 전체 통계: ${stats.correct}/${stats.total} 정답 (${overallPct}%)`);
+        if (stats.unattempted > 0) {
+          console.log(`  📋 미시도 퀴즈: ${stats.unattempted}개`);
+        }
+      }
 
       p.outro("학습을 계속하세요! 🥝");
     } finally {

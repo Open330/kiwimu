@@ -172,7 +172,7 @@ export function startServer(root: string, port: number, host: string): void {
             console.log("\x1b[32m✅ 설정 변경 후 사이트 리빌드 완료\x1b[0m");
           } catch (e: unknown) {
             const message = e instanceof Error ? e.message : String(e);
-            console.log(`\x1b[31m리빌드 실패: ${message}\x1b[0m`);
+            console.error(`\x1b[31m❌ 리빌드 실패: ${message}\x1b[0m`);
           } finally {
             store.close();
           }

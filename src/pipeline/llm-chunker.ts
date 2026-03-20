@@ -233,9 +233,10 @@ export async function llmChunkDocument(
   if (persona) {
     console.log(`\x1b[35m🎭 페르소나: ${persona.name}\x1b[0m`);
   }
-  console.log(`\x1b[34m🧠 Phase 1: 원본 구조 추출 (${chunks.length}개 청크)...\x1b[0m`);
+  console.log(`\x1b[34m⏳ Phase 1: 원본 구조 추출 중... (${chunks.length}개 청크)\x1b[0m`);
 
   // ── Phase 1: Extract source pages (parallel LLM calls) ──
+  const phase1Start = performance.now();
   let completedCount = 0;
   const structureSystem = getStructureSystem(persona);
 
@@ -289,10 +290,12 @@ export async function llmChunkDocument(
   }
 
   const sourceCount = orderCounter;
-  console.log(`\x1b[32m  📖 ${sourceCount}개 원본 페이지 생성 완료\x1b[0m`);
+  const phase1Sec = ((performance.now() - phase1Start) / 1000).toFixed(1);
+  console.log(`\x1b[32m✅ Phase 1 완료 (${phase1Sec}초) — 📖 ${sourceCount}개 원본 페이지 생성\x1b[0m`);
 
   // ── Phase 2: Extract concept pages ──
-  console.log(`\x1b[34m🧠 Phase 2: 개념 페이지 추출...\x1b[0m`);
+  const phase2Start = performance.now();
+  console.log(`\x1b[34m⏳ Phase 2: 개념 추출 중...\x1b[0m`);
 
   // Process source pages in small batches for concept extraction
   const batchSize = 5;
@@ -340,21 +343,24 @@ export async function llmChunkDocument(
     }
   }
 
-  console.log(`\x1b[32m  📝 ${conceptCount}개 개념 페이지 생성 완료\x1b[0m`);
+  const phase2Sec = ((performance.now() - phase2Start) / 1000).toFixed(1);
+  console.log(`\x1b[32m✅ Phase 2 완료 (${phase2Sec}초) — 📝 ${conceptCount}개 개념 페이지 생성\x1b[0m`);
 
   // ── Phase 2.5: Generate quizzes from concept pages ──
   let quizCount = 0;
   try {
     const conceptPagesForQuiz = store.listConceptPages();
     if (conceptPagesForQuiz.length > 0) {
-      console.log(`\x1b[34m🧠 Phase 2.5: 퀴즈 생성 (${conceptPagesForQuiz.length}개 개념 페이지)...\x1b[0m`);
+      console.log(`\x1b[34m⏳ Phase 2.5: 퀴즈 생성 중... (${conceptPagesForQuiz.length}개 개념 페이지)\x1b[0m`);
 
-      const quizSystem = `You are a quiz generator for a study wiki. Generate quiz questions based on wiki content.
+      const quizSystem = `You are a quiz generator for a study wiki. Generate quiz questions that test UNDERSTANDING, not just memorization.
+Focus on higher-order thinking: "왜?", "어떻게?", "비교하라", "설명하라" style questions.
 Return valid JSON only. No markdown fences.`;
 
       await parallelMap(conceptPagesForQuiz, 3, async (page, i) => {
         try {
-          const quizPrompt = `Based on this wiki content, generate 2-3 quiz questions in JSON format.
+          const quizPrompt = `Based on this wiki content, generate 2-3 quiz questions that test UNDERSTANDING, not just memorization.
+Include questions that ask "왜?", "어떻게?", "비교하라" etc.
 Types: "fill_blank" (빈칸 채우기), "ox" (OX 퀴즈 - true/false), "short_answer" (단답형)
 
 Content title: ${page.title}
@@ -362,21 +368,22 @@ Content:
 ${page.content.slice(0, 3000)}
 
 Respond with a JSON array only:
-[{"question": "___은 양자역학에서 위치와 운동량을 동시에 측정할 수 없다는 원리이다.", "answer": "불확정성 원리", "type": "fill_blank"}]
+[{"question": "___은 양자역학에서 위치와 운동량을 동시에 측정할 수 없다는 원리이다.", "answer": "불확정성 원리", "explanation": "이 원리는 양자역학의 근본적 한계를 보여주며, 측정 행위 자체가 시스템에 영향을 주기 때문입니다.", "type": "fill_blank"}]
 
 Rules:
 - For fill_blank: use ___ to mark the blank in the question
 - For ox: question should be a statement, answer should be "O" or "X"
 - For short_answer: question should be answerable in 1-3 words
-- Questions should test understanding, not just recall
+- Include "explanation" field: a brief 1-2 sentence explanation of WHY the answer is correct
+- Questions should test understanding, application, or analysis — not just recall
 - Write questions in Korean when the content is in Korean`;
 
           const raw = await chat(quizSystem, quizPrompt, 2048);
-          const quizzes = parseJSON<Array<{ question: string; answer: string; type: string }>>(raw);
+          const quizzes = parseJSON<Array<{ question: string; answer: string; explanation?: string; type: string }>>(raw);
 
           for (const q of quizzes) {
             if (q.question && q.answer && q.type) {
-              store.addQuiz(page.id, q.question, q.answer, q.type);
+              store.addQuiz(page.id, q.question, q.answer, q.type, q.explanation || "");
               quizCount++;
             }
           }

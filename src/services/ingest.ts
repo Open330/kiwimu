@@ -23,13 +23,13 @@ export async function ingestUrl(
   const { fetchPage } = await import("../ingest/web");
   const { llmChunkDocument, htmlToRawText } = await import("../pipeline/llm-chunker");
 
-  onProgress?.("URL 가져오는 중...");
+  onProgress?.("⏳ URL 가져오는 중...");
   const { title, html } = await fetchPage(url);
 
   const source = store.addSource(url, "web", title, html);
   const rawText = htmlToRawText(html);
 
-  onProgress?.("LLM 분석 중...");
+  onProgress?.("⏳ LLM 분석 시작...");
   const { sourceCount, conceptCount } = await llmChunkDocument(rawText, title, source.id, store, 0, persona, client);
 
   const u = client.getUsageStats();
@@ -65,26 +65,26 @@ export async function ingestFile(
 
   if (ext === "pdf") {
     const { extractTextFromPdf } = await import("../ingest/pdf");
-    onProgress?.("PDF 텍스트 추출 중...");
+    onProgress?.("⏳ PDF 텍스트 추출 중...");
     ({ title, text } = await extractTextFromPdf(filePath));
   } else if (ext === "docx") {
     const { extractTextFromDocx } = await import("../ingest/docx");
-    onProgress?.("DOCX 텍스트 추출 중...");
+    onProgress?.("⏳ DOCX 텍스트 추출 중...");
     ({ title, text } = await extractTextFromDocx(filePath));
   } else if (ext === "pptx") {
     const { extractTextFromPptx } = await import("../ingest/pptx");
-    onProgress?.("PPTX 텍스트 추출 중...");
+    onProgress?.("⏳ PPTX 텍스트 추출 중...");
     ({ title, text } = await extractTextFromPptx(filePath));
   } else {
     const { extractWithTextutil } = await import("../ingest/legacy");
-    onProgress?.(`${ext.toUpperCase()} 텍스트 추출 중...`);
+    onProgress?.(`⏳ ${ext.toUpperCase()} 텍스트 추출 중...`);
     ({ title, text } = await extractWithTextutil(filePath));
   }
 
   const source = store.addSource(filePath, ext, title, "(file)");
   store.deletePagesBySource(source.id);
 
-  onProgress?.("LLM 분석 중...");
+  onProgress?.("⏳ LLM 분석 시작...");
   const { sourceCount, conceptCount } = await llmChunkDocument(text, title, source.id, store, 0, persona, client);
 
   const u = client.getUsageStats();

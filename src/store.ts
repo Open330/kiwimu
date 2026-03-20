@@ -39,6 +39,7 @@ export interface Quiz {
   page_id: number;
   question: string;
   answer: string;
+  explanation: string;
   quiz_type: string; // 'fill_blank' | 'ox' | 'short_answer'
   created_at: string;
   page_title?: string;
@@ -87,11 +88,20 @@ CREATE TABLE IF NOT EXISTS quizzes (
   page_id INTEGER NOT NULL,
   question TEXT NOT NULL,
   answer TEXT NOT NULL,
+  explanation TEXT DEFAULT '',
   quiz_type TEXT NOT NULL DEFAULT 'fill_blank',
   created_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (page_id) REFERENCES pages(id)
 );
+CREATE TABLE IF NOT EXISTS quiz_attempts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  quiz_id INTEGER NOT NULL,
+  is_correct INTEGER NOT NULL DEFAULT 0,
+  attempted_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (quiz_id) REFERENCES quizzes(id)
+);
 CREATE INDEX IF NOT EXISTS idx_pages_source_id ON pages(source_id);
+CREATE INDEX IF NOT EXISTS idx_attempts_quiz_id ON quiz_attempts(quiz_id);
 CREATE INDEX IF NOT EXISTS idx_pages_page_type ON pages(page_type);
 CREATE INDEX IF NOT EXISTS idx_links_to_page ON links(to_page_id);
 CREATE INDEX IF NOT EXISTS idx_links_from_page ON links(from_page_id);
@@ -109,6 +119,12 @@ export class Store {
 
   initSchema(): void {
     this.db.exec(SCHEMA);
+    // Migrate: add explanation column if missing (for existing databases)
+    try {
+      this.db.exec("ALTER TABLE quizzes ADD COLUMN explanation TEXT DEFAULT ''");
+    } catch {
+      // Column already exists — ignore
+    }
   }
 
   close(): void {
@@ -184,7 +200,11 @@ export class Store {
   }
 
   deletePagesBySource(sourceId: number): void {
-    // Delete quizzes for these pages first
+    // Delete quiz attempts for quizzes on these pages first
+    this.db.prepare(
+      "DELETE FROM quiz_attempts WHERE quiz_id IN (SELECT id FROM quizzes WHERE page_id IN (SELECT id FROM pages WHERE source_id = ?))"
+    ).run(sourceId);
+    // Delete quizzes for these pages
     this.db.prepare(
       "DELETE FROM quizzes WHERE page_id IN (SELECT id FROM pages WHERE source_id = ?)"
     ).run(sourceId);
@@ -196,6 +216,7 @@ export class Store {
   }
 
   deleteAllPages(): void {
+    this.db.exec("DELETE FROM quiz_attempts");
     this.db.exec("DELETE FROM quizzes");
     this.db.exec("DELETE FROM links");
     this.db.exec("DELETE FROM pages");
@@ -252,10 +273,10 @@ export class Store {
 
   // --- Quizzes ---
 
-  addQuiz(pageId: number, question: string, answer: string, quizType: string): void {
+  addQuiz(pageId: number, question: string, answer: string, quizType: string, explanation: string = ""): void {
     this.db
-      .prepare("INSERT INTO quizzes (page_id, question, answer, quiz_type) VALUES (?, ?, ?, ?)")
-      .run(pageId, question, answer, quizType);
+      .prepare("INSERT INTO quizzes (page_id, question, answer, explanation, quiz_type) VALUES (?, ?, ?, ?, ?)")
+      .run(pageId, question, answer, explanation, quizType);
   }
 
   getQuizzesByPage(pageId: number): Quiz[] {
@@ -290,6 +311,89 @@ export class Store {
 
   deleteQuizzesByPage(pageId: number): void {
     this.db.prepare("DELETE FROM quizzes WHERE page_id = ?").run(pageId);
+  }
+
+  getSmartQuizzes(count: number): Quiz[] {
+    return this.db.prepare(`
+      SELECT q.*, p.title as page_title, p.slug as page_slug,
+        COALESCE(a.last_attempt, '1970-01-01') as last_attempt,
+        COALESCE(a.correct_count, 0) as correct_count,
+        COALESCE(a.wrong_count, 0) as wrong_count
+      FROM quizzes q
+      JOIN pages p ON p.id = q.page_id
+      LEFT JOIN (
+        SELECT quiz_id,
+          MAX(attempted_at) as last_attempt,
+          SUM(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) as correct_count,
+          SUM(CASE WHEN is_correct = 0 THEN 1 ELSE 0 END) as wrong_count
+        FROM quiz_attempts
+        GROUP BY quiz_id
+      ) a ON a.quiz_id = q.id
+      ORDER BY
+        CASE WHEN a.last_attempt IS NULL THEN 0 ELSE 1 END,
+        CASE WHEN a.wrong_count > 0 THEN 0 ELSE 1 END,
+        a.last_attempt ASC
+      LIMIT ?
+    `).all(count) as Quiz[];
+  }
+
+  // --- Quiz Attempts ---
+
+  addQuizAttempt(quizId: number, isCorrect: boolean): void {
+    this.db
+      .prepare("INSERT INTO quiz_attempts (quiz_id, is_correct) VALUES (?, ?)")
+      .run(quizId, isCorrect ? 1 : 0);
+  }
+
+  getQuizStats(): { total: number; correct: number; incorrect: number; unattempted: number } {
+    const totalQuizzes = (this.db.prepare("SELECT COUNT(*) as cnt FROM quizzes").get() as { cnt: number }).cnt;
+    const attemptRow = this.db.prepare(`
+      SELECT COUNT(*) as total,
+        SUM(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) as correct,
+        SUM(CASE WHEN is_correct = 0 THEN 1 ELSE 0 END) as incorrect
+      FROM quiz_attempts
+    `).get() as { total: number; correct: number; incorrect: number };
+    const attemptedQuizzes = (this.db.prepare("SELECT COUNT(DISTINCT quiz_id) as cnt FROM quiz_attempts").get() as { cnt: number }).cnt;
+    return {
+      total: attemptRow.total,
+      correct: attemptRow.correct,
+      incorrect: attemptRow.incorrect,
+      unattempted: totalQuizzes - attemptedQuizzes,
+    };
+  }
+
+  getWeakQuizzes(limit: number): Quiz[] {
+    return this.db.prepare(`
+      SELECT q.*, p.title as page_title, p.slug as page_slug
+      FROM quizzes q
+      JOIN pages p ON p.id = q.page_id
+      LEFT JOIN (
+        SELECT quiz_id,
+          SUM(CASE WHEN is_correct = 0 THEN 1 ELSE 0 END) as wrong_count,
+          COUNT(*) as attempt_count
+        FROM quiz_attempts
+        GROUP BY quiz_id
+      ) a ON a.quiz_id = q.id
+      ORDER BY
+        CASE WHEN a.attempt_count IS NULL THEN 1 ELSE 0 END DESC,
+        COALESCE(a.wrong_count, 0) DESC
+      LIMIT ?
+    `).all(limit) as Quiz[];
+  }
+
+  getQuizHistory(limit: number): Array<{ quiz_id: number; question: string; is_correct: boolean; attempted_at: string }> {
+    return this.db.prepare(`
+      SELECT qa.quiz_id, q.question, qa.is_correct, qa.attempted_at
+      FROM quiz_attempts qa
+      JOIN quizzes q ON q.id = qa.quiz_id
+      ORDER BY qa.attempted_at DESC
+      LIMIT ?
+    `).all(limit).map((row: any) => ({
+      quiz_id: row.quiz_id,
+      question: row.question,
+      is_correct: row.is_correct === 1,
+      attempted_at: row.attempted_at,
+    }));
   }
 
   // --- Usage ---
