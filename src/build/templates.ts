@@ -478,7 +478,7 @@ export function renderQuizPage(opts: {
 
     function checkAnswer(userAnswer) {
         const q = quizzes[current];
-        const isCorrect = normalize(userAnswer) === normalize(q.answer) || normalize(q.answer).includes(normalize(userAnswer)) && normalize(userAnswer).length > 0;
+        const isCorrect = normalize(userAnswer) === normalize(q.answer);
 
         if (isCorrect) score++;
 

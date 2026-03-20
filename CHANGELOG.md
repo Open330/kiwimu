@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.8.0] - 2026-03-20
+
+### Added
+- Spaced repetition: smart quiz selection (unattempted → wrong → oldest correct)
+- Quiz attempts tracking (quiz_attempts table)
+- Quiz explanations with LLM-generated context
+- Learning stats display (correct rate, weak concepts)
+- Higher Bloom's taxonomy quiz prompts
+- CONTRIBUTING.md with dev setup and guidelines
+- CHANGELOG.md
+- GitHub issue templates (bug report, feature request)
+- GitHub pull request template
+- .npmignore to exclude test files from npm
+- CLI file format validation
+- Phase timing display ("Phase 1 완료 (12.3초)")
+
+### Fixed
+- Exit codes: errors now exit with code 1
+- stderr separation: errors use console.error
+- Quiz answer matching: exact match only (no partial substring)
+
 ## [0.7.1] - 2026-03-20
 
 ### Fixed

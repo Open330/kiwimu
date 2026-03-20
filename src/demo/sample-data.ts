@@ -47,13 +47,13 @@ export const DEMO_PAGES = [
 
 export const DEMO_QUIZZES = [
   { page_slug: "하이젠베르크", question: "___은 위치와 운동량을 동시에 정확히 측정할 수 없다는 양자역학의 원리이다.", answer: "불확정성 원리", explanation: "하이젠베르크가 1927년에 제안한 이 원리는 양자역학의 근본적 한계를 보여줍니다. 위치를 정확히 측정하면 운동량의 불확정성이 커지고, 그 반대도 마찬가지입니다.", quiz_type: "fill_blank" },
-  { page_slug: "슈뢰딩거-방정식", question: "슈뢰딩거 방정식은 1926년에 발표되었다.", answer: "O", explanation: "에르빈 슈뢰딩거가 1926년에 발표한 이 방정식은 양자계의 시간 변화를 기술하는 기본 방정식입니다.", quiz_type: "ox" },
+  { page_slug: "슈뢰딩거-방정식", question: "슈뢰딩거 방정식은 1936년에 발표되었다.", answer: "X", explanation: "슈뢰딩거 방정식은 1936년이 아니라 1926년에 에르빈 슈뢰딩거가 발표했습니다.", quiz_type: "ox" },
   { page_slug: "양자-중첩", question: "양자 중첩에서 관측하면 어떤 현상이 일어나는가?", answer: "중첩이 붕괴하여 하나의 상태만 남는다", explanation: "관측 행위가 양자 시스템에 영향을 주어 여러 가능한 상태 중 하나로 '붕괴'됩니다. 이를 파동함수 붕괴라고 합니다.", quiz_type: "short_answer" },
   { page_slug: "양자-얽힘", question: "아인슈타인은 양자 얽힘을 '___한 원격 작용'이라 불렀다.", answer: "으스스", explanation: "아인슈타인은 양자 얽힘이 국소적 실재론에 위배된다고 생각하여 'spooky action at a distance(으스스한 원격 작용)'이라 비판했습니다.", quiz_type: "fill_blank" },
   { page_slug: "양자-중첩", question: "슈뢰딩거의 고양이 사고실험에서 고양이는 살아있는 상태와 죽어있는 상태의 ___에 놓인다.", answer: "중첩", explanation: "이 사고실험은 양자 중첩의 개념을 거시적 세계에 적용하여 양자역학의 해석 문제를 드러내기 위해 고안되었습니다.", quiz_type: "fill_blank" },
   { page_slug: "양자-얽힘", question: "2022년 노벨 물리학상은 양자 얽힘의 벨 부등식 실험 검증과 관련이 있다.", answer: "O", explanation: "알랭 아스페, 존 클라우저, 안톤 차일링거가 벨 부등식 위반을 실험적으로 증명하여 양자 얽힘의 실재성을 확인한 공로로 수상했습니다.", quiz_type: "ox" },
   { page_slug: "슈뢰딩거-방정식", question: "시간 독립 슈뢰딩거 방정식에서 E는 무엇을 나타내는가?", answer: "에너지 고유값", explanation: "시간 독립 슈뢰딩거 방정식 Hψ = Eψ에서 E는 시스템의 에너지 고유값으로, 허용된 에너지 준위를 나타냅니다.", quiz_type: "short_answer" },
-  { page_slug: "하이젠베르크", question: "불확정성 원리에서 Δx·Δp ≥ ℏ/2 이다.", answer: "O", explanation: "이 부등식은 위치의 불확정성(Δx)과 운동량의 불확정성(Δp)의 곱이 플랑크 상수의 절반 이상임을 나타냅니다.", quiz_type: "ox" },
+  { page_slug: "하이젠베르크", question: "불확정성 원리에서 Δx·Δp ≥ ℏ 이다.", answer: "X", explanation: "정확한 부등식은 Δx·Δp ≥ ℏ/2 입니다. ℏ가 아니라 ℏ/2(플랑크 상수의 절반)가 하한값입니다.", quiz_type: "ox" },
 ];
 
 export const DEMO_LINKS = [

@@ -2,7 +2,7 @@
 
 import { Command } from "commander";
 import { join } from "path";
-import { CONFIG_FILE, DB_FILE, defaultConfig, findProjectRoot, getActivePersona, loadConfig, saveConfig } from "./config";
+import { CONFIG_FILE, DB_FILE, SUPPORTED_EXTENSIONS, defaultConfig, findProjectRoot, getActivePersona, loadConfig, saveConfig } from "./config";
 import { Store } from "./store";
 
 const program = new Command()
@@ -148,7 +148,6 @@ program
           process.exit(1);
         }
         const ext = source.split(".").pop()?.toLowerCase() || "";
-        const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'pptx', 'doc', 'ppt', 'key', 'rtf'];
         if (!SUPPORTED_EXTENSIONS.includes(ext)) {
           console.error(`\x1b[31m❌ 지원하지 않는 파일 형식입니다: .${ext}\x1b[0m`);
           console.error(`   지원 형식: ${SUPPORTED_EXTENSIONS.join(', ')}`);
@@ -216,6 +215,10 @@ program
       const { autoLinkPages } = await import("./pipeline/linker");
       const linkCount = autoLinkPages(store);
       console.log(`\x1b[32m✅ 확장 완료! (${linkCount}개 링크 갱신)\x1b[0m`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error(`\x1b[31m❌ ${message}\x1b[0m`);
+      process.exit(1);
     } finally {
       store.close();
     }
@@ -235,6 +238,10 @@ program
       const count = await buildSite(store, config, root);
       console.log(`\x1b[32m✅ ${count}개 페이지가 빌드되었습니다!\x1b[0m`);
       console.log(`  출력: ${join(root, config.build.output_dir)}/`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error(`\x1b[31m❌ ${message}\x1b[0m`);
+      process.exit(1);
     } finally {
       store.close();
     }
@@ -257,31 +264,41 @@ program
       console.log("\x1b[34m🔨 빌드 중...\x1b[0m");
       const count = await buildSite(store, config, root);
       console.log(`\x1b[32m  ${count}개 페이지 빌드 완료\x1b[0m`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error(`\x1b[31m❌ 빌드 실패: ${message}\x1b[0m`);
+      process.exit(1);
     } finally {
       store.close();
     }
 
-    console.log(`\x1b[34m🚀 ${opts.target}에 배포 중...\x1b[0m`);
+    try {
+      console.log(`\x1b[34m🚀 ${opts.target}에 배포 중...\x1b[0m`);
 
-    if (opts.target === "gh-pages") {
-      const { deployGhPages } = await import("./deploy");
-      await deployGhPages(siteDir, opts.message);
-      console.log("\x1b[32m✅ GitHub Pages에 배포되었습니다!\x1b[0m");
-      try {
-        const proc = Bun.spawn(["gh", "repo", "view", "--json", "url", "-q", ".url"], { stdout: "pipe" });
-        const repoUrl = (await new Response(proc.stdout).text()).trim();
-        if (repoUrl) {
-          const owner = repoUrl.split("/").slice(-2).join("/").replace("https://github.com/", "");
-          const [user, repo] = owner.split("/");
-          console.log(`  https://${user}.github.io/${repo}/`);
-        }
-      } catch {}
-    } else if (opts.target === "vercel") {
-      const { deployVercel } = await import("./deploy");
-      await deployVercel(siteDir);
-      console.log("\x1b[32m✅ Vercel에 배포되었습니다!\x1b[0m");
-    } else {
-      console.error(`\x1b[31m❌ 지원하지 않는 배포 대상: ${opts.target}\x1b[0m`);
+      if (opts.target === "gh-pages") {
+        const { deployGhPages } = await import("./deploy");
+        await deployGhPages(siteDir, opts.message);
+        console.log("\x1b[32m✅ GitHub Pages에 배포되었습니다!\x1b[0m");
+        try {
+          const proc = Bun.spawn(["gh", "repo", "view", "--json", "url", "-q", ".url"], { stdout: "pipe" });
+          const repoUrl = (await new Response(proc.stdout).text()).trim();
+          if (repoUrl) {
+            const owner = repoUrl.split("/").slice(-2).join("/").replace("https://github.com/", "");
+            const [user, repo] = owner.split("/");
+            console.log(`  https://${user}.github.io/${repo}/`);
+          }
+        } catch {}
+      } else if (opts.target === "vercel") {
+        const { deployVercel } = await import("./deploy");
+        await deployVercel(siteDir);
+        console.log("\x1b[32m✅ Vercel에 배포되었습니다!\x1b[0m");
+      } else {
+        console.error(`\x1b[31m❌ 지원하지 않는 배포 대상: ${opts.target}\x1b[0m`);
+        process.exit(1);
+      }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error(`\x1b[31m❌ 배포 실패: ${message}\x1b[0m`);
       process.exit(1);
     }
   });
@@ -293,20 +310,29 @@ program
   .option("-p, --port <port>", "포트 번호", "8000")
   .option("-H, --host <host>", "바인드 주소", "localhost")
   .action(async (opts) => {
-    const root = findProjectRoot();
-    const config = loadConfig(root);
-    const siteDir = join(root, config.build.output_dir);
+    try {
+      const root = findProjectRoot();
+      const config = loadConfig(root);
+      const siteDir = join(root, config.build.output_dir);
 
-    const { existsSync } = await import("fs");
-    if (!existsSync(siteDir)) {
-      const store = new Store(join(root, DB_FILE));
-      const { buildSite } = await import("./build/renderer");
-      await buildSite(store, config, root);
-      store.close();
+      const { existsSync } = await import("fs");
+      if (!existsSync(siteDir)) {
+        const store = new Store(join(root, DB_FILE));
+        try {
+          const { buildSite } = await import("./build/renderer");
+          await buildSite(store, config, root);
+        } finally {
+          store.close();
+        }
+      }
+
+      const { startServer } = await import("./server");
+      startServer(root, parseInt(opts.port), opts.host);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error(`\x1b[31m❌ ${message}\x1b[0m`);
+      process.exit(1);
     }
-
-    const { startServer } = await import("./server");
-    startServer(root, parseInt(opts.port), opts.host);
   });
 
 // --- quiz ---
@@ -396,6 +422,10 @@ program
       }
 
       p.outro("학습을 계속하세요! 🥝");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error(`\x1b[31m❌ ${message}\x1b[0m`);
+      process.exit(1);
     } finally {
       store.close();
     }
@@ -436,6 +466,10 @@ program
         }
       }
       console.log();
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error(`\x1b[31m❌ ${message}\x1b[0m`);
+      process.exit(1);
     } finally {
       store.close();
     }

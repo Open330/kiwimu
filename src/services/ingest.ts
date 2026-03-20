@@ -29,6 +29,10 @@ export async function ingestUrl(
   const source = store.addSource(url, "web", title, html);
   const rawText = htmlToRawText(html);
 
+  if (!rawText || rawText.trim().length < 50) {
+    throw new Error("추출된 텍스트가 너무 짧습니다. 파일 내용을 확인해주세요.");
+  }
+
   onProgress?.("⏳ LLM 분석 시작...");
   const { sourceCount, conceptCount } = await llmChunkDocument(rawText, title, source.id, store, 0, persona, client);
 
@@ -79,6 +83,10 @@ export async function ingestFile(
     const { extractWithTextutil } = await import("../ingest/legacy");
     onProgress?.(`⏳ ${ext.toUpperCase()} 텍스트 추출 중...`);
     ({ title, text } = await extractWithTextutil(filePath));
+  }
+
+  if (!text || text.trim().length < 50) {
+    throw new Error("추출된 텍스트가 너무 짧습니다. 파일 내용을 확인해주세요.");
   }
 
   const source = store.addSource(filePath, ext, title, "(file)");

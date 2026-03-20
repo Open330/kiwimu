@@ -1,7 +1,7 @@
 import { join } from "path";
 import path from "path";
 import crypto from "crypto";
-import { DB_FILE, loadConfig, saveConfig, getActivePersona } from "./config";
+import { DB_FILE, SUPPORTED_EXTENSIONS, loadConfig, saveConfig, getActivePersona } from "./config";
 import { Store } from "./store";
 import type { KiwiConfig } from "./config";
 
@@ -57,9 +57,8 @@ export function startServer(root: string, port: number, host: string): void {
         }
 
         const ext = file.name.split(".").pop()?.toLowerCase() || "";
-        const supported = ["pdf", "docx", "doc", "pptx", "ppt", "key", "rtf"];
-        if (!supported.includes(ext)) {
-          return Response.json({ error: `지원하지 않는 형식: .${ext}. 지원: ${supported.join(", ")}` }, { status: 400 });
+        if (!SUPPORTED_EXTENSIONS.includes(ext)) {
+          return Response.json({ error: `지원하지 않는 형식: .${ext}. 지원: ${SUPPORTED_EXTENSIONS.join(", ")}` }, { status: 400 });
         }
 
         // Save uploaded file
