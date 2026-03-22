@@ -690,7 +690,7 @@ export function renderAdmin(opts: {
                 </div>
                 <div class="config-row">
                     <span class="config-key">모델</span>
-                    <input id="llm-model" class="config-input" value="${escapeHtml(opts.llmConfig.model)}" placeholder="gemini-2.0-flash-lite">
+                    <input id="llm-model" class="config-input" value="${escapeHtml(opts.llmConfig.model)}" placeholder="gemini-3.1-flash-lite-preview">
                 </div>
                 <div class="config-row">
                     <span class="config-key">API Key</span>
@@ -837,7 +837,7 @@ export function renderAdmin(opts: {
 
     document.getElementById('llm-provider').addEventListener('change', (e) => {
         document.getElementById('endpoint-row').style.display = e.target.value === 'azure-openai' ? '' : 'none';
-        const models = { gemini: 'gemini-2.0-flash-lite', 'azure-openai': 'gpt-5-nano', openai: 'gpt-4o-mini', anthropic: 'claude-sonnet-4-20250514' };
+        const models = { gemini: 'gemini-3.1-flash-lite-preview', 'azure-openai': 'gpt-5.4-nano', openai: 'gpt-5.4-nano', anthropic: 'claude-sonnet-4-6' };
         document.getElementById('llm-model').placeholder = models[e.target.value] || '';
     });
     document.getElementById('llm-form').addEventListener('submit', async (e) => {

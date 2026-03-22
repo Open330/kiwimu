@@ -112,7 +112,7 @@ Interactive 프롬프트가 실행됩니다:
 │  ○ Anthropic Claude
 
 ◆ 모델명
-│  gemini-2.0-flash-lite
+│  gemini-3.1-flash-lite-preview
 
 ◆ API Key
 │  ••••••••••••
@@ -213,10 +213,10 @@ bunx @open330/kiwimu deploy --target vercel
 
 | 프로바이더 | 추천 모델 | 비고 |
 |-----------|----------|------|
-| **Google Gemini** | `gemini-2.0-flash-lite` | [무료 API key](https://aistudio.google.com/) |
-| Azure OpenAI | `gpt-5-nano` | Azure 구독 필요 |
-| OpenAI | `gpt-4o` | API key 필요 |
-| Anthropic | `claude-sonnet-4-20250514` | API key 필요 |
+| **Google Gemini** | `gemini-3.1-flash-lite-preview` | [무료 API key](https://aistudio.google.com/) |
+| Azure OpenAI | `gpt-5.4-nano` | Azure 구독 필요 |
+| OpenAI | `gpt-5.4` | API key 필요 |
+| Anthropic | `claude-sonnet-4-6` | API key 필요 |
 
 ## Architecture
 

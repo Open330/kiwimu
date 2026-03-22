@@ -105,7 +105,7 @@ export class LLMClient {
       this._openaiClient = new OpenAI({ apiKey: this.config.api_key });
     }
     const resp = await this._openaiClient.chat.completions.create({
-      model: this.config.model || "gpt-4o",
+      model: this.config.model || "gpt-5.4",
       messages: [
         { role: "system", content: system },
         { role: "user", content: userMessage },
@@ -128,7 +128,7 @@ export class LLMClient {
       this._anthropicClient = new Anthropic({ apiKey: this.config.api_key });
     }
     const resp = await this._anthropicClient.messages.create({
-      model: this.config.model || "claude-sonnet-4-20250514",
+      model: this.config.model || "claude-sonnet-4-6",
       max_tokens: maxTokens,
       system: system,
       messages: [{ role: "user", content: userMessage }],

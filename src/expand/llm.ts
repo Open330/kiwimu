@@ -31,7 +31,7 @@ export async function expandWithApi(page: Page, context: Page[], provider: strin
     const { default: Anthropic } = await import("@anthropic-ai/sdk");
     const client = new Anthropic();
     const resp = await client.messages.create({
-      model: model || "claude-sonnet-4-20250514",
+      model: model || "claude-sonnet-4-6",
       max_tokens: 4096,
       messages: [{ role: "user", content: prompt }],
     });
@@ -42,7 +42,7 @@ export async function expandWithApi(page: Page, context: Page[], provider: strin
     const { default: OpenAI } = await import("openai");
     const client = new OpenAI();
     const resp = await client.chat.completions.create({
-      model: model || "gpt-4o",
+      model: model || "gpt-5.4",
       messages: [{ role: "user", content: prompt }],
     });
     return resp.choices[0].message.content || "";

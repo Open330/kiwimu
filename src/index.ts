@@ -81,13 +81,13 @@ program
         p.text({
           message: "모델명",
           placeholder:
-            results.provider === "gemini" ? "gemini-2.0-flash-lite" :
-            results.provider === "azure-openai" ? "gpt-5-nano" :
-            results.provider === "openai" ? "gpt-4o-mini" : "claude-sonnet-4-20250514",
+            results.provider === "gemini" ? "gemini-3.1-flash-lite-preview" :
+            results.provider === "azure-openai" ? "gpt-5.4-nano" :
+            results.provider === "openai" ? "gpt-5.4-nano" : "claude-sonnet-4-6",
           initialValue:
-            results.provider === "gemini" ? "gemini-2.0-flash-lite" :
-            results.provider === "azure-openai" ? "gpt-5-nano" :
-            results.provider === "openai" ? "gpt-4o-mini" : "claude-sonnet-4-20250514",
+            results.provider === "gemini" ? "gemini-3.1-flash-lite-preview" :
+            results.provider === "azure-openai" ? "gpt-5.4-nano" :
+            results.provider === "openai" ? "gpt-5.4-nano" : "claude-sonnet-4-6",
         }),
       apiKey: () =>
         p.password({
