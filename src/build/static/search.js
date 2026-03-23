@@ -6,6 +6,12 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     let searchData = [];
     let selectedIndex = -1;
+    let debounceTimer;
+
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-expanded', 'false');
+    input.setAttribute('aria-haspopup', 'listbox');
+    input.setAttribute('aria-autocomplete', 'list');
     try {
         const resp = await fetch("/search-index.json");
         searchData = await resp.json();
@@ -38,24 +44,33 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     input.addEventListener("input", () => {
-        selectedIndex = -1;
-        const results = search(input.value);
-        if (results.length === 0) {
-            dropdown.classList.remove("active");
-            dropdown.innerHTML = "";
-            return;
-        }
-        dropdown.innerHTML = results.map(r =>
-            `<a href="/wiki/${r.slug}.html">
-                <strong>${escapeHtml(r.title)}</strong>
-                <div style="font-size:12px;color:#6c757d;margin-top:2px;">${escapeHtml(r.preview.slice(0, 80))}...</div>
-            </a>`
-        ).join("");
-        dropdown.classList.add("active");
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            selectedIndex = -1;
+            const results = search(input.value);
+            if (results.length === 0) {
+                dropdown.classList.remove("active");
+                dropdown.innerHTML = "";
+                input.setAttribute('aria-expanded', 'false');
+                return;
+            }
+            dropdown.setAttribute('role', 'listbox');
+            dropdown.innerHTML = results.map(r =>
+                `<a href="/wiki/${r.slug}.html" role="option">
+                    <strong>${escapeHtml(r.title)}</strong>
+                    <div style="font-size:12px;color:#6c757d;margin-top:2px;">${escapeHtml(r.preview.slice(0, 80))}...</div>
+                </a>`
+            ).join("");
+            dropdown.classList.add("active");
+            input.setAttribute('aria-expanded', 'true');
+        }, 150);
     });
 
     input.addEventListener("blur", () => {
-        setTimeout(() => dropdown.classList.remove("active"), 200);
+        setTimeout(() => {
+            dropdown.classList.remove("active");
+            input.setAttribute('aria-expanded', 'false');
+        }, 200);
     });
 
     input.addEventListener("focus", () => {

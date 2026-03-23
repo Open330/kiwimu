@@ -116,7 +116,7 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
     wikiName,
     sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
     conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title })),
-    sourceCount: store.listSources().length,
+    sourceCount: store.countSources(),
   });
   await Bun.write(join(outputDir, "index.html"), indexHtml);
 

@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS pages (
   slug TEXT UNIQUE NOT NULL,
   title TEXT NOT NULL,
   content TEXT NOT NULL,
-  source_id INTEGER REFERENCES sources(id),
+  source_id INTEGER REFERENCES sources(id) ON DELETE CASCADE,
   section_anchor TEXT,
   page_type TEXT NOT NULL DEFAULT 'concept',
   display_order INTEGER NOT NULL DEFAULT 0,
@@ -78,8 +78,8 @@ CREATE TABLE IF NOT EXISTS usage_logs (
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS links (
-  from_page_id INTEGER REFERENCES pages(id),
-  to_page_id INTEGER REFERENCES pages(id),
+  from_page_id INTEGER REFERENCES pages(id) ON DELETE CASCADE,
+  to_page_id INTEGER REFERENCES pages(id) ON DELETE CASCADE,
   anchor_text TEXT,
   PRIMARY KEY (from_page_id, to_page_id, anchor_text)
 );
@@ -91,14 +91,14 @@ CREATE TABLE IF NOT EXISTS quizzes (
   explanation TEXT DEFAULT '',
   quiz_type TEXT NOT NULL DEFAULT 'fill_blank',
   created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (page_id) REFERENCES pages(id)
+  FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS quiz_attempts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   quiz_id INTEGER NOT NULL,
   is_correct INTEGER NOT NULL DEFAULT 0,
   attempted_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (quiz_id) REFERENCES quizzes(id)
+  FOREIGN KEY (quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_pages_source_id ON pages(source_id);
 CREATE INDEX IF NOT EXISTS idx_attempts_quiz_id ON quiz_attempts(quiz_id);
@@ -115,6 +115,7 @@ export class Store {
     this.db = new Database(dbPath);
     this.db.exec("PRAGMA journal_mode=WAL");
     this.db.exec("PRAGMA foreign_keys=ON");
+    this.db.exec("PRAGMA busy_timeout = 5000");
   }
 
   initSchema(): void {
@@ -152,6 +153,10 @@ export class Store {
     return (this.db.prepare("SELECT * FROM sources WHERE uri = ?").get(uri) as Source) ?? null;
   }
 
+  countSources(): number {
+    return (this.db.prepare("SELECT COUNT(*) as count FROM sources").get() as any).count;
+  }
+
   listSources(): Source[] {
     return this.db.prepare("SELECT * FROM sources ORDER BY fetched_at DESC").all() as Source[];
   }
@@ -173,7 +178,16 @@ export class Store {
   ): Page {
     this.db
       .prepare(
-        "INSERT OR REPLACE INTO pages (slug, title, content, source_id, section_anchor, page_type, display_order) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        `INSERT INTO pages (slug, title, content, source_id, section_anchor, page_type, display_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(slug) DO UPDATE SET
+           title = excluded.title,
+           content = excluded.content,
+           source_id = excluded.source_id,
+           section_anchor = excluded.section_anchor,
+           page_type = excluded.page_type,
+           display_order = excluded.display_order,
+           updated_at = datetime('now')`
       )
       .run(slug, title, content, sourceId ?? null, sectionAnchor ?? null, pageType, displayOrder);
     return this.db.prepare("SELECT * FROM pages WHERE slug = ?").get(slug) as Page;
@@ -181,6 +195,10 @@ export class Store {
 
   getPage(slug: string): Page | null {
     return (this.db.prepare("SELECT * FROM pages WHERE slug = ?").get(slug) as Page) ?? null;
+  }
+
+  countPages(): number {
+    return (this.db.prepare("SELECT COUNT(*) as count FROM pages").get() as any).count;
   }
 
   listPages(): Page[] {

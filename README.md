@@ -4,9 +4,9 @@
 
 # Kiwi Mu
 
-**나만의 학습 위키를 만드세요**
+**Turn any textbook into your personal learning wiki**
 
-전공책, PDF, 웹 콘텐츠를 넣으면 — LLM이 챕터/개념별로 분석하여 상호 링크된 학습 위키를 자동 생성합니다.
+전공책, PDF, 웹 콘텐츠를 넣으면 — LLM이 자동으로 상호 링크된 학습 위키 + 퀴즈를 생성합니다.
 
 [![npm](https://img.shields.io/npm/v/@open330/kiwimu?style=flat-square&color=cb3837&logo=npm)](https://www.npmjs.com/package/@open330/kiwimu)
 [![Bun](https://img.shields.io/badge/Bun-1.0+-fbf0df?style=flat-square&logo=bun&logoColor=black)](https://bun.sh)
@@ -63,6 +63,19 @@ Kiwi Mu는 LLM을 활용해 이 연결을 **자동으로** 만들어, 지식을 
 - **웹 UI** — 브라우저에서 문서 추가, 설정 변경, 빌드 실행
 - **토큰 사용량 추적** — API 호출 수, 토큰, 예상 비용을 웹에서 확인
 - **원클릭 배포** — GitHub Pages / Vercel
+
+## vs. Alternatives
+
+| Feature | Kiwi Mu | NotebookLM | Obsidian | Anki |
+|---------|---------|------------|----------|------|
+| Auto wiki from PDF | ✅ | ❌ | ❌ | ❌ |
+| Knowledge graph | ✅ | ❌ | ✅ (plugin) | ❌ |
+| Auto quiz generation | ✅ | ❌ | ❌ | ❌ (manual) |
+| Spaced repetition | ✅ (basic) | ❌ | ❌ | ✅ |
+| Self-hosted | ✅ | ❌ | ✅ | ✅ |
+| One-click deploy | ✅ | ❌ | ❌ | ❌ |
+| Open source | ✅ | ❌ | ❌ | ✅ |
+| Free | ✅ | ✅ | Freemium | ✅ |
 
 ## Quick Start
 

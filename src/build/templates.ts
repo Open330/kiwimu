@@ -45,25 +45,33 @@ function base(opts: {
   sourcePages: PageLink[];
   conceptPages: PageLink[];
   activeSlug?: string;
+  description?: string;
   content: string;
 }) {
+  const ogDescription = escapeHtml(opts.description || 'LLM으로 자동 생성된 학습 위키');
   return `<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${escapeHtml(opts.title)}</title>
+    <meta property="og:title" content="${escapeHtml(opts.title)}">
+    <meta property="og:description" content="${ogDescription}">
+    <meta property="og:type" content="article">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="${escapeHtml(opts.title)}">
+    <meta name="description" content="${ogDescription}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]})"></script>
 </head>
 <body>
     <nav class="topbar">
-        <button class="topbar-menu-btn" aria-label="메뉴">☰</button>
+        <button class="topbar-menu-btn" aria-label="메뉴 열기" aria-expanded="false">☰</button>
         <a href="/index.html" class="topbar-brand">
             <img src="/static/logo.png" alt="Kiwi Mu" class="topbar-logo">
             ${escapeHtml(opts.wikiName)}
@@ -97,8 +105,10 @@ function base(opts: {
             const overlay = document.querySelector('.sidebar-overlay');
             if (menuBtn && sidebar) {
                 menuBtn.addEventListener('click', () => {
-                    sidebar.classList.toggle('open');
+                    const isOpen = sidebar.classList.toggle('open');
                     overlay?.classList.toggle('active');
+                    menuBtn.setAttribute('aria-expanded', isOpen);
+                    menuBtn.setAttribute('aria-label', isOpen ? '메뉴 닫기' : '메뉴 열기');
                 });
                 overlay?.addEventListener('click', () => {
                     sidebar.classList.remove('open');
@@ -115,18 +125,10 @@ function base(opts: {
                 document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
             });
         });
-        // KaTeX
-        document.addEventListener("DOMContentLoaded", function() {
-            renderMathInElement(document.body, {
-                delimiters: [
-                    {left: "$$", right: "$$", display: true},
-                    {left: "$", right: "$", display: false},
-                    {left: "\\\\(", right: "\\\\)", display: false},
-                    {left: "\\\\[", right: "\\\\]", display: true}
-                ]
-            });
-        });
     </script>
+<footer class="kiwimu-badge" style="text-align:center;padding:16px;margin-top:32px;border-top:1px solid var(--border);font-size:12px;color:var(--text-muted);">
+  🥝 Built with <a href="https://github.com/Open330/kiwimu" target="_blank" rel="noopener" style="color:var(--namu-green);text-decoration:none;">Kiwi Mu</a> — 나만의 학습 위키 빌더
+</footer>
 </body>
 </html>`;
 }
@@ -192,6 +194,7 @@ export function renderPage(opts: {
     sourcePages: opts.sourcePages,
     conceptPages: opts.conceptPages,
     activeSlug: opts.pageSlug,
+    description: `${opts.pageTitle} - ${opts.wikiName} 학습 위키`,
     content,
   });
 }
@@ -256,6 +259,7 @@ export function renderIndex(opts: {
     wikiName: opts.wikiName,
     sourcePages: opts.sourcePages,
     conceptPages: opts.conceptPages,
+    description: `${opts.wikiName} — LLM으로 자동 생성된 학습 위키`,
     content,
   });
 }

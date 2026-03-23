@@ -8,6 +8,9 @@ import type { KiwiConfig } from "./config";
 export function startServer(root: string, port: number, host: string): void {
   const config = loadConfig(root);
   const siteDir = join(root, config.build.output_dir);
+  const store = new Store(join(root, DB_FILE));
+
+  process.on('beforeExit', () => store.close());
 
   let isProcessing = false;
   let processingStatus = "";
@@ -72,7 +75,6 @@ export function startServer(root: string, port: number, host: string): void {
         processingStatus = "파일 처리 시작...";
 
         (async () => {
-          const store = new Store(join(root, DB_FILE));
           try {
             const { ingestFile } = await import("./services/ingest");
             const currentConfig = loadConfig(root);
@@ -91,7 +93,6 @@ export function startServer(root: string, port: number, host: string): void {
             const message = e instanceof Error ? e.message : String(e);
             processingStatus = `오류: ${message}`;
           } finally {
-            store.close();
             setTimeout(() => { isProcessing = false; }, 2000);
           }
         })();
@@ -122,7 +123,6 @@ export function startServer(root: string, port: number, host: string): void {
         processingStatus = "시작 중...";
 
         (async () => {
-          const store = new Store(join(root, DB_FILE));
           try {
             const { ingestUrl } = await import("./services/ingest");
             const currentConfig = loadConfig(root);
@@ -141,7 +141,6 @@ export function startServer(root: string, port: number, host: string): void {
             const message = e instanceof Error ? e.message : String(e);
             processingStatus = `오류: ${message}`;
           } finally {
-            store.close();
             setTimeout(() => { isProcessing = false; }, 2000);
           }
         })();
@@ -164,7 +163,6 @@ export function startServer(root: string, port: number, host: string): void {
 
         // Auto-rebuild site with new settings
         (async () => {
-          const store = new Store(join(root, DB_FILE));
           try {
             const { buildSite } = await import("./build/renderer");
             await buildSite(store, currentConfig, root);
@@ -172,8 +170,6 @@ export function startServer(root: string, port: number, host: string): void {
           } catch (e: unknown) {
             const message = e instanceof Error ? e.message : String(e);
             console.error(`\x1b[31m❌ 리빌드 실패: ${message}\x1b[0m`);
-          } finally {
-            store.close();
           }
         })();
 
@@ -245,7 +241,6 @@ export function startServer(root: string, port: number, host: string): void {
         isProcessing = true;
         processingStatus = "빌드 중...";
         (async () => {
-          const store = new Store(join(root, DB_FILE));
           try {
             const { buildSite } = await import("./build/renderer");
             await buildSite(store, loadConfig(root), root);
@@ -255,7 +250,6 @@ export function startServer(root: string, port: number, host: string): void {
             const message = e instanceof Error ? e.message : String(e);
             processingStatus = `빌드 오류: ${message}`;
           } finally {
-            store.close();
             setTimeout(() => { isProcessing = false; }, 2000);
           }
         })();
@@ -264,11 +258,9 @@ export function startServer(root: string, port: number, host: string): void {
 
       // Admin page
       if (url.pathname === "/admin") {
-        const store = new Store(join(root, DB_FILE));
         const sources = store.listSourcesMeta();
         const usage = store.getUsageSummary();
         const configData = loadConfig(root);
-        store.close();
 
         const { renderAdmin } = await import("./build/templates");
         return new Response(renderAdmin({
@@ -283,13 +275,11 @@ export function startServer(root: string, port: number, host: string): void {
       }
 
       if (url.pathname === "/api/status") {
-        const store = new Store(join(root, DB_FILE));
         const sources = store.listSourcesMeta();
         const sourcePages = store.listSourcePages();
         const conceptPages = store.listConceptPages();
         const links = store.getAllLinks();
         const usage = store.getUsageSummary();
-        store.close();
 
         return Response.json({
           processing: isProcessing,

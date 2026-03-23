@@ -1041,4 +1041,46 @@ h4 .headerlink {
     .toc-box { background: var(--bg-alt); }
     .sidebar { background: var(--bg); border-right-color: var(--border); }
     img { opacity: 0.9; }
+
+    /* Code blocks */
+    .page-body pre { background: #1e1e3e; border-color: var(--border); }
+    .page-body code { background: #2a2a4a; color: #e0e0e0; }
+
+    /* Blockquotes */
+    .page-body blockquote {
+        background: var(--bg-alt);
+        border-left-color: var(--namu-green);
+        color: var(--text);
+    }
+
+    /* Tables */
+    .page-body table th { background: #1a3a3a; color: var(--text); }
+    .page-body table td { border-color: var(--border); }
+    .page-body table tr:nth-child(even) { background: var(--bg-alt); }
+
+    /* External refs */
+    .external-refs { background: var(--bg-alt); border-color: var(--border); }
+    .external-refs a { color: var(--namu-green); }
+
+    /* Backlinks */
+    .backlinks { border-top-color: var(--border); }
+    .backlinks li a { background: var(--bg-alt); color: var(--text); border-color: var(--border); }
+
+    /* Search */
+    .search-dropdown { background: var(--bg); border-color: var(--border); }
+    .search-dropdown a { color: var(--text); border-bottom-color: var(--border); }
+    .search-dropdown a:hover, .search-dropdown a.selected { background: var(--bg-hover); }
+
+    /* Admin & forms */
+    input, textarea, select { background: var(--bg-alt); color: var(--text); border-color: var(--border); }
+
+    /* Badges */
+    .page-type-badge { background: var(--bg-alt); }
+
+    /* Empty state */
+    .empty-state { border-color: var(--border); color: var(--text-muted); }
+
+    /* Footer badge */
+    .kiwimu-badge { border-top-color: var(--border); }
+    .kiwimu-badge a { color: var(--namu-green); }
 }
