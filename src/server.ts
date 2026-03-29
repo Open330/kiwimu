@@ -35,7 +35,7 @@ export function startServer(root: string, port: number, host: string): void {
       const url = new URL(req.url);
 
       // ── Auth middleware for /api/* and /admin ──
-      if (url.pathname.startsWith("/api/") || url.pathname === "/admin") {
+      if (url.pathname.startsWith("/api/") || url.pathname === "/manage") {
         const authHeader = req.headers.get("Authorization");
         const queryToken = url.searchParams.get("token");
         const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
@@ -261,7 +261,7 @@ export function startServer(root: string, port: number, host: string): void {
       }
 
       // Admin page
-      if (url.pathname === "/admin") {
+      if (url.pathname === "/manage") {
         const sources = store.listSourcesMeta();
         const usage = store.getUsageSummary();
         const configData = loadConfig(root);
@@ -380,7 +380,7 @@ export function startServer(root: string, port: number, host: string): void {
       }
 
       // ── Static file serving ──
-      let pathname = url.pathname;
+      let pathname = decodeURIComponent(url.pathname);
       if (pathname === "/") pathname = "/index.html";
 
       const resolved = path.resolve(join(siteDir, pathname));
@@ -391,7 +391,7 @@ export function startServer(root: string, port: number, host: string): void {
 
       if (await staticFile.exists()) {
         const isHtml = pathname.endsWith(".html");
-        const cspValue = "default-src 'self'; script-src 'self' 'unsafe-inline' cdn.jsdelivr.net d3js.org; style-src 'self' 'unsafe-inline' cdn.jsdelivr.net fonts.googleapis.com; font-src fonts.gstatic.com; img-src * data:; connect-src 'self'";
+        const cspValue = "default-src 'self'; script-src 'self' 'unsafe-inline' cdn.jsdelivr.net d3js.org static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' cdn.jsdelivr.net fonts.googleapis.com; font-src fonts.gstatic.com; img-src * data:; connect-src 'self' cloudflareinsights.com";
         if (isHtml && authToken) {
           let html = await staticFile.text();
           if (!html.includes('kiwi-auth')) {

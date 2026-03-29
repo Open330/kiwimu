@@ -88,7 +88,7 @@ function base(opts: {
             <a href="/quiz.html" class="btn-graph">📝 퀴즈</a>
             <a href="/dashboard.html" class="btn-graph">📊 대시보드</a>
             <a href="/graph.html" class="btn-graph">🔗 그래프</a>
-            <a href="/admin" class="btn-graph">⚙️ 관리</a>
+            <a href="/manage" class="btn-graph">⚙️ 관리</a>
         </div>
     </nav>
     <div class="sidebar-overlay"></div>
@@ -259,7 +259,7 @@ export function renderIndex(opts: {
         <!-- Add document link -->
         <section class="index-section add-section">
             <h2>➕ 문서 추가</h2>
-            <p>문서를 추가하려면 <a href="/admin">관리 페이지</a>에서 문서를 추가하세요.</p>
+            <p>문서를 추가하려면 <a href="/manage">관리 페이지</a>에서 문서를 추가하세요.</p>
         </section>
 
         <section class="index-section">
@@ -843,7 +843,7 @@ export function renderAdmin(opts: {
         <div class="topbar-links">
             <a href="/index.html" class="btn-graph">🏠 홈</a>
             <a href="/graph.html" class="btn-graph">📊 그래프</a>
-            <a href="/admin" class="btn-graph" style="border-color: var(--accent);">⚙️ 관리</a>
+            <a href="/manage" class="btn-graph" style="border-color: var(--accent);">⚙️ 관리</a>
         </div>
     </nav>
     <div class="admin-page">

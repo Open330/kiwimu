@@ -78,10 +78,13 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
     cpSync(assetsDir, staticDir, { recursive: true });
   }
 
-  // Copy logo
-  const logoSrc = join(projectRoot, "..", "assets", "logos", "logo_2_minimalist_icon_transparent.png");
-  const logoSrc2 = join(projectRoot, "assets", "logos", "logo_2_minimalist_icon_transparent.png");
-  const logoFile = existsSync(logoSrc) ? logoSrc : existsSync(logoSrc2) ? logoSrc2 : null;
+  // Copy logo (check multiple possible locations)
+  const logoCandidates = [
+    join(projectRoot, "..", "assets", "logos", "logo_2_minimalist_icon_transparent.png"),
+    join(projectRoot, "assets", "logos", "logo_2_minimalist_icon_transparent.png"),
+    "/app/assets/logos/logo_2_minimalist_icon_transparent.png", // Docker path
+  ];
+  const logoFile = logoCandidates.find(p => existsSync(p)) || null;
   if (logoFile) {
     cpSync(logoFile, join(staticDir, "logo.png"));
   }
