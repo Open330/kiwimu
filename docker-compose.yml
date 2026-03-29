@@ -8,7 +8,8 @@ services:
       - "8400:8000"
     volumes:
       - kiwimu-data:/data/wiki
-      - ./certs:/certs:ro
+      # TLS: uncomment to enable HTTPS directly (not needed behind Traefik)
+      # - ./certs:/certs:ro
     environment:
       - NODE_ENV=production
     healthcheck:

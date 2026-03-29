@@ -1200,6 +1200,24 @@ h4 .headerlink {
     align-items: center;
 }
 
+.qa-popover-selected {
+    padding: 6px 12px;
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg-alt);
+    border-bottom: 1px solid var(--border);
+    max-height: 60px;
+    overflow: hidden;
+    font-style: italic;
+    line-height: 1.4;
+}
+
+mark.qa-highlight {
+    background: rgba(0, 164, 149, 0.2);
+    border-bottom: 2px solid var(--namu-green);
+    padding: 0 1px;
+}
+
 .qa-popover-close {
     background: none;
     border: none;

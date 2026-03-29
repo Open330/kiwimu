@@ -16,6 +16,7 @@
       <span>💬 이 부분에 대해 질문하기</span>
       <button class="qa-popover-close" aria-label="닫기">&times;</button>
     </div>
+    <div class="qa-popover-selected"></div>
     <div class="qa-popover-body">
       <input type="text" class="qa-popover-input" placeholder="궁금한 점을 입력하세요..." />
       <button class="qa-popover-btn">질문</button>
@@ -33,12 +34,39 @@
   const loading = popover.querySelector('.qa-popover-loading');
   const result = popover.querySelector('.qa-popover-result');
   const errorDiv = popover.querySelector('.qa-popover-error');
+  const selectedDiv = popover.querySelector('.qa-popover-selected');
   let selectedText = '';
   let isAsking = false;
+  let highlightMark = null;
 
   popover.querySelector('.qa-popover-close').addEventListener('click', hidePopover);
 
-  function showPopover(text, rect) {
+  function highlightSelection(range) {
+    // Wrap selected text in a highlight mark
+    try {
+      removeHighlight();
+      highlightMark = document.createElement('mark');
+      highlightMark.className = 'qa-highlight';
+      range.surroundContents(highlightMark);
+    } catch {
+      // surroundContents fails if selection crosses element boundaries
+      // Fall back to no highlight
+      highlightMark = null;
+    }
+  }
+
+  function removeHighlight() {
+    if (highlightMark && highlightMark.parentNode) {
+      const parent = highlightMark.parentNode;
+      while (highlightMark.firstChild) {
+        parent.insertBefore(highlightMark.firstChild, highlightMark);
+      }
+      parent.removeChild(highlightMark);
+      highlightMark = null;
+    }
+  }
+
+  function showPopover(text, rect, range) {
     selectedText = text;
     input.value = '';
     loading.style.display = 'none';
@@ -47,6 +75,14 @@
     popover.querySelector('.qa-popover-body').style.display = 'flex';
     popover.querySelector('.qa-popover-header').style.display = 'flex';
 
+    // Show selected text preview (truncated)
+    const preview = text.length > 100 ? text.slice(0, 100) + '...' : text;
+    selectedDiv.textContent = `"${preview}"`;
+    selectedDiv.style.display = 'block';
+
+    // Highlight selected text in the document
+    highlightSelection(range);
+
     // Position below selection
     const top = rect.bottom + window.scrollY + 8;
     const left = Math.max(8, Math.min(rect.left + window.scrollX, window.innerWidth - 320));
@@ -54,12 +90,21 @@
     popover.style.left = left + 'px';
     popover.style.display = 'block';
 
-    setTimeout(() => input.focus(), 50);
+    // Focus input without clearing selection (use requestAnimationFrame)
+    requestAnimationFrame(() => input.focus());
   }
 
   function hidePopover() {
     popover.style.display = 'none';
     selectedText = '';
+    selectedDiv.style.display = 'none';
+    removeHighlight();
+  }
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
   }
 
   async function askQuestion() {
@@ -69,7 +114,6 @@
 
     isAsking = true;
     popover.querySelector('.qa-popover-body').style.display = 'none';
-    popover.querySelector('.qa-popover-header').style.display = 'none';
     loading.style.display = 'flex';
     errorDiv.style.display = 'none';
 
@@ -107,12 +151,6 @@
     }
   }
 
-  function esc(s) {
-    const d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
-  }
-
   // Event: text selection
   document.addEventListener('mouseup', (e) => {
     // Don't trigger if clicking inside popover
@@ -122,8 +160,8 @@
     const text = selection?.toString().trim();
 
     if (!text || text.length < 3) {
-      // Only hide if clicking outside popover
-      if (!popover.contains(e.target)) {
+      // Only hide if clicking outside popover and no active result
+      if (!popover.contains(e.target) && result.style.display !== 'block') {
         setTimeout(() => {
           if (!popover.contains(document.activeElement)) hidePopover();
         }, 200);
@@ -139,7 +177,7 @@
       : ancestor.parentElement?.closest('.page-body');
     if (!pageBody) return;
 
-    showPopover(text, range.getBoundingClientRect());
+    showPopover(text, range.getBoundingClientRect(), range.cloneRange());
   });
 
   // Mobile: use selectionchange with debounce
@@ -158,8 +196,8 @@
         : ancestor.parentElement?.closest('.page-body');
       if (!pageBody) return;
 
-      showPopover(text, range.getBoundingClientRect());
-    }, 500); // Debounce 500ms for mobile
+      showPopover(text, range.getBoundingClientRect(), range.cloneRange());
+    }, 500);
   });
 
   // Event: ask button
@@ -171,14 +209,8 @@
     if (e.key === 'Escape') hidePopover();
   });
 
-  // Event: click outside to close
-  document.addEventListener('mousedown', (e) => {
-    if (!popover.contains(e.target) && popover.style.display === 'block') {
-      // Delay to allow text selection to complete
-      setTimeout(() => {
-        const sel = window.getSelection()?.toString().trim();
-        if (!sel || sel.length < 3) hidePopover();
-      }, 300);
-    }
+  // Prevent popover clicks from dismissing
+  popover.addEventListener('mousedown', (e) => {
+    e.stopPropagation();
   });
 })();

@@ -16,10 +16,11 @@ TEXT:
 
 Return a JSON array of sections in order. Each element:
 - "title": string — Original section/chapter title from the document
-- "content": string — The full content of this section, converted to clean markdown. Preserve all information. Use LaTeX ($..$ inline, $$...$$ display) for equations. Clean up OCR artifacts.
+- "content": string — The full content of this section, converted to clean markdown. Preserve all information. Use LaTeX ($..$ inline, $$...$$ display) for equations. Clean up OCR artifacts. When the content describes processes, workflows, hierarchies, state transitions, or relationships, add a Mermaid diagram using fenced code blocks (\`\`\`mermaid). Supported types: flowchart, sequenceDiagram, classDiagram, stateDiagram-v2, erDiagram, gantt, pie, mindmap, timeline.
 - "level": number — 1 for chapter, 2 for section, 3 for subsection
 
 Keep the content faithful to the original. Do not add or remove information. Just clean up formatting.
+When appropriate, enhance understanding by including Mermaid diagrams that visualize key concepts, flows, or relationships described in the text.
 Return at most 8 sections per response to keep output manageable.`;
 
 // ── Phase 2: Extract concepts for separate pages ──
@@ -32,6 +33,8 @@ Rules:
 - Each concept page should have substantial educational content (2+ paragraphs)
 - Explain the concept clearly with definitions, formulas, examples, and context
 - Use [[wiki links]] to reference other concepts and source pages. Example: "[[Synchrotron Radiation]] is observed at [[radio frequencies]]"
+- Use LaTeX ($..$ inline, $$...$$ display) for equations
+- When a concept involves processes, relationships, hierarchies, or state transitions, include a Mermaid diagram using fenced code blocks (\`\`\`mermaid). Supported: flowchart, sequenceDiagram, classDiagram, stateDiagram-v2, erDiagram, mindmap, pie
 - Suggest Wikipedia links for further reading
 
 Return valid JSON only. No markdown fences.`;

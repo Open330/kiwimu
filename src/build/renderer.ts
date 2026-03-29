@@ -7,6 +7,20 @@ import type { Store } from "../store";
 import { buildGraphData } from "../pipeline/graph";
 import { renderPage, renderIndex, renderGraph, renderQuizPage, renderDashboardPage } from "./templates";
 
+// Convert marked mermaid code blocks to mermaid-renderable divs
+function convertMermaidBlocks(html: string): string {
+  return html.replace(
+    /<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g,
+    (_match, code: string) => {
+      // Decode HTML entities back to raw text for mermaid
+      const decoded = code
+        .replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+      return `<pre class="mermaid">${decoded}</pre>`;
+    }
+  );
+}
+
 // Fix internal wiki links: /wiki/slug → /wiki/slug.html
 function fixWikiLinks(html: string): string {
   return html.replace(/href="\/wiki\/([^"]+?)"/g, (match, slug) => {
@@ -54,10 +68,13 @@ async function renderPageContent(page: { content: string }): Promise<string> {
   });
 
   let htmlContent = await marked(markdown);
+  // Convert mermaid code blocks BEFORE sanitization
+  htmlContent = convertMermaidBlocks(htmlContent);
   htmlContent = sanitizeHtml(htmlContent, {
     allowedTags: sanitizeHtml.defaults.allowedTags.concat([
       'img', 'details', 'summary', 'kbd', 'del', 's', 'sup', 'sub',
-      'span', 'div', 'section', 'figure', 'figcaption', 'mark'
+      'span', 'div', 'section', 'figure', 'figcaption', 'mark',
+      'pre', 'code'
     ]),
     allowedAttributes: {
       ...sanitizeHtml.defaults.allowedAttributes,
@@ -65,6 +82,8 @@ async function renderPageContent(page: { content: string }): Promise<string> {
       'img': ['src', 'alt', 'title', 'width', 'height'],
       'a': ['href', 'title', 'target', 'rel'],
       'span': ['class'],  // For KaTeX
+      'pre': ['class'],   // For Mermaid
+      'code': ['class'],
     },
     allowedSchemes: ['http', 'https', 'mailto'],
   });
