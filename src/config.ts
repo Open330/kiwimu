@@ -5,7 +5,7 @@ import { join, dirname } from "path";
 export const CONFIG_FILE = "kiwi.toml";
 export const DB_FILE = "kiwi.db";
 export const SITE_DIR = "_site";
-export const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'pptx', 'doc', 'ppt', 'key', 'rtf'];
+export const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'pptx', 'doc', 'ppt', 'key', 'rtf', 'md'];
 
 export interface LLMConfig {
   provider: string; // "gemini" | "azure-openai" | "openai" | "anthropic"

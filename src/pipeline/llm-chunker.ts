@@ -215,7 +215,8 @@ export async function llmChunkDocument(
   store: Store,
   maxChunks: number = 0, // 0 = unlimited
   persona: Persona | null = null,
-  llmClient: LLMClient
+  llmClient: LLMClient,
+  onProgress?: (status: string) => void
 ): Promise<{ sourceCount: number; conceptCount: number }> {
   const chat = (system: string, user: string, maxTokens?: number) =>
     llmClient.chatComplete(system, user, maxTokens);
@@ -228,133 +229,179 @@ export async function llmChunkDocument(
   if (persona) {
     console.log(`\x1b[35m🎭 페르소나: ${persona.name}\x1b[0m`);
   }
-  console.log(`\x1b[34m⏳ Phase 1: 원본 구조 추출 중... (${chunks.length}개 청크)\x1b[0m`);
-
   // ── Phase 1: Extract source pages (parallel LLM calls) ──
-  const phase1Start = performance.now();
-  let completedCount = 0;
-  const structureSystem = getStructureSystem(persona);
+  let sourceCount: number;
+  let sourcePageSummaries: string[];
 
-  const chunkResults = await parallelMap(chunks, 3, async (chunk, i) => {
-    console.log(`  Phase 1: 처리 중 [${i + 1}/${chunks.length}] ${chunk.chapterHint}...`);
+  if (store.isPhaseComplete(sourceId, 'phase1')) {
+    // Resume: Phase 1 already done, rebuild summaries from DB
+    const existingPages = store.getSourcePages(sourceId);
+    sourceCount = existingPages.length;
+    sourcePageSummaries = existingPages.map(p =>
+      `- ${p.title}: ${p.content.slice(0, 150).replace(/\n/g, " ")}`
+    );
+    console.log(`\x1b[32m⏭ Phase 1 건너뜀 (이미 완료) — 📖 ${sourceCount}개 원본 페이지\x1b[0m`);
+    onProgress?.(`Phase 1 건너뜀 (${sourceCount}개 페이지 이미 존재)`);
+  } else {
+    console.log(`\x1b[34m⏳ Phase 1: 원본 구조 추출 중... (${chunks.length}개 청크)\x1b[0m`);
+    onProgress?.(`Phase 1: 원본 구조 추출 중... (${chunks.length}개 청크)`);
 
-    const prompt = STRUCTURE_PROMPT
-      .replace("{sourceTitle}", sourceTitle)
-      .replace("{text}", chunk.text.slice(0, 80000));
+    const phase1Start = performance.now();
+    let completedCount = 0;
+    const structureSystem = getStructureSystem(persona);
 
-    try {
-      let raw = await chat(structureSystem, prompt, 16384);
-      if (!raw || raw.trim().length < 10) {
-        console.log(`    \x1b[33m⚠ 빈 응답, 재시도...\x1b[0m`);
-        raw = await chat(structureSystem, prompt, 16384);
+    const chunkResults = await parallelMap(chunks, 3, async (chunk, i) => {
+      console.log(`  Phase 1: 처리 중 [${i + 1}/${chunks.length}] ${chunk.chapterHint}...`);
+
+      const prompt = STRUCTURE_PROMPT
+        .replace("{sourceTitle}", sourceTitle)
+        .replace("{text}", chunk.text.slice(0, 80000));
+
+      try {
+        let raw = await chat(structureSystem, prompt, 16384);
         if (!raw || raw.trim().length < 10) {
-          console.log(`    \x1b[31m✗ 재시도도 빈 응답\x1b[0m`);
-          completedCount++;
-          return [] as StructurePage[];
+          console.log(`    \x1b[33m⚠ 빈 응답, 재시도...\x1b[0m`);
+          raw = await chat(structureSystem, prompt, 16384);
+          if (!raw || raw.trim().length < 10) {
+            console.log(`    \x1b[31m✗ 재시도도 빈 응답\x1b[0m`);
+            completedCount++;
+            return [] as StructurePage[];
+          }
+        }
+        const sections = parseJSON<StructurePage[]>(raw).filter(s => s.title && s.content && s.content.length > 30);
+        completedCount++;
+        console.log(`    → ${sections.length}개 섹션 (완료 ${completedCount}/${chunks.length})`);
+        onProgress?.(`Phase 1: ${completedCount}/${chunks.length} 청크 완료`);
+        return sections;
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        console.log(`    \x1b[31m✗ 실패: ${message}\x1b[0m`);
+        completedCount++;
+        return [] as StructurePage[];
+      }
+    });
+
+    // Store results sequentially (SQLite writes must be sequential)
+    let orderCounter = 0;
+    sourcePageSummaries = [];
+
+    for (const sections of chunkResults) {
+      for (const section of sections) {
+        const slug = slugify(section.title);
+        if (!slug) continue;
+
+        const existing = store.getPage(slug);
+        if (existing) {
+          store.updatePageContent(existing.id, existing.content + "\n\n" + section.content);
+        } else {
+          store.addPage(slug, section.title, section.content, sourceId, slug, "source", orderCounter++);
+          sourcePageSummaries.push(`- ${section.title}: ${section.content.slice(0, 150).replace(/\n/g, " ")}`);
         }
       }
-      const sections = parseJSON<StructurePage[]>(raw).filter(s => s.title && s.content && s.content.length > 30);
-      completedCount++;
-      console.log(`    → ${sections.length}개 섹션 (완료 ${completedCount}/${chunks.length})`);
-      return sections;
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      console.log(`    \x1b[31m✗ 실패: ${message}\x1b[0m`);
-      completedCount++;
-      return [] as StructurePage[];
     }
-  });
 
-  // Store results sequentially (SQLite writes must be sequential)
-  let orderCounter = 0;
-  const sourcePageSummaries: string[] = [];
-
-  for (const sections of chunkResults) {
-    for (const section of sections) {
-      const slug = slugify(section.title);
-      if (!slug) continue;
-
-      const existing = store.getPage(slug);
-      if (existing) {
-        store.updatePageContent(existing.id, existing.content + "\n\n" + section.content);
-      } else {
-        store.addPage(slug, section.title, section.content, sourceId, slug, "source", orderCounter++);
-        sourcePageSummaries.push(`- ${section.title}: ${section.content.slice(0, 150).replace(/\n/g, " ")}`);
-      }
-    }
+    sourceCount = orderCounter;
+    store.setCheckpoint(sourceId, 'phase1');
+    const phase1Sec = ((performance.now() - phase1Start) / 1000).toFixed(1);
+    console.log(`\x1b[32m✅ Phase 1 완료 (${phase1Sec}초) — 📖 ${sourceCount}개 원본 페이지 생성\x1b[0m`);
   }
-
-  const sourceCount = orderCounter;
-  const phase1Sec = ((performance.now() - phase1Start) / 1000).toFixed(1);
-  console.log(`\x1b[32m✅ Phase 1 완료 (${phase1Sec}초) — 📖 ${sourceCount}개 원본 페이지 생성\x1b[0m`);
 
   // ── Phase 2: Extract concept pages ──
   const phase2Start = performance.now();
-  console.log(`\x1b[34m⏳ Phase 2: 개념 추출 중...\x1b[0m`);
-
-  // Process source pages in small batches for concept extraction
   const batchSize = 5;
   let conceptCount = 0;
+  const totalBatches = Math.ceil(sourcePageSummaries.length / batchSize);
+  const lastCompletedBatch = store.getLastCompletedBatch(sourceId, 'phase2');
 
-  for (let i = 0; i < sourcePageSummaries.length; i += batchSize) {
-    const batch = sourcePageSummaries.slice(i, i + batchSize);
-    const batchLabel = `  [${Math.floor(i / batchSize) + 1}/${Math.ceil(sourcePageSummaries.length / batchSize)}]`;
-    console.log(`${batchLabel} 개념 추출 중...`);
-
-    const existingConcepts = conceptCount > 0
-      ? `\n\nAlready created concept pages (do not duplicate): ${store.listConceptPages().map(p => p.title).join(", ")}`
-      : "";
-    const conceptPrompt = getConceptPrompt(persona);
-    const prompt = conceptPrompt.replace("{sourcePages}", batch.join("\n")) + existingConcepts;
-    const conceptSystem = getConceptSystem(persona);
-
-    try {
-      const raw = await chat(conceptSystem, prompt, 16384);
-      const concepts = parseJSON<ConceptPage[]>(raw).filter(c => c.title && c.content && c.content.length > 50);
-
-      for (const concept of concepts) {
-        const slug = slugify(concept.title);
-        if (!slug) continue;
-
-        // Don't create concept page if source page with same slug exists
-        const existing = store.getPage(slug);
-        if (existing) continue;
-
-        let content = concept.content;
-        if (concept.suggested_links?.length) {
-          content += "\n\n## External References\n\n";
-          for (const link of concept.suggested_links) {
-            content += `- [${link.text}](${link.url})\n`;
-          }
-        }
-
-        store.addPage(slug, concept.title, content, sourceId, slug, "concept", 0);
-        conceptCount++;
-      }
-      console.log(`    → ${concepts.length}개 개념`);
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      console.log(`    \x1b[31m✗ 실패: ${message}\x1b[0m`);
+  if (lastCompletedBatch >= totalBatches - 1) {
+    conceptCount = store.listConceptPages().length;
+    console.log(`\x1b[32m⏭ Phase 2 건너뜀 (이미 완료) — 📝 ${conceptCount}개 개념 페이지\x1b[0m`);
+    onProgress?.(`Phase 2 건너뜀 (${conceptCount}개 개념 이미 존재)`);
+  } else {
+    const resumeFrom = lastCompletedBatch + 1;
+    if (resumeFrom > 0) {
+      console.log(`\x1b[34m⏳ Phase 2: 개념 추출 재개 (배치 ${resumeFrom + 1}/${totalBatches}부터)...\x1b[0m`);
+      onProgress?.(`Phase 2: 배치 ${resumeFrom + 1}/${totalBatches}부터 재개`);
+    } else {
+      console.log(`\x1b[34m⏳ Phase 2: 개념 추출 중...\x1b[0m`);
+      onProgress?.(`Phase 2: 개념 추출 중...`);
     }
-  }
 
-  const phase2Sec = ((performance.now() - phase2Start) / 1000).toFixed(1);
-  console.log(`\x1b[32m✅ Phase 2 완료 (${phase2Sec}초) — 📝 ${conceptCount}개 개념 페이지 생성\x1b[0m`);
+    for (let i = 0; i < sourcePageSummaries.length; i += batchSize) {
+      const batchIdx = Math.floor(i / batchSize);
+      const batchLabel = `  [${batchIdx + 1}/${totalBatches}]`;
+
+      if (batchIdx <= lastCompletedBatch) {
+        console.log(`${batchLabel} 이미 완료 — 건너뜀`);
+        continue;
+      }
+
+      console.log(`${batchLabel} 개념 추출 중...`);
+
+      const batch = sourcePageSummaries.slice(i, i + batchSize);
+      const existingConcepts = store.listConceptPages();
+      const existingConceptsNote = existingConcepts.length > 0
+        ? `\n\nAlready created concept pages (do not duplicate): ${existingConcepts.map(p => p.title).join(", ")}`
+        : "";
+      const conceptPrompt = getConceptPrompt(persona);
+      const prompt = conceptPrompt.replace("{sourcePages}", batch.join("\n")) + existingConceptsNote;
+      const conceptSystem = getConceptSystem(persona);
+
+      try {
+        const raw = await chat(conceptSystem, prompt, 16384);
+        const concepts = parseJSON<ConceptPage[]>(raw).filter(c => c.title && c.content && c.content.length > 50);
+
+        for (const concept of concepts) {
+          const slug = slugify(concept.title);
+          if (!slug) continue;
+
+          const existing = store.getPage(slug);
+          if (existing) continue;
+
+          let content = concept.content;
+          if (concept.suggested_links?.length) {
+            content += "\n\n## External References\n\n";
+            for (const link of concept.suggested_links) {
+              content += `- [${link.text}](${link.url})\n`;
+            }
+          }
+
+          store.addPage(slug, concept.title, content, sourceId, slug, "concept", 0);
+          conceptCount++;
+        }
+        store.setCheckpoint(sourceId, 'phase2', batchIdx);
+        console.log(`    → ${concepts.length}개 개념`);
+        onProgress?.(`Phase 2: ${batchIdx + 1}/${totalBatches} 배치 완료`);
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        console.log(`    \x1b[31m✗ 실패: ${message}\x1b[0m`);
+        throw new Error(`Phase 2 배치 ${batchIdx + 1} 실패: ${message}`);
+      }
+    }
+
+    const phase2Sec = ((performance.now() - phase2Start) / 1000).toFixed(1);
+    console.log(`\x1b[32m✅ Phase 2 완료 (${phase2Sec}초) — 📝 ${conceptCount}개 개념 페이지 생성\x1b[0m`);
+  }
 
   // ── Phase 2.5: Generate quizzes from concept pages ──
   let quizCount = 0;
-  try {
-    const conceptPagesForQuiz = store.listConceptPages();
-    if (conceptPagesForQuiz.length > 0) {
-      console.log(`\x1b[34m⏳ Phase 2.5: 퀴즈 생성 중... (${conceptPagesForQuiz.length}개 개념 페이지)\x1b[0m`);
+  if (store.isPhaseComplete(sourceId, 'phase2_5')) {
+    console.log(`\x1b[32m⏭ Phase 2.5 건너뜀 (퀴즈 이미 생성됨)\x1b[0m`);
+    onProgress?.(`Phase 2.5 건너뜀 (퀴즈 이미 존재)`);
+  } else {
+    try {
+      const conceptPagesForQuiz = store.listConceptPages();
+      if (conceptPagesForQuiz.length > 0) {
+        console.log(`\x1b[34m⏳ Phase 2.5: 퀴즈 생성 중... (${conceptPagesForQuiz.length}개 개념 페이지)\x1b[0m`);
+        onProgress?.(`Phase 2.5: 퀴즈 생성 중...`);
 
-      const quizSystem = `You are a quiz generator for a study wiki. Generate quiz questions that test UNDERSTANDING, not just memorization.
+        const quizSystem = `You are a quiz generator for a study wiki. Generate quiz questions that test UNDERSTANDING, not just memorization.
 Focus on higher-order thinking: "왜?", "어떻게?", "비교하라", "설명하라" style questions.
 Return valid JSON only. No markdown fences.`;
 
-      await parallelMap(conceptPagesForQuiz, 3, async (page, i) => {
-        try {
-          const quizPrompt = `Based on this wiki content, generate 2-3 quiz questions that test UNDERSTANDING, not just memorization.
+        await parallelMap(conceptPagesForQuiz, 3, async (page, i) => {
+          try {
+            const quizPrompt = `Based on this wiki content, generate 2-3 quiz questions that test UNDERSTANDING, not just memorization.
 Include questions that ask "왜?", "어떻게?", "비교하라" etc.
 Types: "fill_blank" (빈칸 채우기), "ox" (OX 퀴즈 - true/false), "short_answer" (단답형)
 
@@ -373,28 +420,30 @@ Rules:
 - Questions should test understanding, application, or analysis — not just recall
 - Write questions in Korean when the content is in Korean`;
 
-          const raw = await chat(quizSystem, quizPrompt, 2048);
-          const quizzes = parseJSON<Array<{ question: string; answer: string; explanation?: string; type: string }>>(raw);
+            const raw = await chat(quizSystem, quizPrompt, 2048);
+            const quizzes = parseJSON<Array<{ question: string; answer: string; explanation?: string; type: string }>>(raw);
 
-          for (const q of quizzes) {
-            if (q.question && q.answer && q.type) {
-              store.addQuiz(page.id, q.question, q.answer, q.type, q.explanation || "");
-              quizCount++;
+            for (const q of quizzes) {
+              if (q.question && q.answer && q.type) {
+                store.addQuiz(page.id, q.question, q.answer, q.type, q.explanation || "");
+                quizCount++;
+              }
             }
+          } catch (e: unknown) {
+            // Quiz generation is non-critical; silently skip failures
+            const message = e instanceof Error ? e.message : String(e);
+            console.log(`    \x1b[33m⚠ 퀴즈 생성 실패 (${page.title}): ${message}\x1b[0m`);
           }
-        } catch (e: unknown) {
-          // Quiz generation is non-critical; silently skip failures
-          const message = e instanceof Error ? e.message : String(e);
-          console.log(`    \x1b[33m⚠ 퀴즈 생성 실패 (${page.title}): ${message}\x1b[0m`);
-        }
-      });
+        });
 
-      console.log(`\x1b[32m  🧩 ${quizCount}개 퀴즈 생성 완료\x1b[0m`);
+        store.setCheckpoint(sourceId, 'phase2_5');
+        console.log(`\x1b[32m  🧩 ${quizCount}개 퀴즈 생성 완료\x1b[0m`);
+      }
+    } catch (e: unknown) {
+      // Phase 2.5 is optional — don't block the pipeline
+      const message = e instanceof Error ? e.message : String(e);
+      console.log(`\x1b[33m  ⚠ 퀴즈 생성 단계 건너뜀: ${message}\x1b[0m`);
     }
-  } catch (e: unknown) {
-    // Phase 2.5 is optional — don't block the pipeline
-    const message = e instanceof Error ? e.message : String(e);
-    console.log(`\x1b[33m  ⚠ 퀴즈 생성 단계 건너뜀: ${message}\x1b[0m`);
   }
 
   // ── Phase 3: Resolve wiki links + inject concept links into source pages ──

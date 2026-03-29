@@ -123,7 +123,7 @@ program
 // --- add ---
 program
   .command("add <source>")
-  .description("URL 또는 파일을 추가합니다 (PDF, DOCX, PPTX, DOC, PPT, KEY, RTF)")
+  .description("URL, 파일, 또는 디렉토리를 추가합니다 (PDF, DOCX, PPTX, DOC, PPT, KEY, RTF, MD)")
   .action(async (source: string) => {
     const root = findProjectRoot();
     const config = loadConfig(root);
@@ -141,24 +141,54 @@ program
         console.log(`\x1b[32m✅ 📖 ${result.sourceCount}개 원본 + 📝 ${result.conceptCount}개 개념 문서 생성\x1b[0m`);
         console.log(`\x1b[34m📊 LLM: ${result.usage.totalCalls}회 호출, ~$${result.usage.estimatedCostUsd.toFixed(4)}\x1b[0m`);
       } else {
-        const { resolve } = await import("path");
+        const { resolve, basename } = await import("path");
         const absPath = resolve(source);
-        const file = Bun.file(absPath);
-        if (!(await file.exists())) {
+        const { statSync, readdirSync } = await import("fs");
+
+        let stat;
+        try {
+          stat = statSync(absPath);
+        } catch {
           console.error(`\x1b[31m❌ 파일을 찾을 수 없습니다: ${source}\x1b[0m`);
           process.exit(1);
         }
-        const ext = source.split(".").pop()?.toLowerCase() || "";
-        if (!SUPPORTED_EXTENSIONS.includes(ext)) {
-          console.error(`\x1b[31m❌ 지원하지 않는 파일 형식입니다: .${ext}\x1b[0m`);
-          console.error(`   지원 형식: ${SUPPORTED_EXTENSIONS.join(', ')}`);
-          process.exit(1);
+
+        if (stat.isDirectory()) {
+          // Find all .md files in directory
+          const mdFiles = readdirSync(absPath)
+            .filter(f => f.endsWith('.md'))
+            .map(f => join(absPath, f));
+
+          if (mdFiles.length === 0) {
+            console.error("디렉토리에 .md 파일이 없습니다");
+            process.exit(1);
+          }
+
+          console.log(`📂 ${mdFiles.length}개 마크다운 파일 발견`);
+          const { ingestFile } = await import("./services/ingest");
+          for (const mdFile of mdFiles) {
+            console.log(`\x1b[34m📥 파일 처리 중: ${basename(mdFile)}\x1b[0m`);
+            const result = await ingestFile(root, store, mdFile, basename(mdFile), config.llm, persona, (s) => console.log(`  ${s}`));
+            console.log(`\x1b[32m✅ 📖 ${result.sourceCount}개 원본 + 📝 ${result.conceptCount}개 개념\x1b[0m`);
+          }
+        } else {
+          const file = Bun.file(absPath);
+          if (!(await file.exists())) {
+            console.error(`\x1b[31m❌ 파일을 찾을 수 없습니다: ${source}\x1b[0m`);
+            process.exit(1);
+          }
+          const ext = source.split(".").pop()?.toLowerCase() || "";
+          if (!SUPPORTED_EXTENSIONS.includes(ext)) {
+            console.error(`\x1b[31m❌ 지원하지 않는 파일 형식입니다: .${ext}\x1b[0m`);
+            console.error(`   지원 형식: ${SUPPORTED_EXTENSIONS.join(', ')}`);
+            process.exit(1);
+          }
+          console.log(`\x1b[34m📥 파일 처리 중: ${source}\x1b[0m`);
+          const { ingestFile } = await import("./services/ingest");
+          const result = await ingestFile(root, store, absPath, source, config.llm, persona, (s) => console.log(`  ${s}`));
+          console.log(`\x1b[32m✅ 📖 ${result.sourceCount}개 원본 + 📝 ${result.conceptCount}개 개념 문서 생성\x1b[0m`);
+          console.log(`\x1b[34m📊 LLM: ${result.usage.totalCalls}회 호출, ~$${result.usage.estimatedCostUsd.toFixed(4)}\x1b[0m`);
         }
-        console.log(`\x1b[34m📥 파일 처리 중: ${source}\x1b[0m`);
-        const { ingestFile } = await import("./services/ingest");
-        const result = await ingestFile(root, store, absPath, source, config.llm, persona, (s) => console.log(`  ${s}`));
-        console.log(`\x1b[32m✅ 📖 ${result.sourceCount}개 원본 + 📝 ${result.conceptCount}개 개념 문서 생성\x1b[0m`);
-        console.log(`\x1b[34m📊 LLM: ${result.usage.totalCalls}회 호출, ~$${result.usage.estimatedCostUsd.toFixed(4)}\x1b[0m`);
       }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);

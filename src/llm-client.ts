@@ -46,12 +46,29 @@ async function geminiComplete(config: LLMConfig, system: string, userMessage: st
 
 type ProviderResult = { text: string; usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } };
 
+function isRetryableError(error: unknown): boolean {
+  if (error instanceof Error) {
+    // Gemini: raw fetch, status in error message
+    if (/\b(429|503)\b/.test(error.message)) return true;
+  }
+  // OpenAI/Azure/Anthropic SDKs: error objects with status property
+  const status = (error as any)?.status;
+  if (status === 429 || status === 503) return true;
+  return false;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 export class LLMClient {
   private config: LLMConfig;
   private usage: UsageStats = { totalCalls: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0 };
   private _openaiClient: InstanceType<typeof import("openai").default> | null = null;
   private _anthropicClient: InstanceType<typeof import("@anthropic-ai/sdk").default> | null = null;
   private _azureClient: InstanceType<typeof import("openai").AzureOpenAI> | null = null;
+
+  onRetry?: (attempt: number, maxRetries: number, delayMs: number) => void;
 
   constructor(config: LLMConfig) {
     this.config = config;
@@ -146,34 +163,51 @@ export class LLMClient {
   }
 
   async chatComplete(system: string, userMessage: string, maxTokens = 8192): Promise<string> {
-    let result: ProviderResult;
+    const MAX_RETRIES = 5;
+    const BASE_DELAY_MS = 2000;
 
-    switch (this.config.provider) {
-      case "gemini":
-        result = await geminiComplete(this.config, system, userMessage, maxTokens);
-        break;
-      case "azure-openai":
-        result = await this.azureComplete(system, userMessage, maxTokens);
-        break;
-      case "openai":
-        result = await this.openaiComplete(system, userMessage, maxTokens);
-        break;
-      case "anthropic":
-        result = await this.anthropicComplete(system, userMessage, maxTokens);
-        break;
-      default:
-        throw new Error(`Unknown LLM provider: ${this.config.provider}`);
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        let result: ProviderResult;
+
+        switch (this.config.provider) {
+          case "gemini":
+            result = await geminiComplete(this.config, system, userMessage, maxTokens);
+            break;
+          case "azure-openai":
+            result = await this.azureComplete(system, userMessage, maxTokens);
+            break;
+          case "openai":
+            result = await this.openaiComplete(system, userMessage, maxTokens);
+            break;
+          case "anthropic":
+            result = await this.anthropicComplete(system, userMessage, maxTokens);
+            break;
+          default:
+            throw new Error(`Unknown LLM provider: ${this.config.provider}`);
+        }
+
+        // Track usage
+        if (result.usage) {
+          this.usage.totalCalls++;
+          this.usage.promptTokens += result.usage.prompt_tokens || 0;
+          this.usage.completionTokens += result.usage.completion_tokens || 0;
+          this.usage.totalTokens += result.usage.total_tokens || 0;
+        }
+
+        return result.text;
+      } catch (error) {
+        if (isRetryableError(error) && attempt < MAX_RETRIES) {
+          const delay = BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 1000;
+          this.onRetry?.(attempt + 1, MAX_RETRIES, delay);
+          await sleep(delay);
+          continue;
+        }
+        throw error;
+      }
     }
 
-    // Track usage
-    if (result.usage) {
-      this.usage.totalCalls++;
-      this.usage.promptTokens += result.usage.prompt_tokens || 0;
-      this.usage.completionTokens += result.usage.completion_tokens || 0;
-      this.usage.totalTokens += result.usage.total_tokens || 0;
-    }
-
-    return result.text;
+    throw new Error("Unreachable: retry loop exited without return or throw");
   }
 
   getUsageStats(): UsageStats {

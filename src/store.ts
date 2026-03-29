@@ -120,6 +120,14 @@ CREATE INDEX IF NOT EXISTS idx_links_from_page ON links(from_page_id);
 CREATE INDEX IF NOT EXISTS idx_quizzes_page_id ON quizzes(page_id);
 CREATE INDEX IF NOT EXISTS idx_pages_origin ON pages(origin);
 CREATE INDEX IF NOT EXISTS idx_pages_parent ON pages(parent_page_id);
+CREATE TABLE IF NOT EXISTS pipeline_checkpoints (
+  source_id INTEGER NOT NULL,
+  phase TEXT NOT NULL,
+  batch_index INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'completed',
+  created_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (source_id, phase, batch_index)
+);
 `;
 
 export class Store {
@@ -521,5 +529,44 @@ export class Store {
       "SELECT COALESCE(SUM(llm_calls),0) as totalCalls, COALESCE(SUM(prompt_tokens),0) as promptTokens, COALESCE(SUM(completion_tokens),0) as completionTokens, COALESCE(SUM(total_tokens),0) as totalTokens, COALESCE(SUM(estimated_cost_usd),0) as totalCost FROM usage_logs"
     ).get() as { totalCalls: number; promptTokens: number; completionTokens: number; totalTokens: number; totalCost: number };
     return row;
+  }
+
+  // --- Pipeline Checkpoints ---
+
+  setCheckpoint(sourceId: number, phase: string, batchIndex: number = 0): void {
+    this.db.prepare(
+      "INSERT OR REPLACE INTO pipeline_checkpoints (source_id, phase, batch_index, status) VALUES (?, ?, ?, 'completed')"
+    ).run(sourceId, phase, batchIndex);
+  }
+
+  getLastCompletedBatch(sourceId: number, phase: string): number {
+    const row = this.db.prepare(
+      "SELECT MAX(batch_index) as last_batch FROM pipeline_checkpoints WHERE source_id = ? AND phase = ? AND status = 'completed'"
+    ).get(sourceId, phase) as { last_batch: number | null } | undefined;
+    return row?.last_batch ?? -1;
+  }
+
+  isPhaseComplete(sourceId: number, phase: string): boolean {
+    const row = this.db.prepare(
+      "SELECT COUNT(*) as cnt FROM pipeline_checkpoints WHERE source_id = ? AND phase = ? AND status = 'completed'"
+    ).get(sourceId, phase) as { cnt: number };
+    return row.cnt > 0;
+  }
+
+  hasCheckpoints(sourceId: number): boolean {
+    const row = this.db.prepare(
+      "SELECT COUNT(*) as cnt FROM pipeline_checkpoints WHERE source_id = ?"
+    ).get(sourceId) as { cnt: number };
+    return row.cnt > 0;
+  }
+
+  clearCheckpoints(sourceId: number): void {
+    this.db.prepare("DELETE FROM pipeline_checkpoints WHERE source_id = ?").run(sourceId);
+  }
+
+  getSourcePages(sourceId: number): Page[] {
+    return this.db.prepare(
+      "SELECT * FROM pages WHERE source_id = ? AND page_type = 'source' ORDER BY display_order"
+    ).all(sourceId) as Page[];
   }
 }
