@@ -39,6 +39,13 @@ function sidebarHtml(sourcePages: PageLink[], conceptPages: PageLink[], activeSl
             </div>
             <div class="sidebar-panel${!activeIsSource && activeSlug ? " active" : ""}" id="tab-concept">
                 <ul class="page-list">${conceptItems}</ul>
+            </div>
+            <div class="sidebar-mobile-nav">
+                <a href="/wiki/random.html">🎲 임의 문서</a>
+                <a href="/quiz.html">📝 퀴즈</a>
+                <a href="/dashboard.html">📊 대시보드</a>
+                <a href="/graph.html">🔗 그래프</a>
+                <a href="/manage">⚙️ 관리</a>
             </div>`;
 }
 

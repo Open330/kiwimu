@@ -968,6 +968,11 @@ h4 .headerlink {
     background: var(--namu-green);
 }
 
+/* Mobile nav in sidebar — hidden on desktop, visible on mobile */
+.sidebar-mobile-nav {
+    display: none;
+}
+
 /* Hamburger menu button */
 .topbar-menu-btn {
     display: none;
@@ -988,10 +993,39 @@ h4 .headerlink {
 @media (max-width: 768px) {
     .topbar-menu-btn { display: flex; align-items: center; }
 
+    /* Hide nav links on mobile — accessible via sidebar */
+    .topbar-links {
+        display: none;
+    }
+
+    /* Show mobile nav in sidebar */
+    .sidebar-mobile-nav {
+        display: flex;
+        flex-direction: column;
+        border-top: 1px solid var(--border);
+        padding: 8px 0;
+    }
+    .sidebar-mobile-nav a {
+        display: block;
+        padding: 8px 14px;
+        font-size: 13px;
+        color: var(--text);
+        border-bottom: 1px solid #efefef;
+    }
+    .sidebar-mobile-nav a:hover {
+        background: var(--bg-hover);
+        text-decoration: none;
+    }
+
+    .topbar-search {
+        flex: 1;
+        max-width: none;
+    }
+
     .sidebar {
         position: fixed;
         left: -260px;
-        top: 46px;
+        top: var(--topbar-height);
         bottom: 0;
         width: 260px;
         z-index: 99;
@@ -1005,7 +1039,7 @@ h4 .headerlink {
         display: none;
         position: fixed;
         inset: 0;
-        top: 46px;
+        top: var(--topbar-height);
         background: rgba(0,0,0,0.4);
         z-index: 98;
     }
@@ -1014,9 +1048,132 @@ h4 .headerlink {
     .content {
         margin-left: 0;
         padding: 16px 14px;
+        max-width: 100%;
     }
-    .topbar-search {
-        max-width: 180px;
+
+    /* Headings & hero scale down */
+    .page-header h1 {
+        font-size: 20px;
+    }
+    .hero h1 {
+        font-size: 24px;
+    }
+    .hero {
+        padding: 24px 0 16px;
+    }
+    .hero-logo {
+        width: 72px;
+        height: 72px;
+    }
+
+    /* Tables scroll horizontally */
+    .page-body table {
+        display: block;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Code blocks */
+    .page-body pre {
+        font-size: 12px;
+        padding: 10px;
+    }
+
+    /* Quick links wrap */
+    .quick-links {
+        flex-wrap: wrap;
+    }
+    .quick-link {
+        flex: 1 1 calc(50% - 5px);
+        text-align: center;
+        font-size: 13px;
+        padding: 8px 12px;
+    }
+
+    /* Page cards grid — single column on very small screens */
+    .page-cards {
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 6px;
+    }
+
+    /* Stats grid */
+    .stats-grid {
+        gap: 6px;
+    }
+    .stat-card {
+        min-width: 70px;
+        padding: 8px 10px;
+    }
+    .stat-value {
+        font-size: 16px;
+    }
+
+    /* QA popover */
+    .qa-popover {
+        width: calc(100vw - 20px);
+        max-width: 300px;
+        left: 10px !important;
+        right: 10px !important;
+    }
+
+    /* Edit modal */
+    .edit-modal-inner {
+        width: 95%;
+        max-height: 90vh;
+    }
+    .edit-textarea {
+        min-height: 250px;
+        font-size: 12px;
+    }
+
+    /* Backlinks */
+    .backlinks ul {
+        gap: 4px;
+    }
+    .backlinks li a {
+        font-size: 12px;
+        padding: 2px 8px;
+    }
+
+    /* Add form */
+    .add-form {
+        flex-direction: column;
+    }
+    .add-form button {
+        width: 100%;
+    }
+
+    /* File drop */
+    .file-drop {
+        padding: 14px;
+    }
+
+    /* Index section headings */
+    .index-section h2 {
+        font-size: 15px;
+    }
+}
+
+/* Extra small screens */
+@media (max-width: 380px) {
+    .topbar-brand {
+        font-size: 14px;
+    }
+    .topbar-logo {
+        width: 22px;
+        height: 22px;
+    }
+    .page-header h1 {
+        font-size: 18px;
+    }
+    .page-cards {
+        grid-template-columns: 1fr;
+    }
+    .quick-links {
+        flex-direction: column;
+    }
+    .quick-link {
+        flex: 1 1 100%;
     }
 }
 
