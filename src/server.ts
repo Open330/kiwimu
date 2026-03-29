@@ -274,6 +274,44 @@ export function startServer(root: string, port: number, host: string): void {
         }), { headers: { "Content-Type": "text/html" } });
       }
 
+      if (url.pathname === "/api/ask" && req.method === "POST") {
+        try {
+          const body = await req.json();
+          const { selected_text, question, page_slug, page_id } = body;
+
+          if (!selected_text || !question || !page_slug) {
+            return Response.json({ error: "선택한 텍스트와 질문을 모두 입력해주세요" }, { status: 400 });
+          }
+
+          const parentPage = store.getPage(page_slug);
+          if (!parentPage) {
+            return Response.json({ error: "페이지를 찾을 수 없습니다" }, { status: 404 });
+          }
+
+          const currentConfig = loadConfig(root);
+          const persona = getActivePersona(currentConfig);
+          const { LLMClient } = await import("./llm-client");
+          const llmClient = new LLMClient(currentConfig.llm);
+
+          const { generateDynamicPage } = await import("./services/dynamic-qa");
+          const result = await generateDynamicPage(store, llmClient, persona, parentPage, selected_text, question);
+
+          // Hot-render the new page
+          const { buildSinglePage } = await import("./build/renderer");
+          await buildSinglePage(root, store, result.slug);
+
+          return Response.json({
+            ok: true,
+            slug: result.slug,
+            title: result.title,
+            url: `/wiki/${result.slug}.html`
+          });
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          return Response.json({ error: message }, { status: 500 });
+        }
+      }
+
       if (url.pathname === "/api/status") {
         const sources = store.listSourcesMeta();
         const sourcePages = store.listSourcePages();
@@ -305,6 +343,13 @@ export function startServer(root: string, port: number, host: string): void {
       if (await staticFile.exists()) {
         const isHtml = pathname.endsWith(".html");
         const cspValue = "default-src 'self'; script-src 'self' 'unsafe-inline' cdn.jsdelivr.net d3js.org; style-src 'self' 'unsafe-inline' cdn.jsdelivr.net fonts.googleapis.com; font-src fonts.gstatic.com; img-src * data:; connect-src 'self'";
+        if (isHtml && authToken) {
+          let html = await staticFile.text();
+          if (!html.includes('kiwi-auth')) {
+            html = html.replace('</head>', `<meta name="kiwi-auth" content="${authToken}"></head>`);
+          }
+          return new Response(html, { headers: { "Content-Type": "text/html", "Content-Security-Policy": cspValue } });
+        }
         if (isHtml) {
           return new Response(staticFile, { headers: { "Content-Type": "text/html", "Content-Security-Policy": cspValue } });
         }

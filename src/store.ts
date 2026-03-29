@@ -18,6 +18,9 @@ export interface Page {
   section_anchor: string | null;
   page_type: string; // 'source' | 'concept'
   display_order: number;
+  origin: string; // 'batch' | 'user'
+  user_question: string | null;
+  parent_page_id: number | null;
 }
 
 export interface SourceMeta {
@@ -64,6 +67,9 @@ CREATE TABLE IF NOT EXISTS pages (
   section_anchor TEXT,
   page_type TEXT NOT NULL DEFAULT 'concept',
   display_order INTEGER NOT NULL DEFAULT 0,
+  origin TEXT NOT NULL DEFAULT 'batch',
+  user_question TEXT DEFAULT NULL,
+  parent_page_id INTEGER DEFAULT NULL,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -126,6 +132,9 @@ export class Store {
     } catch {
       // Column already exists — ignore
     }
+    try { this.db.exec("ALTER TABLE pages ADD COLUMN origin TEXT NOT NULL DEFAULT 'batch'"); } catch {}
+    try { this.db.exec("ALTER TABLE pages ADD COLUMN user_question TEXT DEFAULT NULL"); } catch {}
+    try { this.db.exec("ALTER TABLE pages ADD COLUMN parent_page_id INTEGER DEFAULT NULL"); } catch {}
   }
 
   close(): void {
@@ -249,6 +258,21 @@ export class Store {
     this.db.prepare("UPDATE pages SET content = ?, updated_at = datetime('now') WHERE id = ?").run(content, pageId);
   }
 
+  addDynamicPage(slug: string, title: string, content: string, parentPageId: number, userQuestion: string): number {
+    this.db.prepare(
+      "INSERT INTO pages (slug, title, content, source_id, page_type, origin, user_question, parent_page_id) VALUES (?, ?, ?, NULL, 'concept', 'user', ?, ?)"
+    ).run(slug, title, content, userQuestion, parentPageId);
+    return (this.db.prepare("SELECT id FROM pages WHERE slug = ?").get(slug) as any).id;
+  }
+
+  listDynamicPages(): Page[] {
+    return this.db.prepare("SELECT * FROM pages WHERE origin = 'user' ORDER BY id DESC").all() as Page[];
+  }
+
+  getDynamicPagesByParent(parentPageId: number): Page[] {
+    return this.db.prepare("SELECT * FROM pages WHERE parent_page_id = ? ORDER BY id DESC").all(parentPageId) as Page[];
+  }
+
   // --- Links ---
 
   addLink(fromId: number, toId: number, anchorText: string): void {
@@ -265,6 +289,14 @@ export class Store {
     return this.db
       .prepare(
         `SELECT p.* FROM pages p JOIN links l ON l.from_page_id = p.id WHERE l.to_page_id = ? ORDER BY p.title`
+      )
+      .all(pageId) as Page[];
+  }
+
+  getForwardLinks(pageId: number): Page[] {
+    return this.db
+      .prepare(
+        `SELECT p.* FROM pages p JOIN links l ON l.to_page_id = p.id WHERE l.from_page_id = ? ORDER BY p.title LIMIT 10`
       )
       .all(pageId) as Page[];
   }

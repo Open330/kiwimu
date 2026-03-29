@@ -2,6 +2,7 @@ interface PageLink {
   slug: string;
   title: string;
   pageType?: string;
+  origin?: string;
 }
 
 function escapeHtml(s: string): string {
@@ -18,8 +19,10 @@ function sidebarHtml(sourcePages: PageLink[], conceptPages: PageLink[], activeSl
 
   const conceptItems = conceptPages
     .map(
-      (p) =>
-        `<li><a href="/wiki/${p.slug}.html"${p.slug === activeSlug ? ' class="active"' : ""}>${escapeHtml(p.title)}</a></li>`
+      (p) => {
+        const icon = p.origin === 'user' ? '💬' : '📝';
+        return `<li><a href="/wiki/${p.slug}.html"${p.slug === activeSlug ? ' class="active"' : ""}>${icon} ${escapeHtml(p.title)}</a></li>`;
+      }
     )
     .join("\n");
 
@@ -97,6 +100,7 @@ function base(opts: {
         </main>
     </div>
     <script src="/static/search.js"></script>
+    <script src="/static/dynamic-qa.js"></script>
     <script>
         // Mobile hamburger menu
         (function() {
@@ -138,6 +142,8 @@ export function renderPage(opts: {
   pageTitle: string;
   pageSlug: string;
   pageType: string;
+  pageId: number;
+  origin?: string;
   content: string;
   externalRefs: string;
   toc: string;
@@ -145,8 +151,13 @@ export function renderPage(opts: {
   sourcePages: PageLink[];
   conceptPages: PageLink[];
 }): string {
-  const typeLabel = opts.pageType === "source" ? "📖 원본 문서" : "📝 개념 문서";
-  const typeBadge = `<span class="page-type-badge ${opts.pageType}">${typeLabel}</span>`;
+  let typeBadge: string;
+  if (opts.origin === 'user') {
+    typeBadge = `<span class="page-type-badge dynamic">💬 질문 생성</span>`;
+  } else {
+    const typeLabel = opts.pageType === "source" ? "📖 원본 문서" : "📝 개념 문서";
+    typeBadge = `<span class="page-type-badge ${opts.pageType}">${typeLabel}</span>`;
+  }
 
   // Separate backlinks by type
   const sourceBacklinks = opts.backlinks.filter((bl) => bl.pageType === "source");
@@ -177,7 +188,7 @@ export function renderPage(opts: {
     : "";
 
   const content = `
-<article class="wiki-page">
+<article class="wiki-page" data-page-slug="${opts.pageSlug}" data-page-id="${opts.pageId}">
     <header class="page-header">
         ${typeBadge}
         <h1>${escapeHtml(opts.pageTitle)}</h1>

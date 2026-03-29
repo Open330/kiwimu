@@ -1,8 +1,8 @@
-import { mkdirSync, rmSync, cpSync, existsSync } from "fs";
+import { mkdirSync, rmSync, cpSync, existsSync, readFileSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { marked } from "marked";
 import sanitizeHtml from "sanitize-html";
-import type { KiwiConfig } from "../config";
+import { loadConfig, type KiwiConfig } from "../config";
 import type { Store } from "../store";
 import { buildGraphData } from "../pipeline/graph";
 import { renderPage, renderIndex, renderGraph, renderQuizPage } from "./templates";
@@ -101,12 +101,14 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
       pageTitle: page.title,
       pageSlug: page.slug,
       pageType: page.page_type,
+      pageId: page.id,
+      origin: page.origin,
       content: body,
       externalRefs,
       toc,
       backlinks,
       sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
-      conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title })),
+      conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title, origin: p.origin })),
     });
 
     await Bun.write(join(wikiDir, `${page.slug}.html`), html);
@@ -173,4 +175,80 @@ fetch('/search-index.json').then(r=>r.json()).then(pages=>{
   await Bun.write(join(outputDir, "search-index.json"), JSON.stringify(searchData));
 
   return pages.length;
+}
+
+export async function buildSinglePage(root: string, store: Store, slug: string): Promise<void> {
+  const page = store.getPage(slug);
+  if (!page) return;
+
+  const config = loadConfig(root);
+  const siteDir = join(root, config.build?.output_dir || "_site");
+  const wikiDir = join(siteDir, "wiki");
+  mkdirSync(wikiDir, { recursive: true });
+
+  const sourcePages = store.listSourcePages();
+  const conceptPages = store.listConceptPages();
+  const wikiName = config.project.name;
+  const backlinksMap = store.getAllBacklinksGrouped();
+
+  // Render the single page (same logic as buildSite loop)
+  let htmlContent = await marked(page.content);
+  htmlContent = sanitizeHtml(htmlContent, {
+    allowedTags: sanitizeHtml.defaults.allowedTags.concat([
+      'img', 'details', 'summary', 'kbd', 'del', 's', 'sup', 'sub',
+      'span', 'div', 'section', 'figure', 'figcaption', 'mark'
+    ]),
+    allowedAttributes: {
+      ...sanitizeHtml.defaults.allowedAttributes,
+      '*': ['id', 'class', 'style'],
+      'img': ['src', 'alt', 'title', 'width', 'height'],
+      'a': ['href', 'title', 'target', 'rel'],
+    },
+    allowedSchemes: ['http', 'https', 'mailto'],
+  });
+  htmlContent = fixWikiLinks(htmlContent);
+
+  const { body, externalRefs } = extractExternalRefs(htmlContent);
+  const toc = generateToc(page.content);
+  const backlinks = (backlinksMap.get(page.id) || []).map((bl) => ({
+    slug: bl.slug,
+    title: bl.title,
+    pageType: bl.page_type,
+  }));
+
+  const html = renderPage({
+    wikiName,
+    pageTitle: page.title,
+    pageSlug: page.slug,
+    pageType: page.page_type,
+    content: body,
+    externalRefs,
+    toc,
+    backlinks,
+    sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
+    conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title })),
+  });
+
+  await Bun.write(join(wikiDir, `${page.slug}.html`), html);
+
+  // Update search-index.json
+  const searchIndexPath = join(siteDir, "search-index.json");
+  let searchData: Array<{ slug: string; title: string; preview: string; type: string }> = [];
+  if (existsSync(searchIndexPath)) {
+    try {
+      searchData = JSON.parse(readFileSync(searchIndexPath, "utf-8"));
+    } catch {
+      searchData = [];
+    }
+  }
+  // Remove existing entry for this slug if any
+  searchData = searchData.filter((p) => p.slug !== page.slug);
+  // Append new entry
+  searchData.push({
+    slug: page.slug,
+    title: page.title,
+    preview: page.content.slice(0, 200),
+    type: page.page_type,
+  });
+  await Bun.write(searchIndexPath, JSON.stringify(searchData));
 }

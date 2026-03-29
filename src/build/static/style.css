@@ -1020,6 +1020,117 @@ h4 .headerlink {
     }
 }
 
+/* Dynamic Q&A Popover */
+.qa-popover {
+    display: none;
+    position: absolute;
+    z-index: 1000;
+    width: 300px;
+    background: var(--bg);
+    border: 1px solid var(--namu-green);
+    padding: 0;
+    font-size: 13px;
+}
+
+.qa-popover-header {
+    background: var(--namu-green);
+    color: white;
+    padding: 8px 12px;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+.qa-popover-body {
+    display: flex;
+    padding: 8px;
+    gap: 6px;
+}
+
+.qa-popover-input {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    font-size: 13px;
+    outline: none;
+    background: var(--bg);
+    color: var(--text);
+}
+
+.qa-popover-input:focus {
+    border-color: var(--namu-green);
+}
+
+.qa-popover-btn {
+    padding: 6px 14px;
+    background: var(--namu-green);
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.qa-popover-btn:hover {
+    background: var(--namu-green-dark);
+}
+
+.qa-popover-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.qa-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--namu-green);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.qa-popover-result {
+    padding: 10px 12px;
+}
+
+.qa-result-link {
+    display: block;
+    color: var(--namu-green);
+    text-decoration: none;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.qa-result-link:hover {
+    text-decoration: underline;
+}
+
+.qa-result-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.qa-popover-error {
+    padding: 10px 12px;
+    color: #e53935;
+    font-size: 12px;
+}
+
+/* Dynamic page badge */
+.page-type-badge.dynamic {
+    background: #7c4dff;
+    color: white;
+}
+
 /* Dark mode */
 @media (prefers-color-scheme: dark) {
     :root {
@@ -1076,6 +1187,10 @@ h4 .headerlink {
 
     /* Badges */
     .page-type-badge { background: var(--bg-alt); }
+
+    /* Q&A Popover */
+    .qa-popover { background: var(--bg); border-color: var(--namu-green); }
+    .qa-popover-input { background: var(--bg-alt); color: var(--text); border-color: var(--border); }
 
     /* Empty state */
     .empty-state { border-color: var(--border); color: var(--text-muted); }
