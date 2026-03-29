@@ -5,3 +5,5 @@ kiwi.db
 kiwi.toml
 *.tgz
 bun.lock
+.env
+certs/

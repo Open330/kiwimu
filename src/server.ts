@@ -1,6 +1,7 @@
 import { join } from "path";
 import path from "path";
 import crypto from "crypto";
+import { existsSync } from "fs";
 import { DB_FILE, SUPPORTED_EXTENSIONS, loadConfig, saveConfig, getActivePersona } from "./config";
 import { Store } from "./store";
 import type { KiwiConfig } from "./config";
@@ -28,9 +29,21 @@ export function startServer(root: string, port: number, host: string): void {
   if (hostname === "0.0.0.0") console.log("  네트워크에 공개됨 (0.0.0.0)");
   console.log("  웹에서 문서 추가 가능합니다.\n");
 
+  // TLS: auto-detect cert files for HTTPS
+  const certPaths = [
+    { cert: join(root, "certs", "fullchain.pem"), key: join(root, "certs", "privkey.pem") },
+    { cert: "/etc/letsencrypt/live/internal.jiun.dev/fullchain.pem", key: "/etc/letsencrypt/live/internal.jiun.dev/privkey.pem" },
+    { cert: "/certs/fullchain.pem", key: "/certs/privkey.pem" },
+  ];
+  const tlsConfig = certPaths.find(p => existsSync(p.cert) && existsSync(p.key));
+  if (tlsConfig) {
+    console.log(`  🔒 HTTPS 활성화 (${tlsConfig.cert})`);
+  }
+
   Bun.serve({
     port,
     hostname,
+    ...(tlsConfig ? { tls: { cert: Bun.file(tlsConfig.cert), key: Bun.file(tlsConfig.key) } } : {}),
     async fetch(req) {
       const url = new URL(req.url);
 

@@ -1,0 +1,35 @@
+services:
+  kiwimu:
+    build: .
+    container_name: kiwimu
+    restart: unless-stopped
+    ports:
+      - "8443:8000"
+      - "8400:8000"
+    volumes:
+      - kiwimu-data:/data/wiki
+      - ./certs:/certs:ro
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('https://localhost:8000/',{tls:{rejectUnauthorized:false}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>fetch('http://localhost:8000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1)))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: kiwimu-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      kiwimu:
+        condition: service_healthy
+    profiles:
+      - external
+
+volumes:
+  kiwimu-data:
