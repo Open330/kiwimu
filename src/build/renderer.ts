@@ -45,7 +45,15 @@ function generateToc(markdown: string): string {
 
 // Shared markdown rendering + sanitization logic
 async function renderPageContent(page: { content: string }): Promise<string> {
-  let htmlContent = await marked(page.content);
+  // Convert [[wiki links]] to markdown links before rendering
+  // [[slug]] → [slug](/wiki/slug.html)
+  // [[slug|display text]] → [display text](/wiki/slug.html)
+  let markdown = page.content.replace(/\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g, (_match, slug, display) => {
+    const text = display || slug.replace(/-/g, ' ');
+    return `[${text}](/wiki/${encodeURIComponent(slug)}.html)`;
+  });
+
+  let htmlContent = await marked(markdown);
   htmlContent = sanitizeHtml(htmlContent, {
     allowedTags: sanitizeHtml.defaults.allowedTags.concat([
       'img', 'details', 'summary', 'kbd', 'del', 's', 'sup', 'sub',
