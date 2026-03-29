@@ -1218,6 +1218,15 @@ mark.qa-highlight {
     padding: 0 1px;
 }
 
+a.dynamic-link {
+    color: var(--namu-green);
+    border-bottom: 1px dashed var(--namu-green);
+    text-decoration: none;
+}
+a.dynamic-link:hover {
+    background: rgba(0, 164, 149, 0.1);
+}
+
 .qa-popover-close {
     background: none;
     border: none;

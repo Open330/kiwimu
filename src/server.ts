@@ -323,9 +323,10 @@ export function startServer(root: string, port: number, host: string): void {
           const { generateDynamicPage } = await import("./services/dynamic-qa");
           const result = await generateDynamicPage(store, llmClient, persona, parentPage, selected_text, question);
 
-          // Hot-render the new page
+          // Hot-render the new page + re-render parent page (to include new link)
           const { buildSinglePage } = await import("./build/renderer");
           await buildSinglePage(root, store, result.slug);
+          await buildSinglePage(root, store, page_slug); // Re-render parent with updated links
 
           return Response.json({
             ok: true,

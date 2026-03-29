@@ -67,7 +67,24 @@ async function renderPageContent(page: { content: string }): Promise<string> {
     return `[${text}](/wiki/${encodeURIComponent(slug)}.html)`;
   });
 
+  // Protect LaTeX math from marked() processing
+  // Replace $...$ and $$...$$ with placeholders to prevent _ and * from being parsed as markdown
+  const mathPlaceholders: string[] = [];
+  markdown = markdown.replace(/\$\$[\s\S]+?\$\$/g, (match) => {
+    mathPlaceholders.push(match);
+    return `%%MATH_BLOCK_${mathPlaceholders.length - 1}%%`;
+  });
+  markdown = markdown.replace(/\$(?!\$)(.+?)\$/g, (match) => {
+    mathPlaceholders.push(match);
+    return `%%MATH_INLINE_${mathPlaceholders.length - 1}%%`;
+  });
+
   let htmlContent = await marked(markdown);
+
+  // Restore LaTeX math from placeholders
+  htmlContent = htmlContent.replace(/%%MATH_(BLOCK|INLINE)_(\d+)%%/g, (_match, _type, idx) => {
+    return mathPlaceholders[parseInt(idx)] || '';
+  });
   // Convert mermaid code blocks BEFORE sanitization
   htmlContent = convertMermaidBlocks(htmlContent);
   htmlContent = sanitizeHtml(htmlContent, {

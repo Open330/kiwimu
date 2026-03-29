@@ -138,6 +138,17 @@
       if (data.ok) {
         result.innerHTML = `<a href="${data.url}" class="qa-result-link">💬 ${esc(data.title)}</a><span class="qa-result-hint">새 개념 페이지가 생성되었습니다</span>`;
         result.style.display = 'block';
+
+        // Replace highlight with a link to the new page
+        if (highlightMark && highlightMark.parentNode) {
+          const link = document.createElement('a');
+          link.href = data.url;
+          link.textContent = highlightMark.textContent;
+          link.className = 'wiki-link dynamic-link';
+          link.title = '💬 ' + data.title;
+          highlightMark.parentNode.replaceChild(link, highlightMark);
+          highlightMark = null;
+        }
       } else {
         errorDiv.textContent = data.error || '오류가 발생했습니다';
         errorDiv.style.display = 'block';
