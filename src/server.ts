@@ -344,6 +344,41 @@ export function startServer(root: string, port: number, host: string): void {
         });
       }
 
+      // Page edit endpoint
+      if (url.pathname === "/api/page/edit" && req.method === "POST") {
+        try {
+          const { slug, content } = await req.json() as { slug: string; content: string };
+          if (!slug || !content) {
+            return Response.json({ error: "slug과 content가 필요합니다" }, { status: 400 });
+          }
+
+          const page = store.getPage(slug);
+          if (!page) {
+            return Response.json({ error: "페이지를 찾을 수 없습니다" }, { status: 404 });
+          }
+
+          // Update page content in DB
+          store.updatePageContentBySlug(slug, content);
+
+          // Hot-render the updated page
+          const { buildSinglePage } = await import("./build/renderer");
+          await buildSinglePage(root, store, slug);
+
+          return Response.json({ ok: true, slug });
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          return Response.json({ error: message }, { status: 500 });
+        }
+      }
+
+      // Get page raw content endpoint
+      if (url.pathname.startsWith("/api/page/") && req.method === "GET") {
+        const slug = url.pathname.replace("/api/page/", "");
+        const page = store.getPage(decodeURIComponent(slug));
+        if (!page) return Response.json({ error: "Not found" }, { status: 404 });
+        return Response.json({ slug: page.slug, title: page.title, content: page.content, origin: page.origin });
+      }
+
       // ── Static file serving ──
       let pathname = url.pathname;
       if (pathname === "/") pathname = "/index.html";

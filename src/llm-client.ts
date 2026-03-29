@@ -65,7 +65,8 @@ export class LLMClient {
     if (!apiKey) {
       try {
         const keyFile = `${process.env.HOME}/keys/openai.azure.com/${this.config.model}.json`;
-        const raw = require("fs").readFileSync(keyFile, "utf-8");
+        const { readFileSync } = await import("fs");
+        const raw = readFileSync(keyFile, "utf-8");
         const keyConfig = JSON.parse(raw)[0] as { key: string; endpoint: string; deployment: string };
         apiKey = keyConfig.key;
         endpoint = keyConfig.endpoint.split("/openai/")[0];
@@ -211,44 +212,3 @@ export class LLMClient {
   }
 }
 
-// ── Deprecated global state wrappers (for backward compatibility) ──
-
-/** @deprecated Use LLMClient class instead */
-let _globalClient: LLMClient | null = null;
-
-/** @deprecated Use `new LLMClient(config)` instead */
-export function setLLMConfig(config: LLMConfig): void {
-  _globalClient = new LLMClient(config);
-}
-
-/** @deprecated Use LLMClient instance methods instead */
-export function getUsageStats(): UsageStats {
-  if (!_globalClient) return { totalCalls: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-  return _globalClient.getUsageStats();
-}
-
-/** @deprecated Use LLMClient instance methods instead */
-export function resetUsageStats(): void {
-  if (_globalClient) _globalClient.resetUsageStats();
-}
-
-/** @deprecated Use LLMClient instance methods instead */
-export function getEstimatedCost(): number {
-  if (!_globalClient) return 0;
-  return _globalClient.getEstimatedCost();
-}
-
-/** @deprecated Use LLMClient instance methods instead */
-export function printUsageSummary(): void {
-  if (_globalClient) _globalClient.printUsageSummary();
-}
-
-/** @deprecated Use LLMClient instance methods instead */
-export async function chatComplete(
-  system: string,
-  userMessage: string,
-  maxTokens = 8192
-): Promise<string> {
-  if (!_globalClient) throw new Error("LLM config not set. Call setLLMConfig() first.");
-  return _globalClient.chatComplete(system, userMessage, maxTokens);
-}

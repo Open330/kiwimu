@@ -215,15 +215,10 @@ export async function llmChunkDocument(
   store: Store,
   maxChunks: number = 0, // 0 = unlimited
   persona: Persona | null = null,
-  llmClient?: LLMClient
+  llmClient: LLMClient
 ): Promise<{ sourceCount: number; conceptCount: number }> {
-  // Use provided client or fall back to deprecated global chatComplete
-  const chat = llmClient
-    ? (system: string, user: string, maxTokens?: number) => llmClient.chatComplete(system, user, maxTokens)
-    : async (system: string, user: string, maxTokens?: number) => {
-        const { chatComplete } = await import("../llm-client");
-        return chatComplete(system, user, maxTokens);
-      };
+  const chat = (system: string, user: string, maxTokens?: number) =>
+    llmClient.chatComplete(system, user, maxTokens);
 
   let chunks = splitByChapters(rawText);
   if (maxChunks > 0 && chunks.length > maxChunks) {
@@ -477,8 +472,8 @@ Rules:
   return { sourceCount, conceptCount };
 }
 
-export function htmlToRawText(html: string): string {
-  const { load } = require("cheerio");
+export async function htmlToRawText(html: string): Promise<string> {
+  const { load } = await import("cheerio");
   const $ = load(html);
   $("script, style, nav, header, footer, noscript").remove();
   return $("body").text() || $.text();

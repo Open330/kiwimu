@@ -1,10 +1,12 @@
 export async function extractTextFromPdf(pdfPath: string): Promise<{ title: string; text: string }> {
-  let pdfParse: (buffer: Buffer) => Promise<{ info?: { Title?: string }; text: string }>;
+  let pdfParseModule: Record<string, unknown>;
   try {
-    pdfParse = require("pdf-parse");
+    pdfParseModule = await import("pdf-parse");
   } catch {
     throw new Error("PDF support requires pdf-parse. Run: bun add pdf-parse");
   }
+
+  const pdfParse = (pdfParseModule.default ?? pdfParseModule) as (buffer: Buffer) => Promise<{ info?: { Title?: string }; text: string }>;
 
   const buffer = await Bun.file(pdfPath).arrayBuffer();
   const data = await pdfParse(Buffer.from(buffer));

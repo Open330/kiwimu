@@ -27,7 +27,7 @@ export async function ingestUrl(
   const { title, html } = await fetchPage(url);
 
   const source = store.addSource(url, "web", title, html);
-  const rawText = htmlToRawText(html);
+  const rawText = await htmlToRawText(html);
 
   if (!rawText || rawText.trim().length < 50) {
     throw new Error("추출된 텍스트가 너무 짧습니다. 파일 내용을 확인해주세요.");

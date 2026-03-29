@@ -80,7 +80,7 @@ export function saveConfig(root: string, config: KiwiConfig): void {
 }
 
 export function loadConfig(root: string): KiwiConfig {
-  const content = require("fs").readFileSync(join(root, CONFIG_FILE), "utf-8");
+  const content = readFileSync(join(root, CONFIG_FILE), "utf-8");
   const raw = parse(content) as Partial<KiwiConfig> & Record<string, unknown>;
   // Migrate old config format
   if (!raw.llm) {

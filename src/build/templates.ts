@@ -86,7 +86,8 @@ function base(opts: {
         <div class="topbar-links">
             <a href="/wiki/random.html" style="color:#fff;text-decoration:none;font-size:13px;">🎲 임의</a>
             <a href="/quiz.html" class="btn-graph">📝 퀴즈</a>
-            <a href="/graph.html" class="btn-graph">📊 그래프</a>
+            <a href="/dashboard.html" class="btn-graph">📊 대시보드</a>
+            <a href="/graph.html" class="btn-graph">🔗 그래프</a>
             <a href="/admin" class="btn-graph">⚙️ 관리</a>
         </div>
     </nav>
@@ -101,6 +102,7 @@ function base(opts: {
     </div>
     <script src="/static/search.js"></script>
     <script src="/static/dynamic-qa.js"></script>
+    <script src="/static/edit-page.js"></script>
     <script>
         // Mobile hamburger menu
         (function() {
@@ -191,13 +193,26 @@ export function renderPage(opts: {
 <article class="wiki-page" data-page-slug="${opts.pageSlug}" data-page-id="${opts.pageId}">
     <header class="page-header">
         ${typeBadge}
-        <h1>${escapeHtml(opts.pageTitle)}</h1>
+        <h1>${escapeHtml(opts.pageTitle)} <button class="edit-btn" data-slug="${opts.pageSlug}" title="편집">&#9998;</button></h1>
     </header>
     ${tocHtml}
     <div class="page-body">${opts.content}</div>
     ${externalRefsHtml}
     ${backlinksHtml}
-</article>`;
+</article>
+<div class="edit-modal" id="edit-modal" style="display:none">
+  <div class="edit-modal-inner">
+    <div class="edit-modal-header">
+      <span>페이지 편집</span>
+      <button class="edit-modal-close">&times;</button>
+    </div>
+    <textarea class="edit-textarea" id="edit-textarea"></textarea>
+    <div class="edit-modal-footer">
+      <button class="edit-cancel">취소</button>
+      <button class="edit-save">저장</button>
+    </div>
+  </div>
+</div>`;
 
   return base({
     title: `${opts.pageTitle} - ${opts.wikiName}`,
@@ -346,6 +361,7 @@ export function renderQuizPage(opts: {
                             <p id="quiz-explanation-text" class="explanation-text"></p>
                         </div>
                         <p class="quiz-source" id="quiz-source"></p>
+                        <p class="quiz-review-info" id="quiz-review-info" style="display:none;"></p>
                         <button id="quiz-next-btn" class="quiz-btn primary">다음 문제 →</button>
                     </div>
                 </div>
@@ -423,6 +439,7 @@ export function renderQuizPage(opts: {
     .quiz-stats { background: var(--bg-alt, #f5f5f5); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 20px; text-align: left; }
     .quiz-stats h3 { font-size: 15px; margin: 0 0 8px; }
     .quiz-stats p { font-size: 14px; color: var(--text-muted); margin: 4px 0; }
+    .quiz-review-info { font-size: 13px; color: var(--text-muted); margin-bottom: 12px; padding: 6px 12px; background: var(--accent-light, #e8f5e9); border-radius: 6px; display: inline-block; }
 </style>
 <script>
 (function() {
@@ -497,14 +514,42 @@ export function renderQuizPage(opts: {
 
         if (isCorrect) score++;
 
+        // SM-2 spaced repetition in localStorage
+        var quality = isCorrect ? 4 : 1;
+        var srsData = JSON.parse(localStorage.getItem('kiwimu-srs') || '{}');
+        var srs = srsData[q.id] || { ef: 2.5, interval: 0 };
+        if (quality >= 3) {
+            if (srs.interval === 0) srs.interval = 1;
+            else if (srs.interval === 1) srs.interval = 6;
+            else srs.interval = Math.round(srs.interval * srs.ef);
+            srs.ef = srs.ef + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
+        } else {
+            srs.interval = 0;
+        }
+        if (srs.ef < 1.3) srs.ef = 1.3;
+        var nextDate = new Date();
+        nextDate.setDate(nextDate.getDate() + srs.interval);
+        srs.nextReview = nextDate.toISOString();
+        srsData[q.id] = srs;
+        localStorage.setItem('kiwimu-srs', JSON.stringify(srsData));
+
         // Record attempt in localStorage
         var attempts = JSON.parse(localStorage.getItem('kiwimu-quiz-attempts') || '[]');
-        attempts.push({ quizId: q.id, isCorrect: isCorrect, timestamp: new Date().toISOString() });
+        attempts.push({ quizId: q.id, isCorrect: isCorrect, quality: quality, timestamp: new Date().toISOString() });
         localStorage.setItem('kiwimu-quiz-attempts', JSON.stringify(attempts));
 
         document.getElementById('quiz-result-icon').textContent = isCorrect ? '🎉' : '😅';
         document.getElementById('quiz-answer-text').innerHTML = esc(q.answer);
         document.getElementById('quiz-answer-text').style.color = isCorrect ? 'var(--accent, #4caf50)' : '#e53935';
+
+        // Show next review info
+        var reviewInfoEl = document.getElementById('quiz-review-info');
+        if (srs.interval === 0) {
+            reviewInfoEl.textContent = '🔄 다음 복습: 오늘';
+        } else {
+            reviewInfoEl.textContent = '📅 다음 복습: ' + srs.interval + '일 후';
+        }
+        reviewInfoEl.style.display = 'block';
 
         // Show explanation if available
         var explanationEl = document.getElementById('quiz-explanation');
@@ -605,6 +650,131 @@ export function renderQuizPage(opts: {
 
   return base({
     title: `학습 퀴즈 - ${opts.wikiName}`,
+    wikiName: opts.wikiName,
+    sourcePages: opts.sourcePages,
+    conceptPages: opts.conceptPages,
+    content,
+  });
+}
+
+export function renderDashboardPage(opts: {
+  wikiName: string;
+  stats: { total: number; mastered: number; learning: number; new: number; dueToday: number };
+  weakConcepts: Array<{ title: string; slug: string; wrongCount: number }>;
+  recentAttempts: Array<{ quiz_id: number; question: string; is_correct: boolean; attempted_at: string }>;
+  sourcePages: PageLink[];
+  conceptPages: PageLink[];
+}): string {
+  const { stats } = opts;
+  const progressPct = stats.total > 0 ? Math.round((stats.mastered / stats.total) * 100) : 0;
+
+  const weakConceptsHtml = opts.weakConcepts.length > 0
+    ? opts.weakConcepts.map(c =>
+        `<li><a href="/wiki/${c.slug}.html">${escapeHtml(c.title)}</a> <span class="dash-weak-count">오답 ${c.wrongCount}회</span></li>`
+      ).join("")
+    : `<li class="dash-empty">아직 데이터가 없습니다.</li>`;
+
+  const recentHtml = opts.recentAttempts.length > 0
+    ? opts.recentAttempts.map(a => {
+        const icon = a.is_correct ? '✅' : '❌';
+        const date = a.attempted_at ? a.attempted_at.slice(0, 10) : '';
+        return `<li>${icon} <span class="dash-q">${escapeHtml(a.question.length > 60 ? a.question.slice(0, 57) + '...' : a.question)}</span> <span class="dash-date">${date}</span></li>`;
+      }).join("")
+    : `<li class="dash-empty">아직 시도한 퀴즈가 없습니다.</li>`;
+
+  const content = `
+<div class="dash-page">
+    <h1>📊 학습 대시보드</h1>
+    <p class="dash-desc">스페이스드 리피티션(SM-2) 기반 학습 현황을 확인하세요.</p>
+
+    <div class="dash-cards">
+        <div class="dash-card">
+            <div class="dash-card-value">${stats.total}</div>
+            <div class="dash-card-label">전체 문제</div>
+        </div>
+        <div class="dash-card dash-card-mastered">
+            <div class="dash-card-value">${stats.mastered}</div>
+            <div class="dash-card-label">숙달</div>
+        </div>
+        <div class="dash-card dash-card-learning">
+            <div class="dash-card-value">${stats.learning}</div>
+            <div class="dash-card-label">학습중</div>
+        </div>
+        <div class="dash-card dash-card-new">
+            <div class="dash-card-value">${stats.new}</div>
+            <div class="dash-card-label">새 문제</div>
+        </div>
+        <div class="dash-card dash-card-due">
+            <div class="dash-card-value">${stats.dueToday}</div>
+            <div class="dash-card-label">오늘 복습</div>
+        </div>
+    </div>
+
+    <div class="dash-progress-section">
+        <h2>📈 숙달 진행률</h2>
+        <div class="dash-progress-bar-container">
+            <div class="dash-progress-bar" style="width:${progressPct}%"></div>
+        </div>
+        <p class="dash-progress-text">${stats.mastered} / ${stats.total} 문제 숙달 (${progressPct}%)</p>
+    </div>
+
+    <div class="dash-columns">
+        <div class="dash-section">
+            <h2>💪 약한 개념</h2>
+            <ul class="dash-list">${weakConceptsHtml}</ul>
+        </div>
+        <div class="dash-section">
+            <h2>🕐 최근 시도</h2>
+            <ul class="dash-list">${recentHtml}</ul>
+        </div>
+    </div>
+
+    <div class="dash-action">
+        <a href="/quiz.html" class="dash-review-btn">📝 복습 시작</a>
+    </div>
+</div>
+<style>
+    .dash-page { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
+    .dash-page h1 { font-size: 24px; margin-bottom: 8px; }
+    .dash-page h2 { font-size: 18px; margin-bottom: 12px; }
+    .dash-desc { color: var(--text-muted); font-size: 14px; margin-bottom: 24px; }
+    .dash-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 28px; }
+    .dash-card {
+        background: var(--bg-alt, #fff); border: 1px solid var(--border); border-radius: 10px;
+        padding: 16px; text-align: center;
+    }
+    .dash-card-value { font-size: 28px; font-weight: 800; color: var(--text); }
+    .dash-card-label { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+    .dash-card-mastered .dash-card-value { color: #2e7d32; }
+    .dash-card-learning .dash-card-value { color: #f9a825; }
+    .dash-card-new .dash-card-value { color: #1565c0; }
+    .dash-card-due .dash-card-value { color: #e53935; }
+    .dash-progress-section { margin-bottom: 28px; }
+    .dash-progress-bar-container { height: 10px; background: var(--border); border-radius: 5px; overflow: hidden; margin: 8px 0; }
+    .dash-progress-bar { height: 100%; background: #2e7d32; border-radius: 5px; transition: width 0.5s ease; }
+    .dash-progress-text { font-size: 14px; color: var(--text-muted); }
+    .dash-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 28px; }
+    @media (max-width: 600px) { .dash-columns { grid-template-columns: 1fr; } }
+    .dash-section { background: var(--bg-alt, #fff); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+    .dash-list { list-style: none; padding: 0; margin: 0; }
+    .dash-list li { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 14px; display: flex; align-items: center; gap: 8px; }
+    .dash-list li:last-child { border-bottom: none; }
+    .dash-list a { color: var(--accent, #4caf50); text-decoration: none; }
+    .dash-list a:hover { text-decoration: underline; }
+    .dash-weak-count { font-size: 12px; color: #e53935; margin-left: auto; white-space: nowrap; }
+    .dash-date { font-size: 12px; color: var(--text-muted); margin-left: auto; white-space: nowrap; }
+    .dash-q { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dash-empty { color: var(--text-muted); font-style: italic; }
+    .dash-action { text-align: center; margin-top: 8px; }
+    .dash-review-btn {
+        display: inline-block; padding: 12px 32px; background: var(--accent, #4caf50); color: white;
+        border-radius: 8px; font-size: 16px; font-weight: 600; text-decoration: none; transition: opacity 0.2s;
+    }
+    .dash-review-btn:hover { opacity: 0.9; }
+</style>`;
+
+  return base({
+    title: `📊 학습 대시보드 — ${opts.wikiName}`,
     wikiName: opts.wikiName,
     sourcePages: opts.sourcePages,
     conceptPages: opts.conceptPages,

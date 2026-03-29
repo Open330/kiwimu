@@ -44,6 +44,9 @@ export interface Quiz {
   answer: string;
   explanation: string;
   quiz_type: string; // 'fill_blank' | 'ox' | 'short_answer'
+  ease_factor: number;
+  interval: number;
+  next_review_at: string | null;
   created_at: string;
   page_title?: string;
   page_slug?: string;
@@ -96,6 +99,9 @@ CREATE TABLE IF NOT EXISTS quizzes (
   answer TEXT NOT NULL,
   explanation TEXT DEFAULT '',
   quiz_type TEXT NOT NULL DEFAULT 'fill_blank',
+  ease_factor REAL NOT NULL DEFAULT 2.5,
+  interval INTEGER NOT NULL DEFAULT 0,
+  next_review_at TEXT DEFAULT NULL,
   created_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 );
@@ -137,6 +143,10 @@ export class Store {
     try { this.db.exec("ALTER TABLE pages ADD COLUMN origin TEXT NOT NULL DEFAULT 'batch'"); } catch {}
     try { this.db.exec("ALTER TABLE pages ADD COLUMN user_question TEXT DEFAULT NULL"); } catch {}
     try { this.db.exec("ALTER TABLE pages ADD COLUMN parent_page_id INTEGER DEFAULT NULL"); } catch {}
+    // SM-2 spaced repetition columns
+    try { this.db.exec("ALTER TABLE quizzes ADD COLUMN ease_factor REAL NOT NULL DEFAULT 2.5"); } catch {}
+    try { this.db.exec("ALTER TABLE quizzes ADD COLUMN interval INTEGER NOT NULL DEFAULT 0"); } catch {}
+    try { this.db.exec("ALTER TABLE quizzes ADD COLUMN next_review_at TEXT DEFAULT NULL"); } catch {}
   }
 
   close(): void {
@@ -260,6 +270,10 @@ export class Store {
     this.db.prepare("UPDATE pages SET content = ?, updated_at = datetime('now') WHERE id = ?").run(content, pageId);
   }
 
+  updatePageContentBySlug(slug: string, content: string): void {
+    this.db.prepare("UPDATE pages SET content = ?, updated_at = datetime('now') WHERE slug = ?").run(content, slug);
+  }
+
   addDynamicPage(slug: string, title: string, content: string, parentPageId: number, userQuestion: string): number {
     this.db.prepare(
       "INSERT INTO pages (slug, title, content, source_id, page_type, origin, user_question, parent_page_id) VALUES (?, ?, ?, NULL, 'concept', 'user', ?, ?)"
@@ -366,27 +380,72 @@ export class Store {
   }
 
   getSmartQuizzes(count: number): Quiz[] {
+    const now = new Date().toISOString();
     return this.db.prepare(`
-      SELECT q.*, p.title as page_title, p.slug as page_slug,
-        COALESCE(a.last_attempt, '1970-01-01') as last_attempt,
-        COALESCE(a.correct_count, 0) as correct_count,
-        COALESCE(a.wrong_count, 0) as wrong_count
+      SELECT q.*, p.title as page_title, p.slug as page_slug
       FROM quizzes q
       JOIN pages p ON p.id = q.page_id
-      LEFT JOIN (
-        SELECT quiz_id,
-          MAX(attempted_at) as last_attempt,
-          SUM(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) as correct_count,
-          SUM(CASE WHEN is_correct = 0 THEN 1 ELSE 0 END) as wrong_count
-        FROM quiz_attempts
-        GROUP BY quiz_id
-      ) a ON a.quiz_id = q.id
+      WHERE q.next_review_at IS NULL OR q.next_review_at <= ?
       ORDER BY
-        CASE WHEN a.last_attempt IS NULL THEN 0 ELSE 1 END,
-        CASE WHEN a.wrong_count > 0 THEN 0 ELSE 1 END,
-        a.last_attempt ASC
+        CASE WHEN q.next_review_at IS NULL THEN 0 ELSE 1 END,
+        q.next_review_at ASC
       LIMIT ?
-    `).all(count) as Quiz[];
+    `).all(now, count) as Quiz[];
+  }
+
+  // --- SM-2 Spaced Repetition ---
+
+  updateQuizSRS(quizId: number, quality: number): void {
+    // quality: 0-5 (0=total blackout, 5=perfect)
+    const quiz = this.db.prepare("SELECT ease_factor, interval FROM quizzes WHERE id = ?").get(quizId) as any;
+    if (!quiz) return;
+
+    let ef = quiz.ease_factor;
+    let interval = quiz.interval;
+
+    if (quality >= 3) {
+      // Correct answer
+      if (interval === 0) interval = 1;
+      else if (interval === 1) interval = 6;
+      else interval = Math.round(interval * ef);
+
+      ef = ef + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
+    } else {
+      // Wrong answer - reset
+      interval = 0;
+      // ef stays the same
+    }
+
+    if (ef < 1.3) ef = 1.3;
+
+    const nextReview = new Date();
+    nextReview.setDate(nextReview.getDate() + interval);
+
+    this.db.prepare(
+      "UPDATE quizzes SET ease_factor = ?, interval = ?, next_review_at = ? WHERE id = ?"
+    ).run(ef, interval, nextReview.toISOString(), quizId);
+  }
+
+  getLearningStats(): { total: number; mastered: number; learning: number; new: number; dueToday: number } {
+    const now = new Date().toISOString();
+    const total = (this.db.prepare("SELECT COUNT(*) as c FROM quizzes").get() as any).c;
+    const mastered = (this.db.prepare("SELECT COUNT(*) as c FROM quizzes WHERE interval >= 21").get() as any).c;
+    const newQ = (this.db.prepare("SELECT COUNT(*) as c FROM quizzes WHERE next_review_at IS NULL").get() as any).c;
+    const due = (this.db.prepare("SELECT COUNT(*) as c FROM quizzes WHERE next_review_at <= ?").get(now) as any).c;
+    return { total, mastered, learning: total - mastered - newQ, new: newQ, dueToday: due };
+  }
+
+  getWeakConcepts(limit: number): Array<{title: string; slug: string; wrongCount: number}> {
+    return this.db.prepare(`
+      SELECT p.title, p.slug, COUNT(qa.id) as wrongCount
+      FROM quiz_attempts qa
+      JOIN quizzes q ON q.id = qa.quiz_id
+      JOIN pages p ON p.id = q.page_id
+      WHERE qa.is_correct = 0
+      GROUP BY p.id
+      ORDER BY wrongCount DESC
+      LIMIT ?
+    `).all(limit) as any[];
   }
 
   // --- Quiz Attempts ---

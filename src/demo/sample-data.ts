@@ -68,3 +68,70 @@ export const DEMO_LINKS = [
   { from: "양자-중첩", to: "하이젠베르크" },
   { from: "양자-얽힘", to: "양자역학-입문" },
 ];
+
+export const CS_DEMO_SOURCES = [
+  {
+    uri: "demo://data-structures",
+    type: "demo",
+    title: "자료구조와 알고리즘 입문",
+    raw_content: "자료구조와 알고리즘의 기초를 소개합니다..."
+  }
+];
+
+export const CS_DEMO_PAGES = [
+  {
+    slug: "자료구조-입문",
+    title: "자료구조와 알고리즘 입문",
+    content: `# 자료구조와 알고리즘 입문\n\n자료구조는 데이터를 효율적으로 저장하고 접근하기 위한 방법입니다.\n\n## 왜 자료구조를 배워야 하는가?\n\n같은 문제라도 어떤 자료구조를 선택하느냐에 따라 시간 복잡도가 $O(n)$에서 $O(\\log n)$으로 바뀔 수 있습니다. ~~코딩 테스트 합격의 비밀이 여기에~~\n\n## 핵심 자료구조\n\n- [[배열과-연결리스트]] — 가장 기본적인 선형 자료구조\n- [[스택과-큐]] — LIFO와 FIFO\n- [[해시테이블]] — $O(1)$ 탐색의 마법\n- [[이진탐색트리]] — 정렬된 데이터의 효율적 관리\n\n## 시간 복잡도\n\n| 자료구조 | 탐색 | 삽입 | 삭제 |\n|----------|------|------|------|\n| 배열 | $O(n)$ | $O(n)$ | $O(n)$ |\n| 해시테이블 | $O(1)$ | $O(1)$ | $O(1)$ |\n| BST | $O(\\log n)$ | $O(\\log n)$ | $O(\\log n)$ |`,
+    page_type: "source",
+    source_id: 2
+  },
+  {
+    slug: "배열과-연결리스트",
+    title: "배열과 연결리스트",
+    content: `# 배열과 연결리스트\n\n**배열**(Array)과 **연결리스트**(Linked List)는 가장 기본적인 선형 [[자료구조-입문|자료구조]]입니다.\n\n## 배열\n\n연속된 메모리 공간에 데이터를 저장합니다.\n\n\`\`\`\n인덱스:  [0] [1] [2] [3] [4]\n값:      10  20  30  40  50\n\`\`\`\n\n- 장점: $O(1)$ 랜덤 접근\n- 단점: 삽입/삭제 시 $O(n)$ 이동 필요\n\n## 연결리스트\n\n각 노드가 다음 노드를 가리킵니다. (포인터의 힘!)\n\n- 장점: $O(1)$ 삽입/삭제 (위치를 알 때)\n- 단점: $O(n)$ 탐색 — 인덱스 접근 불가\n\n## 언제 뭘 쓰나?\n\n랜덤 접근이 많으면 배열, 삽입/삭제가 많으면 연결리스트. ~~면접에서 이것만 대답해도 반은 먹고 들어간다~~`,
+    page_type: "concept",
+    source_id: 2
+  },
+  {
+    slug: "스택과-큐",
+    title: "스택과 큐",
+    content: `# 스택과 큐\n\n**스택**(Stack)과 **큐**(Queue)는 [[자료구조-입문|자료구조]]의 핵심 추상 자료형입니다.\n\n## 스택 (LIFO)\n\nLast In, First Out. 마지막에 넣은 것이 먼저 나옵니다.\n\n$$push(x) → [1, 2, 3, x]$$\n$$pop() → x$$\n\n활용: 함수 호출 스택, 괄호 매칭, DFS, Undo 기능\n\n## 큐 (FIFO)\n\nFirst In, First Out. 먼저 넣은 것이 먼저 나옵니다.\n\n활용: BFS, 작업 스케줄링, 프린터 큐\n\n## 덱 (Deque)\n\n양쪽에서 삽입/삭제 가능. 스택과 큐의 일반화. (사실 이것만 알면 됩니다)`,
+    page_type: "concept",
+    source_id: 2
+  },
+  {
+    slug: "해시테이블",
+    title: "해시테이블",
+    content: `# 해시테이블\n\n**해시테이블**(Hash Table)은 키-값 쌍을 $O(1)$에 저장하고 검색하는 [[자료구조-입문|자료구조]]입니다.\n\n## 해시 함수\n\n$$h(key) = key \\mod m$$\n\n키를 배열 인덱스로 변환합니다. 좋은 해시 함수는 충돌을 최소화합니다.\n\n## 충돌 해결\n\n### 체이닝 (Chaining)\n같은 인덱스에 연결리스트로 저장. [[배열과-연결리스트|연결리스트]] 활용.\n\n### 개방 주소법 (Open Addressing)\n충돌 시 다음 빈 슬롯을 찾음. 선형 탐사, 이차 탐사 등.\n\n## Python의 dict\n\nPython의 딕셔너리가 바로 해시테이블입니다. ~~이미 매일 쓰고 있었다는 사실~~`,
+    page_type: "concept",
+    source_id: 2
+  },
+  {
+    slug: "이진탐색트리",
+    title: "이진탐색트리",
+    content: `# 이진탐색트리 (BST)\n\n**이진탐색트리**는 왼쪽 자식 < 부모 < 오른쪽 자식 규칙을 따르는 [[자료구조-입문|자료구조]]입니다.\n\n## 시간 복잡도\n\n| 연산 | 평균 | 최악 |\n|------|------|------|\n| 탐색 | $O(\\log n)$ | $O(n)$ |\n| 삽입 | $O(\\log n)$ | $O(n)$ |\n| 삭제 | $O(\\log n)$ | $O(n)$ |\n\n최악의 경우는 트리가 한쪽으로 치우칠 때 발생합니다. (편향 이진 트리)\n\n## 균형 트리\n\nAVL 트리, Red-Black 트리는 자동으로 균형을 유지하여 항상 $O(\\log n)$을 보장합니다.\n\n## 순회\n\n- 중위 순회 (Inorder): 정렬된 순서로 출력\n- 전위 순회 (Preorder): 트리 복사\n- 후위 순회 (Postorder): 트리 삭제`,
+    page_type: "concept",
+    source_id: 2
+  }
+];
+
+export const CS_DEMO_LINKS = [
+  { from: "자료구조-입문", to: "배열과-연결리스트" },
+  { from: "자료구조-입문", to: "스택과-큐" },
+  { from: "자료구조-입문", to: "해시테이블" },
+  { from: "자료구조-입문", to: "이진탐색트리" },
+  { from: "해시테이블", to: "배열과-연결리스트" },
+  { from: "스택과-큐", to: "자료구조-입문" },
+  { from: "이진탐색트리", to: "자료구조-입문" },
+  { from: "배열과-연결리스트", to: "자료구조-입문" },
+];
+
+export const CS_DEMO_QUIZZES = [
+  { page_slug: "배열과-연결리스트", question: "배열에서 인덱스를 통한 랜덤 접근의 시간 복잡도는?", answer: "O(1)", quiz_type: "short_answer", explanation: "배열은 연속된 메모리 공간에 저장되므로 인덱스 계산만으로 직접 접근 가능합니다." },
+  { page_slug: "해시테이블", question: "해시테이블의 평균 탐색 시간 복잡도는 ___이다.", answer: "O(1)", quiz_type: "fill_blank", explanation: "해시 함수가 키를 배열 인덱스로 직접 변환하므로 상수 시간에 접근 가능합니다." },
+  { page_slug: "스택과-큐", question: "스택은 FIFO(First In First Out) 구조이다.", answer: "X", quiz_type: "ox", explanation: "스택은 LIFO(Last In First Out)입니다. FIFO는 큐의 특성입니다." },
+  { page_slug: "이진탐색트리", question: "BST에서 중위 순회를 하면 데이터가 정렬된 순서로 출력된다.", answer: "O", quiz_type: "ox", explanation: "BST의 왼쪽 < 부모 < 오른쪽 규칙에 의해 중위 순회는 오름차순 정렬을 보장합니다." },
+  { page_slug: "해시테이블", question: "해시 충돌을 해결하는 두 가지 방법은 ___과 개방 주소법이다.", answer: "체이닝", quiz_type: "fill_blank", explanation: "체이닝은 같은 인덱스에 연결리스트로 저장하고, 개방 주소법은 다음 빈 슬롯을 찾습니다." },
+  { page_slug: "이진탐색트리", question: "편향 이진 트리에서 탐색의 최악 시간 복잡도는?", answer: "O(n)", quiz_type: "short_answer", explanation: "트리가 한쪽으로 치우치면 사실상 연결리스트와 같아져 선형 탐색이 됩니다." },
+];

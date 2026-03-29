@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.9.1] - 2026-03-29
+
+### Fixed
+- Remove global `style` attribute from sanitize-html allowlist (CSS injection prevention)
+- Convert all `require()` calls to dynamic `import()` for ESM consistency (6 occurrences)
+- Remove deprecated global LLM wrappers (`setLLMConfig`, `chatComplete`, etc.)
+
+### Added
+- SECURITY.md with vulnerability reporting policy and security feature documentation
+
+## [0.9.0] - 2026-03-28
+
+### Changed
+- Extract shared `renderPageContent()` in renderer to eliminate duplicated markdown rendering + sanitization logic
+- `llmChunkDocument` now requires `LLMClient` parameter (no longer falls back to deprecated global state)
+- `htmlToRawText` is now async (uses dynamic `import("cheerio")` instead of `require`)
+
+### Removed
+- Deprecated global state LLM wrappers: `setLLMConfig`, `chatComplete`, `getUsageStats`, `resetUsageStats`, `getEstimatedCost`, `printUsageSummary`
+
 ## [0.8.0] - 2026-03-20
 
 ### Added

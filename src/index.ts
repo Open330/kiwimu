@@ -50,7 +50,8 @@ program
 
     if (Bun.file(join(root, CONFIG_FILE)).size > 0) {
       try {
-        require("fs").accessSync(join(root, CONFIG_FILE));
+        const { accessSync } = await import("fs");
+        accessSync(join(root, CONFIG_FILE));
         console.log("\x1b[33m이미 초기화된 프로젝트입니다.\x1b[0m");
         return;
       } catch {}
@@ -392,6 +393,10 @@ program
         const isCorrect = norm(userAnswer as string) === norm(q.answer);
 
         store.addQuizAttempt(q.id, isCorrect);
+
+        // SM-2 spaced repetition update
+        const quality = isCorrect ? 4 : 1; // 4=correct with hesitation, 1=wrong
+        store.updateQuizSRS(q.id, quality);
 
         if (isCorrect) {
           score++;

@@ -1144,6 +1144,87 @@ h4 .headerlink {
     color: white;
 }
 
+/* Edit button & modal */
+.edit-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 2px 6px;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+    display: none; /* Hidden by default; JS shows it when auth token present */
+}
+.edit-btn:hover { opacity: 1; }
+
+.edit-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1001;
+}
+.edit-modal-inner {
+    background: var(--bg);
+    width: 90%;
+    max-width: 800px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+}
+.edit-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: var(--namu-green);
+    color: white;
+    font-weight: 600;
+}
+.edit-modal-close {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
+}
+.edit-textarea {
+    flex: 1;
+    padding: 16px;
+    border: none;
+    font-family: 'JetBrains Mono', 'D2Coding', monospace;
+    font-size: 13px;
+    resize: none;
+    min-height: 400px;
+    background: var(--bg);
+    color: var(--text);
+}
+.edit-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+}
+.edit-cancel {
+    padding: 6px 16px;
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    color: var(--text);
+}
+.edit-save {
+    padding: 6px 16px;
+    background: var(--namu-green);
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+}
+
 /* Dark mode */
 @media (prefers-color-scheme: dark) {
     :root {
@@ -1207,6 +1288,13 @@ h4 .headerlink {
 
     /* Empty state */
     .empty-state { border-color: var(--border); color: var(--text-muted); }
+
+    /* Edit modal */
+    .edit-modal-inner { background: var(--bg); border-color: var(--border); }
+    .edit-modal-header { background: #004d40; }
+    .edit-textarea { background: var(--bg-alt); color: var(--text); }
+    .edit-cancel { background: var(--bg-alt); color: var(--text); border-color: var(--border); }
+    .edit-save { background: var(--namu-green); }
 
     /* Footer badge */
     .kiwimu-badge { border-top-color: var(--border); }

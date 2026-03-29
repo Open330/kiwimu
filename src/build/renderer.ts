@@ -5,7 +5,7 @@ import sanitizeHtml from "sanitize-html";
 import { loadConfig, type KiwiConfig } from "../config";
 import type { Store } from "../store";
 import { buildGraphData } from "../pipeline/graph";
-import { renderPage, renderIndex, renderGraph, renderQuizPage } from "./templates";
+import { renderPage, renderIndex, renderGraph, renderQuizPage, renderDashboardPage } from "./templates";
 
 // Fix internal wiki links: /wiki/slug → /wiki/slug.html
 function fixWikiLinks(html: string): string {
@@ -43,6 +43,27 @@ function generateToc(markdown: string): string {
     .join("")}</ul></div>`;
 }
 
+// Shared markdown rendering + sanitization logic
+async function renderPageContent(page: { content: string }): Promise<string> {
+  let htmlContent = await marked(page.content);
+  htmlContent = sanitizeHtml(htmlContent, {
+    allowedTags: sanitizeHtml.defaults.allowedTags.concat([
+      'img', 'details', 'summary', 'kbd', 'del', 's', 'sup', 'sub',
+      'span', 'div', 'section', 'figure', 'figcaption', 'mark'
+    ]),
+    allowedAttributes: {
+      ...sanitizeHtml.defaults.allowedAttributes,
+      '*': ['id', 'class'],
+      'img': ['src', 'alt', 'title', 'width', 'height'],
+      'a': ['href', 'title', 'target', 'rel'],
+      'span': ['class'],  // For KaTeX
+    },
+    allowedSchemes: ['http', 'https', 'mailto'],
+  });
+  htmlContent = fixWikiLinks(htmlContent);
+  return htmlContent;
+}
+
 export async function buildSite(store: Store, config: KiwiConfig, projectRoot: string): Promise<number> {
   const outputDir = join(projectRoot, config.build.output_dir);
   const wikiDir = join(outputDir, "wiki");
@@ -72,21 +93,7 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
   const backlinksMap = store.getAllBacklinksGrouped();
 
   for (const page of pages) {
-    let htmlContent = await marked(page.content);
-    htmlContent = sanitizeHtml(htmlContent, {
-      allowedTags: sanitizeHtml.defaults.allowedTags.concat([
-        'img', 'details', 'summary', 'kbd', 'del', 's', 'sup', 'sub',
-        'span', 'div', 'section', 'figure', 'figcaption', 'mark'
-      ]),
-      allowedAttributes: {
-        ...sanitizeHtml.defaults.allowedAttributes,
-        '*': ['id', 'class', 'style'],
-        'img': ['src', 'alt', 'title', 'width', 'height'],
-        'a': ['href', 'title', 'target', 'rel'],
-      },
-      allowedSchemes: ['http', 'https', 'mailto'],
-    });
-    htmlContent = fixWikiLinks(htmlContent);
+    const htmlContent = await renderPageContent(page);
 
     const { body, externalRefs } = extractExternalRefs(htmlContent);
     const toc = generateToc(page.content);
@@ -153,6 +160,22 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
     })
   );
 
+  // Dashboard page
+  const stats = store.getLearningStats();
+  const weakConcepts = store.getWeakConcepts(10);
+  const recentAttempts = store.getQuizHistory(20);
+  await Bun.write(
+    join(outputDir, "dashboard.html"),
+    renderDashboardPage({
+      wikiName,
+      stats,
+      weakConcepts,
+      recentAttempts,
+      sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
+      conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title })),
+    })
+  );
+
   // Random page redirect
   mkdirSync(join(wikiDir), { recursive: true });
   await Bun.write(
@@ -191,22 +214,8 @@ export async function buildSinglePage(root: string, store: Store, slug: string):
   const wikiName = config.project.name;
   const backlinksMap = store.getAllBacklinksGrouped();
 
-  // Render the single page (same logic as buildSite loop)
-  let htmlContent = await marked(page.content);
-  htmlContent = sanitizeHtml(htmlContent, {
-    allowedTags: sanitizeHtml.defaults.allowedTags.concat([
-      'img', 'details', 'summary', 'kbd', 'del', 's', 'sup', 'sub',
-      'span', 'div', 'section', 'figure', 'figcaption', 'mark'
-    ]),
-    allowedAttributes: {
-      ...sanitizeHtml.defaults.allowedAttributes,
-      '*': ['id', 'class', 'style'],
-      'img': ['src', 'alt', 'title', 'width', 'height'],
-      'a': ['href', 'title', 'target', 'rel'],
-    },
-    allowedSchemes: ['http', 'https', 'mailto'],
-  });
-  htmlContent = fixWikiLinks(htmlContent);
+  // Render the single page
+  const htmlContent = await renderPageContent(page);
 
   const { body, externalRefs } = extractExternalRefs(htmlContent);
   const toc = generateToc(page.content);
