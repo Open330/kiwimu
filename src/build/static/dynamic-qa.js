@@ -12,7 +12,10 @@
   const popover = document.createElement('div');
   popover.className = 'qa-popover';
   popover.innerHTML = `
-    <div class="qa-popover-header">💬 이 부분에 대해 질문하기</div>
+    <div class="qa-popover-header">
+      <span>💬 이 부분에 대해 질문하기</span>
+      <button class="qa-popover-close" aria-label="닫기">&times;</button>
+    </div>
     <div class="qa-popover-body">
       <input type="text" class="qa-popover-input" placeholder="궁금한 점을 입력하세요..." />
       <button class="qa-popover-btn">질문</button>
@@ -31,6 +34,9 @@
   const result = popover.querySelector('.qa-popover-result');
   const errorDiv = popover.querySelector('.qa-popover-error');
   let selectedText = '';
+  let isAsking = false;
+
+  popover.querySelector('.qa-popover-close').addEventListener('click', hidePopover);
 
   function showPopover(text, rect) {
     selectedText = text;
@@ -39,7 +45,7 @@
     result.style.display = 'none';
     errorDiv.style.display = 'none';
     popover.querySelector('.qa-popover-body').style.display = 'flex';
-    popover.querySelector('.qa-popover-header').style.display = 'block';
+    popover.querySelector('.qa-popover-header').style.display = 'flex';
 
     // Position below selection
     const top = rect.bottom + window.scrollY + 8;
@@ -57,9 +63,11 @@
   }
 
   async function askQuestion() {
+    if (isAsking) return;
     const question = input.value.trim();
     if (!question || !selectedText) return;
 
+    isAsking = true;
     popover.querySelector('.qa-popover-body').style.display = 'none';
     popover.querySelector('.qa-popover-header').style.display = 'none';
     loading.style.display = 'flex';
@@ -94,6 +102,8 @@
       loading.style.display = 'none';
       errorDiv.textContent = '서버 연결에 실패했습니다';
       errorDiv.style.display = 'block';
+    } finally {
+      isAsking = false;
     }
   }
 
@@ -130,6 +140,26 @@
     if (!pageBody) return;
 
     showPopover(text, range.getBoundingClientRect());
+  });
+
+  // Mobile: use selectionchange with debounce
+  let selectionTimer;
+  document.addEventListener('selectionchange', () => {
+    clearTimeout(selectionTimer);
+    selectionTimer = setTimeout(() => {
+      const selection = window.getSelection();
+      const text = selection?.toString().trim();
+      if (!text || text.length < 3) return;
+
+      const range = selection.getRangeAt(0);
+      const ancestor = range.commonAncestorContainer;
+      const pageBody = ancestor.nodeType === 1
+        ? ancestor.closest('.page-body')
+        : ancestor.parentElement?.closest('.page-body');
+      if (!pageBody) return;
+
+      showPopover(text, range.getBoundingClientRect());
+    }, 500); // Debounce 500ms for mobile
   });
 
   // Event: ask button

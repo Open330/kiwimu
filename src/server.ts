@@ -15,6 +15,10 @@ export function startServer(root: string, port: number, host: string): void {
   let isProcessing = false;
   let processingStatus = "";
 
+  const askRateLimit = new Map<string, number[]>(); // ip -> timestamps
+  const ASK_RATE_LIMIT = 10; // max requests
+  const ASK_RATE_WINDOW = 60_000; // per minute
+
   const hostname = host;
   const authToken = crypto.randomUUID();
   console.log(`\x1b[32m🥝 Kiwi Mu 서버 시작!\x1b[0m`);
@@ -275,6 +279,16 @@ export function startServer(root: string, port: number, host: string): void {
       }
 
       if (url.pathname === "/api/ask" && req.method === "POST") {
+        const clientIp = req.headers.get("x-forwarded-for") || "local";
+        const now = Date.now();
+        const timestamps = askRateLimit.get(clientIp) || [];
+        const recent = timestamps.filter(t => now - t < ASK_RATE_WINDOW);
+        if (recent.length >= ASK_RATE_LIMIT) {
+          return Response.json({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요." }, { status: 429 });
+        }
+        recent.push(now);
+        askRateLimit.set(clientIp, recent);
+
         try {
           const body = await req.json();
           const { selected_text, question, page_slug, page_id } = body;

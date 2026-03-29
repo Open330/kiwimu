@@ -221,12 +221,14 @@ export async function buildSinglePage(root: string, store: Store, slug: string):
     pageTitle: page.title,
     pageSlug: page.slug,
     pageType: page.page_type,
+    pageId: page.id,
+    origin: page.origin,
     content: body,
     externalRefs,
     toc,
     backlinks,
     sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
-    conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title })),
+    conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title, origin: p.origin })),
   });
 
   await Bun.write(join(wikiDir, `${page.slug}.html`), html);

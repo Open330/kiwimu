@@ -33,6 +33,7 @@ export async function generateDynamicPage(
     .join('\n');
 
   const conceptTitles = store.listConceptPages()
+    .slice(0, 50)
     .map(p => p.title)
     .join(', ');
 
@@ -101,6 +102,11 @@ Return a JSON object:
 
   // 7. Add link from parent to new page
   store.addLink(parentPage.id, pageId, parsed.title);
+
+  // 8. Log usage
+  const usage = llmClient.getUsageStats();
+  const estimatedCostUsd = llmClient.getEstimatedCost();
+  store.addUsageLog(null, usage.totalCalls, usage.promptTokens, usage.completionTokens, usage.totalTokens, estimatedCostUsd);
 
   return { pageId, slug: finalSlug, title: parsed.title, content: parsed.content };
 }

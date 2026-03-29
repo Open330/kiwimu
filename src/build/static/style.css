@@ -1038,6 +1038,19 @@ h4 .headerlink {
     padding: 8px 12px;
     font-weight: 600;
     font-size: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.qa-popover-close {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
 }
 
 .qa-popover-body {

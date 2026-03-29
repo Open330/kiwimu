@@ -112,6 +112,8 @@ CREATE INDEX IF NOT EXISTS idx_pages_page_type ON pages(page_type);
 CREATE INDEX IF NOT EXISTS idx_links_to_page ON links(to_page_id);
 CREATE INDEX IF NOT EXISTS idx_links_from_page ON links(from_page_id);
 CREATE INDEX IF NOT EXISTS idx_quizzes_page_id ON quizzes(page_id);
+CREATE INDEX IF NOT EXISTS idx_pages_origin ON pages(origin);
+CREATE INDEX IF NOT EXISTS idx_pages_parent ON pages(parent_page_id);
 `;
 
 export class Store {
@@ -448,7 +450,7 @@ export class Store {
 
   // --- Usage ---
 
-  addUsageLog(sourceId: number, calls: number, prompt: number, completion: number, total: number, cost: number): void {
+  addUsageLog(sourceId: number | null, calls: number, prompt: number, completion: number, total: number, cost: number): void {
     this.db
       .prepare("INSERT INTO usage_logs (source_id, llm_calls, prompt_tokens, completion_tokens, total_tokens, estimated_cost_usd) VALUES (?, ?, ?, ?, ?, ?)")
       .run(sourceId, calls, prompt, completion, total, cost);
