@@ -53,10 +53,13 @@ Kiwi Mu는 LLM을 활용해 이 연결을 **자동으로** 만들어, 지식을 
 - **LLM 기반 문서 분석** — 챕터/섹션 구조를 보존한 원본 페이지 + 핵심 개념별 자동 생성 페이지
 - **원본/개념 분리** — 📖 원본 문서와 📝 개념 문서를 시각적으로 구분
 - **자동 상호 링크** — 원본↔개념 간 유기적 cross-link + 외부 참고 자료 (Wikipedia 등)
-- **학습 퀴즈 + SM-2 간격 반복** — 퀴즈 자동 생성 + Anki 스타일 스페이스드 리피티션
-- **Dynamic Q&A** — 텍스트 드래그 → 팝오버 질문 → LLM이 새 개념 페이지 자동 생성
+- **Dynamic Q&A** — 텍스트 드래그 → 팝오버 질문 → LLM이 새 개념 페이지 자동 생성 + 하이라이트 링크
+- **웹 페이지 편집** — serve 모드에서 ✏️ 마크다운 편집
+- **SM-2 간격 반복** — Anki 스타일 SRS (퀴즈 자동 생성 포함)
 - **학습 대시보드** — 숙달도, 약한 개념, 복습 일정 시각화
-- **웹 페이지 편집** — ✏️ 마크다운 편집 모달 (serve 모드)
+- **MD 파일 + 디렉토리 일괄 인제스트** — `kiwimu add <directory>`로 .md 파일 일괄 처리
+- **LaTeX 수식 렌더링** — KaTeX 기반 수학 수식 지원
+- **Mermaid 다이어그램 지원** — Mermaid.js 기반 다이어그램 렌더링
 - **지식 그래프** — D3.js 인터랙티브 그래프 (원본: 파란색, 개념: 초록색)
 - **데모 모드** — API key 없이 `--demo`로 즉시 체험 (양자역학 + 자료구조)
 - **다양한 파일 지원** — URL, PDF, DOCX, PPTX, PPT, DOC, KEY, RTF, **MD** (디렉토리 일괄 인제스트 지원)
@@ -67,7 +70,7 @@ Kiwi Mu는 LLM을 활용해 이 연결을 **자동으로** 만들어, 지식을 
 - **웹 UI** — 브라우저에서 문서 추가, 설정 변경, 빌드 실행
 - **토큰 사용량 추적** — API 호출 수, 토큰, 예상 비용을 웹에서 확인
 - **원클릭 배포** — GitHub Pages / Vercel
-- **라이브 데모** — [kiwimu.jiun.dev](https://kiwimu.jiun.dev)
+- **라이브 데모** — [kiwimu.internal.jiun.dev](https://kiwimu.internal.jiun.dev)
 
 ## vs. Alternatives
 
@@ -167,6 +170,17 @@ bunx @open330/kiwimu quiz -n 10
 
 웹에서도 `http://localhost:8000/quiz.html`에서 카드 플립 방식으로 퀴즈를 풀 수 있습니다.
 
+### Dynamic Q&A
+
+위키 페이지에서 이해가 안 되는 부분을 드래그하면, 팝오버가 나타나 LLM에게 질문할 수 있습니다.
+
+1. **텍스트 드래그** — 궁금한 구절을 선택
+2. **팝오버 질문** — "이게 뭐야?", 자유 질문, 또는 자동 생성 질문 선택
+3. **새 개념 페이지 생성** — LLM이 답변을 새로운 개념 페이지로 자동 생성
+4. **하이라이트 링크** — 드래그한 텍스트가 새 페이지로의 링크로 변환
+
+`kiwimu serve` 모드에서 실시간으로 동작합니다. 학습 중 발생하는 궁금증을 즉시 해결하고, 위키가 유기적으로 확장됩니다.
+
 ### 빌드 및 서버
 
 ```bash
@@ -208,7 +222,8 @@ bunx @open330/kiwimu deploy --target vercel
 |------|------|
 | `kiwimu init [name]` | 새 위키 프로젝트 생성 (interactive CLI) |
 | `kiwimu init --demo` | 샘플 데이터로 즉시 체험 (API key 불필요) |
-| `kiwimu add <source>` | URL 또는 파일 추가 (PDF, DOCX, PPTX, DOC, PPT, KEY, RTF) |
+| `kiwimu add <source>` | URL 또는 파일 추가 (PDF, DOCX, PPTX, DOC, PPT, KEY, RTF, MD) |
+| `kiwimu add <directory>` | 디렉토리 내 모든 .md 파일 일괄 인제스트 |
 | `kiwimu build` | 정적 위키 사이트 빌드 |
 | `kiwimu serve [-p port]` | 웹 서버 실행 (문서 추가/관리 가능) |
 | `kiwimu quiz [-n count]` | 터미널에서 학습 퀴즈 풀기 |
@@ -226,6 +241,7 @@ bunx @open330/kiwimu deploy --target vercel
 | PPTX | ZIP/XML 파싱 |
 | DOC / PPT / RTF | macOS textutil |
 | KEY (Keynote) | 텍스트 추출 (제한적) |
+| Markdown (.md) | 직접 텍스트 추출 (디렉토리 일괄 지원) |
 
 ## Supported LLM Providers
 
@@ -239,9 +255,9 @@ bunx @open330/kiwimu deploy --target vercel
 ## Architecture
 
 ```
-소스 (URL / PDF / DOCX / PPTX / DOC / PPT / KEY / RTF)
+소스 (URL / PDF / DOCX / PPTX / DOC / PPT / KEY / RTF / MD)
     ↓
-[ Ingest ]      ── Cheerio / pdf-parse / mammoth / jszip / textutil
+[ Ingest ]      ── Cheerio / pdf-parse / mammoth / jszip / textutil / MD 직접 추출
     ↓
 [ Phase 1 ]     ── LLM: 원본 구조 추출 (📖 원본 페이지) — 병렬 처리 (concurrency=3)
     ↓
@@ -251,24 +267,45 @@ bunx @open330/kiwimu deploy --target vercel
     ↓
 [ Phase 3 ]     ── [[wiki link]] 해석 + 원본↔개념 cross-link
     ↓
-[ Build ]       ── 정적 HTML (사이드바, KaTeX, 지식 그래프, 퀴즈, 다크 모드)
+[ Build ]       ── 정적 HTML (사이드바, KaTeX, Mermaid, 지식 그래프, 퀴즈, 다크 모드)
     ↓
 [ Deploy ]      ── GitHub Pages / Vercel
+
+[ Dynamic Q&A ] ── 텍스트 드래그 → 팝오버 → LLM 질문 → 새 개념 페이지 생성 + 하이라이트 링크
+                   (serve 모드에서 실시간 동작)
 ```
 
 ```
 project-dir/
-├── kiwi.toml          # 프로젝트 + LLM 설정
-├── kiwi.db            # SQLite (문서, 링크, 퀴즈, 사용량)
-├── uploads/           # 업로드된 파일
-└── _site/             # 빌드 결과
-    ├── index.html     # 홈 (문서 목록)
-    ├── graph.html     # 지식 그래프
-    ├── quiz.html      # 학습 퀴즈
-    ├── wiki/          # 각 문서 페이지
-    │   └── random.html  # 임의 문서
-    ├── static/        # CSS, JS, 로고
+├── kiwi.toml              # 프로젝트 + LLM 설정
+├── kiwi.db                # SQLite (문서, 링크, 퀴즈, 사용량)
+├── uploads/               # 업로드된 파일
+└── _site/                 # 빌드 결과
+    ├── index.html         # 홈 (문서 목록)
+    ├── graph.html         # 지식 그래프
+    ├── quiz.html          # 학습 퀴즈
+    ├── dashboard.html     # 학습 대시보드
+    ├── wiki/              # 각 문서 페이지
+    │   └── random.html    # 임의 문서
+    ├── static/            # CSS, JS, 로고
+    │   ├── dynamic-qa.js  # Dynamic Q&A (드래그→팝오버→질문)
+    │   └── edit-page.js   # 웹 페이지 편집 모달
     └── search-index.json
+
+src/
+├── services/
+│   ├── dynamic-qa.ts      # Dynamic Q&A 서버 로직
+│   └── ingest.ts          # 공유 인제스트 로직
+├── ingest/
+│   ├── markdown.ts        # Markdown 파일 파싱 (디렉토리 일괄 지원)
+│   ├── web.ts / pdf.ts / docx.ts / pptx.ts
+│   └── ...
+├── demo/
+│   ├── sample-data.ts     # 데모 샘플 데이터
+│   └── setup.ts           # 데모 초기화
+└── build/static/
+    ├── dynamic-qa.js      # Dynamic Q&A 클라이언트
+    └── edit-page.js       # 페이지 편집 클라이언트
 ```
 
 ## Tech Stack
@@ -281,7 +318,8 @@ project-dir/
 - **JSZip** — PPTX 파싱
 - **Marked** + **sanitize-html** — Markdown → 안전한 HTML
 - **D3.js** — 지식 그래프
-- **KaTeX** — 수학 수식 렌더링
+- **KaTeX** — LaTeX 수학 수식 렌더링
+- **Mermaid.js** — 다이어그램 렌더링
 - **gh-pages** — GitHub Pages 배포
 
 ## Security
