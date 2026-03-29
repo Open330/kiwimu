@@ -23,7 +23,7 @@ export function startServer(root: string, port: number, host: string): void {
   const authToken = crypto.randomUUID();
   console.log(`\x1b[32m🥝 Kiwi Mu 서버 시작!\x1b[0m`);
   console.log(`  http://${hostname === "0.0.0.0" ? "localhost" : hostname}:${port}`);
-  console.log(`  관리 페이지: http://${hostname === "0.0.0.0" ? "localhost" : hostname}:${port}/admin?token=${authToken}`);
+  console.log(`  관리 페이지: http://${hostname === "0.0.0.0" ? "localhost" : hostname}:${port}/manage?token=${authToken}`);
   console.log(`  인증 토큰: ${authToken}`);
   if (hostname === "0.0.0.0") console.log("  네트워크에 공개됨 (0.0.0.0)");
   console.log("  웹에서 문서 추가 가능합니다.\n");
@@ -391,7 +391,7 @@ export function startServer(root: string, port: number, host: string): void {
 
       if (await staticFile.exists()) {
         const isHtml = pathname.endsWith(".html");
-        const cspValue = "default-src 'self'; script-src 'self' 'unsafe-inline' cdn.jsdelivr.net d3js.org static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' cdn.jsdelivr.net fonts.googleapis.com; font-src fonts.gstatic.com; img-src * data:; connect-src 'self' cloudflareinsights.com";
+        const cspValue = "default-src 'self'; script-src 'self' 'unsafe-inline' cdn.jsdelivr.net d3js.org static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' cdn.jsdelivr.net fonts.googleapis.com; font-src fonts.gstatic.com *.gstatic.com; img-src * data:; connect-src 'self' cloudflareinsights.com";
         if (isHtml && authToken) {
           let html = await staticFile.text();
           if (!html.includes('kiwi-auth')) {
