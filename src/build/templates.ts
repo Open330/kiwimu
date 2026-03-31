@@ -78,7 +78,7 @@ function base(opts: {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]})"></script>
-    <script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';mermaid.initialize({startOnLoad:true,theme:'neutral',securityLevel:'loose'});</script>
+    <script>if(document.currentScript){document.addEventListener('DOMContentLoaded',function(){if(document.querySelector('.mermaid')){import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs').then(function(m){m.default.initialize({startOnLoad:true,theme:'neutral',securityLevel:'strict'});m.default.run();})}})}</script>
 </head>
 <body>
     <nav class="topbar">
@@ -92,7 +92,7 @@ function base(opts: {
             <div id="search-results" class="search-dropdown"></div>
         </div>
         <div class="topbar-links">
-            <a href="/wiki/random.html" style="color:#fff;text-decoration:none;font-size:13px;">🎲 임의</a>
+            <a href="/wiki/random.html" class="btn-graph">🎲 임의</a>
             <a href="/quiz.html" class="btn-graph">📝 퀴즈</a>
             <a href="/dashboard.html" class="btn-graph">📊 대시보드</a>
             <a href="/graph.html" class="btn-graph">🔗 그래프</a>

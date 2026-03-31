@@ -238,7 +238,8 @@ a:hover {
     flex: 1;
     margin-left: var(--sidebar-width);
     padding: 24px 40px;
-    max-width: 860px;
+    max-width: 960px;
+    min-width: 0;
 }
 
 /* Wiki page - namuwiki style headings */
