@@ -270,14 +270,17 @@ program
       console.log(`\x1b[32m✅ ${count}개 페이지가 빌드되었습니다!\x1b[0m`);
       console.log(`  출력: ${join(root, config.build.output_dir)}/`);
 
-      // Generate embeddings (optional — requires API key)
+      // Generate embeddings (optional — uses [embedding] config or falls back to [llm])
       try {
-        if (config.llm.api_key && config.llm.endpoint) {
+        const embConfig = config.embedding
+          ? { ...config.llm, provider: config.embedding.provider, api_key: config.embedding.api_key }
+          : config.llm;
+        if (embConfig.api_key && embConfig.provider !== "demo") {
           const { generateMissingEmbeddings } = await import("./services/embedding");
-          await generateMissingEmbeddings(store, config.llm, (msg) => console.log(msg));
+          await generateMissingEmbeddings(store, embConfig, (msg) => console.log(msg));
         }
-      } catch {
-        // Embedding generation is optional
+      } catch (e: unknown) {
+        console.log(`  ⚠ 임베딩 생성 건너뜀: ${e instanceof Error ? e.message : String(e)}`);
       }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);

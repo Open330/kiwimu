@@ -21,10 +21,16 @@ export interface Persona {
   content_style: string; // injected into content generation prompts
 }
 
+export interface EmbeddingConfig {
+  provider: string; // "gemini" | "openai" | "azure-openai"
+  api_key: string;
+}
+
 export interface KiwiConfig {
   project: { name: string; created: string };
   build: { output_dir: string };
   llm: LLMConfig;
+  embedding?: EmbeddingConfig; // separate config for embeddings (optional, falls back to llm)
   deploy: { target: string };
   personas?: Persona[];
   active_persona?: string; // name of the active persona

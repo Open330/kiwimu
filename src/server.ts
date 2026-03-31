@@ -387,9 +387,13 @@ export function startServer(root: string, port: number, host: string): void {
         // Try semantic search first (if embeddings exist)
         try {
           const searchConfig = loadConfig(root);
-          if (searchConfig.llm.api_key && searchConfig.llm.endpoint) {
+          // Use embedding config if available, fall back to llm config
+          const embeddingLlmConfig = searchConfig.embedding
+            ? { ...searchConfig.llm, provider: searchConfig.embedding.provider, api_key: searchConfig.embedding.api_key }
+            : searchConfig.llm;
+          if (embeddingLlmConfig.api_key) {
             const { semanticSearch } = await import("./services/embedding");
-            const semanticResults = await semanticSearch(query, store, searchConfig.llm, 5);
+            const semanticResults = await semanticSearch(query, store, embeddingLlmConfig, 5);
             if (semanticResults.length > 0) {
               return Response.json({
                 results: semanticResults.map(r => ({

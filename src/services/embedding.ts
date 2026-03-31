@@ -12,24 +12,59 @@ function cosineSimilarity(a: Float32Array, b: Float32Array): number {
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-// Get embedding from Azure OpenAI
+// Get embedding — auto-detect provider
 async function getEmbedding(text: string, config: LLMConfig): Promise<Float32Array> {
-  const { default: OpenAI } = await import("openai");
+  const input = text.slice(0, 8000);
 
-  // Azure OpenAI embedding endpoint
-  const client = new OpenAI({
-    apiKey: config.api_key,
-    baseURL: `${config.endpoint}/openai/deployments/text-embedding-3-small`,
-    defaultQuery: { "api-version": "2024-06-01" },
-    defaultHeaders: { "api-key": config.api_key },
+  if (config.provider === "gemini") {
+    return await geminiEmbedding(input, config);
+  } else if (config.provider === "azure-openai") {
+    return await azureEmbedding(input, config);
+  } else if (config.provider === "openai") {
+    return await openaiEmbedding(input, config);
+  }
+  throw new Error(`Embedding not supported for provider: ${config.provider}`);
+}
+
+// Gemini Embedding API (free)
+async function geminiEmbedding(text: string, config: LLMConfig): Promise<Float32Array> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": config.api_key },
+    body: JSON.stringify({
+      model: "models/gemini-embedding-001",
+      content: { parts: [{ text }] }
+    })
   });
+  if (!resp.ok) throw new Error(`Gemini embedding error (${resp.status})`);
+  const data = await resp.json() as { embedding: { values: number[] } };
+  return new Float32Array(data.embedding.values);
+}
 
-  const response = await client.embeddings.create({
-    model: "text-embedding-3-small",
-    input: text.slice(0, 8000), // Limit input length
+// Azure OpenAI Embedding
+async function azureEmbedding(text: string, config: LLMConfig): Promise<Float32Array> {
+  const url = `${config.endpoint}/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-06-01`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "api-key": config.api_key },
+    body: JSON.stringify({ input: text, model: "text-embedding-3-small" })
   });
+  if (!resp.ok) throw new Error(`Azure embedding error (${resp.status})`);
+  const data = await resp.json() as { data: Array<{ embedding: number[] }> };
+  return new Float32Array(data.data[0].embedding);
+}
 
-  return new Float32Array(response.data[0].embedding);
+// OpenAI Embedding
+async function openaiEmbedding(text: string, config: LLMConfig): Promise<Float32Array> {
+  const resp = await fetch("https://api.openai.com/v1/embeddings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${config.api_key}` },
+    body: JSON.stringify({ input: text, model: "text-embedding-3-small" })
+  });
+  if (!resp.ok) throw new Error(`OpenAI embedding error (${resp.status})`);
+  const data = await resp.json() as { data: Array<{ embedding: number[] }> };
+  return new Float32Array(data.data[0].embedding);
 }
 
 // Generate embeddings for all pages that don't have one
