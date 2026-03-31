@@ -1251,7 +1251,13 @@ a.redlink:hover {
 
 .qa-popover-body {
     display: flex;
+    flex-direction: column;
     padding: 8px;
+    gap: 6px;
+}
+
+.qa-body-row {
+    display: flex;
     gap: 6px;
 }
 

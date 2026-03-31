@@ -384,9 +384,33 @@ export function startServer(root: string, port: number, host: string): void {
           return Response.json({ results: [] });
         }
 
-        // Search pages by title and content (simple LIKE search)
+        // Try semantic search first (if embeddings exist)
+        try {
+          const searchConfig = loadConfig(root);
+          if (searchConfig.llm.api_key && searchConfig.llm.endpoint) {
+            const { semanticSearch } = await import("./services/embedding");
+            const semanticResults = await semanticSearch(query, store, searchConfig.llm, 5);
+            if (semanticResults.length > 0) {
+              return Response.json({
+                results: semanticResults.map(r => ({
+                  slug: r.slug,
+                  title: r.title,
+                  page_type: r.pageType,
+                  origin: r.origin,
+                  preview: '',
+                  similarity: r.similarity
+                })),
+                method: 'semantic'
+              });
+            }
+          }
+        } catch {
+          // Fall through to FTS/LIKE search
+        }
+
+        // Fallback: FTS5 / LIKE search
         const results = store.searchPages(query, 5);
-        return Response.json({ results });
+        return Response.json({ results, method: 'fts' });
       }
 
       if (url.pathname === "/api/status") {

@@ -128,6 +128,28 @@ CREATE TABLE IF NOT EXISTS pipeline_checkpoints (
   created_at TEXT DEFAULT (datetime('now')),
   PRIMARY KEY (source_id, phase, batch_index)
 );
+CREATE TABLE IF NOT EXISTS page_embeddings (
+  page_id INTEGER PRIMARY KEY,
+  embedding BLOB NOT NULL,
+  model TEXT NOT NULL DEFAULT 'text-embedding-3-small',
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
+);
+`;
+
+const FTS_SCHEMA = `
+CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(title, content, content=pages, content_rowid=id);
+
+CREATE TRIGGER IF NOT EXISTS pages_ai AFTER INSERT ON pages BEGIN
+  INSERT INTO pages_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
+END;
+CREATE TRIGGER IF NOT EXISTS pages_ad AFTER DELETE ON pages BEGIN
+  INSERT INTO pages_fts(pages_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content);
+END;
+CREATE TRIGGER IF NOT EXISTS pages_au AFTER UPDATE ON pages BEGIN
+  INSERT INTO pages_fts(pages_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content);
+  INSERT INTO pages_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
+END;
 `;
 
 export class Store {
@@ -156,6 +178,17 @@ export class Store {
     try { this.db.exec("ALTER TABLE quizzes ADD COLUMN ease_factor REAL NOT NULL DEFAULT 2.5"); } catch {}
     try { this.db.exec("ALTER TABLE quizzes ADD COLUMN interval INTEGER NOT NULL DEFAULT 0"); } catch {}
     try { this.db.exec("ALTER TABLE quizzes ADD COLUMN next_review_at TEXT DEFAULT NULL"); } catch {}
+    // FTS5 full-text search (may not be available in older SQLite builds)
+    try { this.db.exec(FTS_SCHEMA); } catch {}
+    this.rebuildFtsIndex();
+  }
+
+  rebuildFtsIndex(): void {
+    try {
+      this.db.exec("INSERT INTO pages_fts(pages_fts) VALUES('rebuild')");
+    } catch {
+      // FTS table might not exist yet in old databases
+    }
   }
 
   close(): void {
@@ -564,26 +597,75 @@ export class Store {
     this.db.prepare("DELETE FROM pipeline_checkpoints WHERE source_id = ?").run(sourceId);
   }
 
-  searchPages(query: string, limit: number = 5): Array<{slug: string; title: string; pageType: string; origin: string; preview: string}> {
-    // Search by title first (exact-ish match), then content
-    const words = query.split(/\s+/).filter(w => w.length >= 2);
-    if (!words.length) return [];
+  searchPages(query: string, limit: number = 5): Array<{slug: string; title: string; page_type: string; origin: string; preview: string; rank: number}> {
+    try {
+      // Try FTS5 search first (much better relevance)
+      const ftsQuery = query.split(/\s+/).filter(w => w.length >= 2).map(w => `"${w}"`).join(' OR ');
+      if (!ftsQuery) return [];
 
-    // Build LIKE conditions for each word
-    const conditions = words.map(() => "(title LIKE ? OR content LIKE ?)").join(" AND ");
-    const params = words.flatMap(w => [`%${w}%`, `%${w}%`]);
+      return this.db.prepare(`
+        SELECT p.slug, p.title, p.page_type, p.origin,
+               substr(p.content, 1, 200) as preview,
+               rank
+        FROM pages_fts f
+        JOIN pages p ON p.id = f.rowid
+        WHERE pages_fts MATCH ?
+        ORDER BY rank
+        LIMIT ?
+      `).all(ftsQuery, limit) as any[];
+    } catch {
+      // Fallback to LIKE search if FTS not available
+      const words = query.split(/\s+/).filter(w => w.length >= 2);
+      if (!words.length) return [];
+      const conditions = words.map(() => "(title LIKE ? OR content LIKE ?)").join(" OR ");
+      const params = words.flatMap(w => [`%${w}%`, `%${w}%`]);
+      return this.db.prepare(`
+        SELECT slug, title, page_type, origin, substr(content, 1, 200) as preview, 0 as rank
+        FROM pages WHERE ${conditions}
+        ORDER BY CASE WHEN title LIKE ? THEN 0 ELSE 1 END
+        LIMIT ?
+      `).all(...params, `%${query}%`, limit) as any[];
+    }
+  }
 
+  // --- Embeddings ---
+
+  saveEmbedding(pageId: number, embedding: Float32Array, model: string): void {
+    const buffer = Buffer.from(embedding.buffer);
+    this.db.prepare(
+      "INSERT OR REPLACE INTO page_embeddings (page_id, embedding, model) VALUES (?, ?, ?)"
+    ).run(pageId, buffer, model);
+  }
+
+  getEmbedding(pageId: number): Float32Array | null {
+    const row = this.db.prepare("SELECT embedding FROM page_embeddings WHERE page_id = ?").get(pageId) as any;
+    if (!row) return null;
+    return new Float32Array(row.embedding.buffer);
+  }
+
+  getAllEmbeddings(): Array<{pageId: number; slug: string; title: string; pageType: string; origin: string; embedding: Float32Array}> {
     const rows = this.db.prepare(`
-      SELECT slug, title, page_type, origin, substr(content, 1, 200) as preview
-      FROM pages
-      WHERE ${conditions}
-      ORDER BY
-        CASE WHEN title LIKE ? THEN 0 ELSE 1 END,
-        length(title) ASC
-      LIMIT ?
-    `).all(...params, `%${query}%`, limit);
+      SELECT e.page_id, e.embedding, p.slug, p.title, p.page_type, p.origin
+      FROM page_embeddings e
+      JOIN pages p ON p.id = e.page_id
+    `).all() as any[];
+    return rows.map(r => ({
+      pageId: r.page_id,
+      slug: r.slug,
+      title: r.title,
+      pageType: r.page_type,
+      origin: r.origin,
+      embedding: new Float32Array(r.embedding.buffer)
+    }));
+  }
 
-    return rows as any[];
+  getPagesWithoutEmbeddings(): Array<{id: number; title: string; content: string}> {
+    return this.db.prepare(`
+      SELECT p.id, p.title, p.content
+      FROM pages p
+      LEFT JOIN page_embeddings e ON e.page_id = p.id
+      WHERE e.page_id IS NULL
+    `).all() as any[];
   }
 
   getSourcePages(sourceId: number): Page[] {

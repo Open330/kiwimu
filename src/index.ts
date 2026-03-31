@@ -269,6 +269,16 @@ program
       const count = await buildSite(store, config, root);
       console.log(`\x1b[32m✅ ${count}개 페이지가 빌드되었습니다!\x1b[0m`);
       console.log(`  출력: ${join(root, config.build.output_dir)}/`);
+
+      // Generate embeddings (optional — requires API key)
+      try {
+        if (config.llm.api_key && config.llm.endpoint) {
+          const { generateMissingEmbeddings } = await import("./services/embedding");
+          await generateMissingEmbeddings(store, config.llm, (msg) => console.log(msg));
+        }
+      } catch {
+        // Embedding generation is optional
+      }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       console.error(`\x1b[31m❌ ${message}\x1b[0m`);

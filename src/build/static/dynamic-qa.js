@@ -22,7 +22,12 @@
       <div class="qa-related-list"></div>
     </div>
     <div class="qa-popover-body">
-      <button class="qa-popover-btn qa-generate-btn">✨ 개념 페이지 생성</button>
+      <div class="qa-body-row">
+        <input type="text" class="qa-popover-input" placeholder="질문 입력 (선택사항)..." />
+      </div>
+      <div class="qa-body-row">
+        <button class="qa-popover-btn qa-generate-btn">✨ 개념 페이지 생성</button>
+      </div>
     </div>
     <div class="qa-popover-loading" style="display:none">
       <span class="qa-spinner"></span> 생성 중...
@@ -37,12 +42,21 @@
   const result = popover.querySelector('.qa-popover-result');
   const errorDiv = popover.querySelector('.qa-popover-error');
   const selectedDiv = popover.querySelector('.qa-popover-selected');
+  const questionInput = popover.querySelector('.qa-popover-input');
   let selectedText = '';
   let isGenerating = false;
   let highlightMark = null;
   let popoverTimer = null;
 
   popover.querySelector('.qa-popover-close').addEventListener('click', hidePopover);
+
+  // Enter key in question input triggers generate
+  questionInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      generateConcept();
+    }
+  });
 
   function highlightSelection(range) {
     try {
@@ -147,6 +161,7 @@
         },
         body: JSON.stringify({
           selected_text: selectedText,
+          question: questionInput.value.trim() || undefined,
           page_slug: pageSlug,
           page_id: parseInt(pageId)
         })
