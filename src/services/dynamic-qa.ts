@@ -70,16 +70,71 @@ Return a JSON object:
   // 3. Call LLM
   const raw = await llmClient.chatComplete(systemPrompt, userPrompt, 4096);
 
-  // 4. Parse response - reuse parseJSON pattern
+  // 4. Parse response — robust JSON extraction with multiple fallbacks
   let parsed: { title: string; content: string };
   try {
-    // Try to extract JSON from response
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    // Remove markdown code fences if present
+    let cleaned = raw.replace(/^```json?\n?/m, "").replace(/\n?```\s*$/m, "").trim();
+
+    // Try to extract JSON object from response
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("No JSON found");
-    parsed = JSON.parse(jsonMatch[0]);
+
+    let jsonStr = jsonMatch[0];
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch {
+      // Try repairs for truncated JSON
+      // Close unclosed strings
+      const lastQuote = jsonStr.lastIndexOf('"');
+      const afterQuote = jsonStr.slice(lastQuote + 1);
+      if (afterQuote.indexOf('"') === -1 && afterQuote.length > 0) {
+        jsonStr = jsonStr.slice(0, jsonStr.lastIndexOf('",') + 2) + '}';
+      }
+      // Balance braces
+      const openBraces = (jsonStr.match(/\{/g) || []).length;
+      const closeBraces = (jsonStr.match(/\}/g) || []).length;
+      for (let i = 0; i < openBraces - closeBraces; i++) jsonStr += "}";
+      parsed = JSON.parse(jsonStr);
+    }
+
+    // Ensure content is not JSON-encoded (sometimes LLM double-encodes)
+    if (parsed.content && parsed.content.startsWith('{')) {
+      try {
+        const inner = JSON.parse(parsed.content);
+        if (inner.content) parsed.content = inner.content;
+      } catch { /* not double-encoded, use as-is */ }
+    }
   } catch {
-    // Fallback: use the raw response as content
-    parsed = { title: userQuestion.slice(0, 50), content: raw };
+    // Fallback: treat the entire raw response as markdown content
+    // Strip any JSON artifacts from the beginning
+    let fallbackContent = raw
+      .replace(/^```json?\n?/m, "").replace(/\n?```\s*$/m, "")
+      .replace(/^\s*\{\s*"title"\s*:\s*"[^"]*"\s*,\s*"content"\s*:\s*"?/m, "")
+      .replace(/"\s*\}\s*$/m, "")
+      .trim();
+
+    // If it still looks like JSON, try one more parse
+    if (fallbackContent.startsWith('{')) {
+      try {
+        const lastTry = JSON.parse(fallbackContent);
+        if (lastTry.content) fallbackContent = lastTry.content;
+      } catch { /* use as-is */ }
+    }
+
+    parsed = {
+      title: userQuestion.slice(0, 50),
+      content: fallbackContent || raw
+    };
+  }
+
+  // Unescape JSON string escapes that might remain in content
+  if (parsed.content) {
+    parsed.content = parsed.content
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '\t')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\');
   }
 
   if (!parsed.title || !parsed.content || parsed.content.length < 20) {

@@ -236,7 +236,7 @@ export async function llmChunkDocument(
   let sourceCount: number;
   let sourcePageSummaries: string[];
 
-  if (store.isPhaseComplete(sourceId, 'phase1')) {
+  if (store.hasPhaseCheckpoint(sourceId, 'phase1')) {
     // Resume: Phase 1 already done, rebuild summaries from DB
     const existingPages = store.getSourcePages(sourceId);
     sourceCount = existingPages.length;
@@ -310,85 +310,96 @@ export async function llmChunkDocument(
   }
 
   // ── Phase 2: Extract concept pages ──
-  const phase2Start = performance.now();
   const batchSize = 5;
   let conceptCount = 0;
-  const totalBatches = Math.ceil(sourcePageSummaries.length / batchSize);
-  const lastCompletedBatch = store.getLastCompletedBatch(sourceId, 'phase2');
 
-  if (lastCompletedBatch >= totalBatches - 1) {
-    conceptCount = store.listConceptPages().length;
-    console.log(`\x1b[32m⏭ Phase 2 건너뜀 (이미 완료) — 📝 ${conceptCount}개 개념 페이지\x1b[0m`);
-    onProgress?.(`Phase 2 건너뜀 (${conceptCount}개 개념 이미 존재)`);
+  if (sourcePageSummaries.length === 0) {
+    console.log(`\x1b[33m⏭ Phase 2 건너뜀 (원본 페이지 없음)\x1b[0m`);
+    onProgress?.(`Phase 2 건너뜀 (원본 페이지 없음)`);
   } else {
-    const resumeFrom = lastCompletedBatch + 1;
-    if (resumeFrom > 0) {
-      console.log(`\x1b[34m⏳ Phase 2: 개념 추출 재개 (배치 ${resumeFrom + 1}/${totalBatches}부터)...\x1b[0m`);
-      onProgress?.(`Phase 2: 배치 ${resumeFrom + 1}/${totalBatches}부터 재개`);
+    const totalBatches = Math.ceil(sourcePageSummaries.length / batchSize);
+    const lastCompletedBatch = store.getLastCompletedBatch(sourceId, 'phase2');
+
+    if (lastCompletedBatch >= totalBatches - 1 && store.hasPhaseCheckpoint(sourceId, 'phase2')) {
+      conceptCount = store.listConceptPages().length;
+      console.log(`\x1b[32m⏭ Phase 2 건너뜀 (이미 완료) — 📝 ${conceptCount}개 개념 페이지\x1b[0m`);
+      onProgress?.(`Phase 2 건너뜀 (${conceptCount}개 개념 이미 존재)`);
     } else {
-      console.log(`\x1b[34m⏳ Phase 2: 개념 추출 중...\x1b[0m`);
-      onProgress?.(`Phase 2: 개념 추출 중...`);
-    }
-
-    for (let i = 0; i < sourcePageSummaries.length; i += batchSize) {
-      const batchIdx = Math.floor(i / batchSize);
-      const batchLabel = `  [${batchIdx + 1}/${totalBatches}]`;
-
-      if (batchIdx <= lastCompletedBatch) {
-        console.log(`${batchLabel} 이미 완료 — 건너뜀`);
-        continue;
+      const phase2Start = performance.now();
+      const resumeFrom = lastCompletedBatch + 1;
+      if (resumeFrom > 0) {
+        console.log(`\x1b[34m⏳ Phase 2: 개념 추출 재개 (배치 ${resumeFrom + 1}/${totalBatches}부터)...\x1b[0m`);
+        onProgress?.(`Phase 2: 배치 ${resumeFrom + 1}/${totalBatches}부터 재개`);
+      } else {
+        console.log(`\x1b[34m⏳ Phase 2: 개념 추출 중...\x1b[0m`);
+        onProgress?.(`Phase 2: 개념 추출 중...`);
       }
 
-      console.log(`${batchLabel} 개념 추출 중...`);
+      // Cache existing concept titles in memory to avoid repeated DB queries
+      const existingConceptTitles = new Set(store.listConceptPages().map(p => p.title));
 
-      const batch = sourcePageSummaries.slice(i, i + batchSize);
-      const existingConcepts = store.listConceptPages();
-      const existingConceptsNote = existingConcepts.length > 0
-        ? `\n\nAlready created concept pages (do not duplicate): ${existingConcepts.map(p => p.title).join(", ")}`
-        : "";
-      const conceptPrompt = getConceptPrompt(persona);
-      const prompt = conceptPrompt.replace("{sourcePages}", batch.join("\n")) + existingConceptsNote;
-      const conceptSystem = getConceptSystem(persona);
+      for (let i = 0; i < sourcePageSummaries.length; i += batchSize) {
+        const batchIdx = Math.floor(i / batchSize);
+        const batchLabel = `  [${batchIdx + 1}/${totalBatches}]`;
 
-      try {
-        const raw = await chat(conceptSystem, prompt, 16384);
-        const concepts = parseJSON<ConceptPage[]>(raw).filter(c => c.title && c.content && c.content.length > 50);
-
-        for (const concept of concepts) {
-          const slug = slugify(concept.title);
-          if (!slug) continue;
-
-          const existing = store.getPage(slug);
-          if (existing) continue;
-
-          let content = concept.content;
-          if (concept.suggested_links?.length) {
-            content += "\n\n## External References\n\n";
-            for (const link of concept.suggested_links) {
-              content += `- [${link.text}](${link.url})\n`;
-            }
-          }
-
-          store.addPage(slug, concept.title, content, sourceId, slug, "concept", 0);
-          conceptCount++;
+        if (batchIdx <= lastCompletedBatch) {
+          console.log(`${batchLabel} 이미 완료 — 건너뜀`);
+          continue;
         }
-        store.setCheckpoint(sourceId, 'phase2', batchIdx);
-        console.log(`    → ${concepts.length}개 개념`);
-        onProgress?.(`Phase 2: ${batchIdx + 1}/${totalBatches} 배치 완료`);
-      } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : String(e);
-        console.log(`    \x1b[31m✗ 실패: ${message}\x1b[0m`);
-        throw new Error(`Phase 2 배치 ${batchIdx + 1} 실패: ${message}`);
-      }
-    }
 
-    const phase2Sec = ((performance.now() - phase2Start) / 1000).toFixed(1);
-    console.log(`\x1b[32m✅ Phase 2 완료 (${phase2Sec}초) — 📝 ${conceptCount}개 개념 페이지 생성\x1b[0m`);
+        console.log(`${batchLabel} 개념 추출 중...`);
+
+        const batch = sourcePageSummaries.slice(i, i + batchSize);
+        const existingConceptsNote = existingConceptTitles.size > 0
+          ? `\n\nAlready created concept pages (do not duplicate): ${[...existingConceptTitles].join(", ")}`
+          : "";
+        const conceptPrompt = getConceptPrompt(persona);
+        const prompt = conceptPrompt.replace("{sourcePages}", batch.join("\n")) + existingConceptsNote;
+        const conceptSystem = getConceptSystem(persona);
+
+        try {
+          const raw = await chat(conceptSystem, prompt, 16384);
+          const concepts = parseJSON<ConceptPage[]>(raw).filter(c => c.title && c.content && c.content.length > 50);
+
+          for (const concept of concepts) {
+            const slug = slugify(concept.title);
+            if (!slug) continue;
+
+            const existing = store.getPage(slug);
+            if (existing) continue;
+
+            let content = concept.content;
+            if (concept.suggested_links?.length) {
+              content += "\n\n## External References\n\n";
+              for (const link of concept.suggested_links) {
+                content += `- [${link.text}](${link.url})\n`;
+              }
+            }
+
+            store.addPage(slug, concept.title, content, sourceId, slug, "concept", 0);
+            existingConceptTitles.add(concept.title);
+            conceptCount++;
+          }
+          store.setCheckpoint(sourceId, 'phase2', batchIdx);
+          console.log(`    → ${concepts.length}개 개념`);
+          onProgress?.(`Phase 2: ${batchIdx + 1}/${totalBatches} 배치 완료`);
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          console.log(`    \x1b[31m✗ 배치 ${batchIdx + 1} 실패 (건너뜀): ${message}\x1b[0m`);
+          // Non-retryable errors (parse failures, etc.) — skip batch, continue pipeline
+          // Rate-limit errors are already retried in LLMClient; if we reach here, retries exhausted
+          store.setCheckpoint(sourceId, 'phase2', batchIdx);
+        }
+      }
+
+      const phase2Sec = ((performance.now() - phase2Start) / 1000).toFixed(1);
+      console.log(`\x1b[32m✅ Phase 2 완료 (${phase2Sec}초) — 📝 ${conceptCount}개 개념 페이지 생성\x1b[0m`);
+    }
   }
 
   // ── Phase 2.5: Generate quizzes from concept pages ──
   let quizCount = 0;
-  if (store.isPhaseComplete(sourceId, 'phase2_5')) {
+  if (store.hasPhaseCheckpoint(sourceId, 'phase2_5')) {
     console.log(`\x1b[32m⏭ Phase 2.5 건너뜀 (퀴즈 이미 생성됨)\x1b[0m`);
     onProgress?.(`Phase 2.5 건너뜀 (퀴즈 이미 존재)`);
   } else {

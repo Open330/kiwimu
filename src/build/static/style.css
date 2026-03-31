@@ -1228,6 +1228,17 @@ a.dynamic-link:hover {
     background: rgba(0, 164, 149, 0.1);
 }
 
+/* Red links — wiki convention for non-existent pages */
+a.redlink {
+    color: #d32f2f;
+    text-decoration: none;
+    border-bottom: 1px dotted #d32f2f;
+    cursor: help;
+}
+a.redlink:hover {
+    background: rgba(211, 47, 47, 0.08);
+}
+
 .qa-popover-close {
     background: none;
     border: none;
@@ -1321,6 +1332,58 @@ a.dynamic-link:hover {
     padding: 10px 12px;
     color: #e53935;
     font-size: 12px;
+}
+
+.qa-popover-related {
+    border-top: 1px solid var(--border);
+    max-height: 160px;
+    overflow-y: auto;
+}
+
+.qa-related-label {
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.qa-related-list {
+    padding: 0 8px 8px;
+}
+
+.qa-related-item {
+    display: block;
+    padding: 6px 8px;
+    text-decoration: none;
+    color: var(--text);
+    font-size: 12px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+}
+
+.qa-related-item:last-child {
+    border-bottom: none;
+}
+
+.qa-related-item:hover {
+    background: var(--bg-hover);
+}
+
+.qa-related-icon {
+    margin-right: 4px;
+}
+
+.qa-related-title {
+    font-weight: 600;
+    color: var(--namu-green);
+}
+
+.qa-related-preview {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+    line-height: 1.3;
 }
 
 /* Dynamic page badge */
@@ -1470,6 +1533,9 @@ a.dynamic-link:hover {
     /* Q&A Popover */
     .qa-popover { background: var(--bg); border-color: var(--namu-green); }
     .qa-popover-input { background: var(--bg-alt); color: var(--text); border-color: var(--border); }
+    .qa-related-item { color: var(--text); }
+    .qa-related-item:hover { background: var(--bg-hover); }
+    .qa-popover-related { border-top-color: var(--border); }
 
     /* Empty state */
     .empty-state { border-color: var(--border); color: var(--text-muted); }

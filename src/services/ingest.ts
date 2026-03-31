@@ -38,6 +38,11 @@ export async function ingestUrl(
     throw new Error("추출된 텍스트가 너무 짧습니다. 파일 내용을 확인해주세요.");
   }
 
+  // Only delete existing pages if NOT resuming (no checkpoints = fresh ingest)
+  if (!store.hasCheckpoints(source.id)) {
+    store.deletePagesBySource(source.id);
+  }
+
   const isResume = store.hasCheckpoints(source.id);
   onProgress?.(isResume ? "⏳ LLM 분석 재개..." : "⏳ LLM 분석 시작...");
   const { sourceCount, conceptCount } = await llmChunkDocument(rawText, title, source.id, store, 0, persona, client, onProgress);

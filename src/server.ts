@@ -20,6 +20,9 @@ export function startServer(root: string, port: number, host: string): void {
   const ASK_RATE_LIMIT = 10; // max requests
   const ASK_RATE_WINDOW = 60_000; // per minute
 
+  // Background task tracking for dynamic Q&A
+  const bgTasks = new Map<string, { status: 'processing' | 'completed' | 'error'; result?: any; error?: string }>();
+
   const hostname = host;
   const authToken = crypto.randomUUID();
   console.log(`\x1b[32m🥝 Kiwi Mu 서버 시작!\x1b[0m`);
@@ -306,8 +309,8 @@ export function startServer(root: string, port: number, host: string): void {
           const body = await req.json();
           const { selected_text, question, page_slug, page_id } = body;
 
-          if (!selected_text || !question || !page_slug) {
-            return Response.json({ error: "선택한 텍스트와 질문을 모두 입력해주세요" }, { status: 400 });
+          if (!selected_text || !page_slug) {
+            return Response.json({ error: "선택한 텍스트가 필요합니다" }, { status: 400 });
           }
 
           const parentPage = store.getPage(page_slug);
@@ -315,29 +318,75 @@ export function startServer(root: string, port: number, host: string): void {
             return Response.json({ error: "페이지를 찾을 수 없습니다" }, { status: 404 });
           }
 
-          const currentConfig = loadConfig(root);
-          const persona = getActivePersona(currentConfig);
-          const { LLMClient } = await import("./llm-client");
-          const llmClient = new LLMClient(currentConfig.llm);
+          // Auto-generate question from selected text if not provided
+          const autoQuestion = question || `"${selected_text.slice(0, 100)}" 개념을 자세히 설명해주세요`;
 
-          const { generateDynamicPage } = await import("./services/dynamic-qa");
-          const result = await generateDynamicPage(store, llmClient, persona, parentPage, selected_text, question);
+          // Run generation in background, return task ID immediately
+          const taskId = crypto.randomUUID();
+          bgTasks.set(taskId, { status: 'processing' });
 
-          // Hot-render the new page + re-render parent page (to include new link)
-          const { buildSinglePage } = await import("./build/renderer");
-          await buildSinglePage(root, store, result.slug);
-          await buildSinglePage(root, store, page_slug); // Re-render parent with updated links
+          (async () => {
+            try {
+              const currentConfig = loadConfig(root);
+              const persona = getActivePersona(currentConfig);
+              const { LLMClient } = await import("./llm-client");
+              const llmClient = new LLMClient(currentConfig.llm);
 
-          return Response.json({
-            ok: true,
-            slug: result.slug,
-            title: result.title,
-            url: `/wiki/${result.slug}.html`
-          });
+              const { generateDynamicPage } = await import("./services/dynamic-qa");
+              const result = await generateDynamicPage(store, llmClient, persona, parentPage, selected_text, autoQuestion);
+
+              // Hot-render the new page + re-render parent page
+              const { buildSinglePage } = await import("./build/renderer");
+              await buildSinglePage(root, store, result.slug);
+              await buildSinglePage(root, store, page_slug);
+
+              bgTasks.set(taskId, {
+                status: 'completed',
+                result: {
+                  ok: true,
+                  slug: result.slug,
+                  title: result.title,
+                  url: `/wiki/${result.slug}.html`
+                }
+              });
+            } catch (e: unknown) {
+              const message = e instanceof Error ? e.message : String(e);
+              bgTasks.set(taskId, { status: 'error', error: message });
+            }
+
+            // Clean up task after 5 minutes
+            setTimeout(() => bgTasks.delete(taskId), 5 * 60 * 1000);
+          })();
+
+          return Response.json({ task_id: taskId, message: "생성 시작" });
         } catch (e: unknown) {
           const message = e instanceof Error ? e.message : String(e);
           return Response.json({ error: message }, { status: 500 });
         }
+      }
+
+      // Background task status polling for dynamic Q&A
+      if (url.pathname === "/api/ask/status" && req.method === "GET") {
+        const taskId = url.searchParams.get("task_id");
+        if (!taskId) {
+          return Response.json({ error: "task_id가 필요합니다" }, { status: 400 });
+        }
+        const task = bgTasks.get(taskId);
+        if (!task) {
+          return Response.json({ error: "작업을 찾을 수 없습니다" }, { status: 404 });
+        }
+        return Response.json(task);
+      }
+
+      if (url.pathname === "/api/search" && req.method === "GET") {
+        const query = url.searchParams.get("q")?.trim();
+        if (!query || query.length < 2) {
+          return Response.json({ results: [] });
+        }
+
+        // Search pages by title and content (simple LIKE search)
+        const results = store.searchPages(query, 5);
+        return Response.json({ results });
       }
 
       if (url.pathname === "/api/status") {

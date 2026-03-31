@@ -13,44 +13,44 @@
   popover.className = 'qa-popover';
   popover.innerHTML = `
     <div class="qa-popover-header">
-      <span>💬 이 부분에 대해 질문하기</span>
+      <span>📝 새 개념 페이지 생성</span>
       <button class="qa-popover-close" aria-label="닫기">&times;</button>
     </div>
     <div class="qa-popover-selected"></div>
+    <div class="qa-popover-related" style="display:none">
+      <div class="qa-related-label">📚 관련 문서</div>
+      <div class="qa-related-list"></div>
+    </div>
     <div class="qa-popover-body">
-      <input type="text" class="qa-popover-input" placeholder="궁금한 점을 입력하세요..." />
-      <button class="qa-popover-btn">질문</button>
+      <button class="qa-popover-btn qa-generate-btn">✨ 개념 페이지 생성</button>
     </div>
     <div class="qa-popover-loading" style="display:none">
-      <span class="qa-spinner"></span> 답변 생성 중...
+      <span class="qa-spinner"></span> 생성 중...
     </div>
     <div class="qa-popover-result" style="display:none"></div>
     <div class="qa-popover-error" style="display:none"></div>
   `;
   document.body.appendChild(popover);
 
-  const input = popover.querySelector('.qa-popover-input');
-  const btn = popover.querySelector('.qa-popover-btn');
+  const generateBtn = popover.querySelector('.qa-generate-btn');
   const loading = popover.querySelector('.qa-popover-loading');
   const result = popover.querySelector('.qa-popover-result');
   const errorDiv = popover.querySelector('.qa-popover-error');
   const selectedDiv = popover.querySelector('.qa-popover-selected');
   let selectedText = '';
-  let isAsking = false;
+  let isGenerating = false;
   let highlightMark = null;
+  let popoverTimer = null;
 
   popover.querySelector('.qa-popover-close').addEventListener('click', hidePopover);
 
   function highlightSelection(range) {
-    // Wrap selected text in a highlight mark
     try {
       removeHighlight();
       highlightMark = document.createElement('mark');
       highlightMark.className = 'qa-highlight';
       range.surroundContents(highlightMark);
     } catch {
-      // surroundContents fails if selection crosses element boundaries
-      // Fall back to no highlight
       highlightMark = null;
     }
   }
@@ -68,7 +68,6 @@
 
   function showPopover(text, rect, range) {
     selectedText = text;
-    input.value = '';
     loading.style.display = 'none';
     result.style.display = 'none';
     errorDiv.style.display = 'none';
@@ -83,15 +82,36 @@
     // Highlight selected text in the document
     highlightSelection(range);
 
+    // Fetch related pages
+    const relatedDiv = popover.querySelector('.qa-popover-related');
+    const relatedList = popover.querySelector('.qa-related-list');
+    relatedDiv.style.display = 'none';
+    relatedList.innerHTML = '';
+
+    fetch(`/api/search?q=${encodeURIComponent(text.slice(0, 100))}&token=${authToken}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.results && data.results.length > 0) {
+          relatedList.innerHTML = data.results.map(r => {
+            const icon = r.origin === 'user' ? '💬' : r.page_type === 'source' ? '📖' : '📝';
+            const preview = r.preview ? r.preview.slice(0, 80) + '...' : '';
+            return `<a href="/wiki/${encodeURIComponent(r.slug)}.html" class="qa-related-item">
+              <span class="qa-related-icon">${icon}</span>
+              <span class="qa-related-title">${esc(r.title)}</span>
+              <span class="qa-related-preview">${esc(preview)}</span>
+            </a>`;
+          }).join('');
+          relatedDiv.style.display = 'block';
+        }
+      })
+      .catch(() => {}); // Silently fail
+
     // Position below selection
     const top = rect.bottom + window.scrollY + 8;
     const left = Math.max(8, Math.min(rect.left + window.scrollX, window.innerWidth - 320));
     popover.style.top = top + 'px';
     popover.style.left = left + 'px';
     popover.style.display = 'block';
-
-    // Focus input without clearing selection (use requestAnimationFrame)
-    requestAnimationFrame(() => input.focus());
   }
 
   function hidePopover() {
@@ -99,6 +119,8 @@
     selectedText = '';
     selectedDiv.style.display = 'none';
     removeHighlight();
+    clearTimeout(popoverTimer);
+    popoverTimer = null;
   }
 
   function esc(s) {
@@ -107,17 +129,16 @@
     return d.innerHTML;
   }
 
-  async function askQuestion() {
-    if (isAsking) return;
-    const question = input.value.trim();
-    if (!question || !selectedText) return;
+  async function generateConcept() {
+    if (isGenerating || !selectedText) return;
 
-    isAsking = true;
+    isGenerating = true;
     popover.querySelector('.qa-popover-body').style.display = 'none';
     loading.style.display = 'flex';
     errorDiv.style.display = 'none';
 
     try {
+      // Start background generation
       const resp = await fetch('/api/ask', {
         method: 'POST',
         headers: {
@@ -126,52 +147,92 @@
         },
         body: JSON.stringify({
           selected_text: selectedText,
-          question: question,
           page_slug: pageSlug,
           page_id: parseInt(pageId)
         })
       });
 
       const data = await resp.json();
-      loading.style.display = 'none';
 
-      if (data.ok) {
-        result.innerHTML = `<a href="${data.url}" class="qa-result-link">💬 ${esc(data.title)}</a><span class="qa-result-hint">새 개념 페이지가 생성되었습니다</span>`;
-        result.style.display = 'block';
-
-        // Replace highlight with a link to the new page
-        if (highlightMark && highlightMark.parentNode) {
-          const link = document.createElement('a');
-          link.href = data.url;
-          link.textContent = highlightMark.textContent;
-          link.className = 'wiki-link dynamic-link';
-          link.title = '💬 ' + data.title;
-          highlightMark.parentNode.replaceChild(link, highlightMark);
-          highlightMark = null;
-        }
+      if (data.task_id) {
+        // Background task started — poll for completion
+        pollForResult(data.task_id);
+      } else if (data.ok) {
+        // Synchronous result (fallback)
+        showResult(data);
       } else {
-        errorDiv.textContent = data.error || '오류가 발생했습니다';
-        errorDiv.style.display = 'block';
+        showError(data.error || '오류가 발생했습니다');
       }
     } catch (e) {
-      loading.style.display = 'none';
-      errorDiv.textContent = '서버 연결에 실패했습니다';
-      errorDiv.style.display = 'block';
-    } finally {
-      isAsking = false;
+      showError('서버 연결에 실패했습니다');
     }
   }
 
-  // Event: text selection
+  async function pollForResult(taskId) {
+    const maxAttempts = 60; // 60 * 2s = 2 min max
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        const resp = await fetch(`/api/ask/status?task_id=${taskId}`, {
+          headers: { 'Authorization': 'Bearer ' + authToken }
+        });
+        const data = await resp.json();
+
+        if (data.status === 'completed') {
+          showResult(data.result);
+          return;
+        } else if (data.status === 'error') {
+          showError(data.error || '생성 중 오류가 발생했습니다');
+          return;
+        }
+        // status === 'processing' — continue polling
+        loading.querySelector('span:last-child')?.remove();
+        const dots = '.'.repeat((i % 3) + 1);
+        loading.innerHTML = `<span class="qa-spinner"></span> 생성 중${dots}`;
+      } catch {
+        // Network error during poll — keep trying
+      }
+    }
+    showError('생성 시간이 초과되었습니다. 나중에 다시 시도해주세요.');
+  }
+
+  function showResult(data) {
+    loading.style.display = 'none';
+    isGenerating = false;
+    result.innerHTML = `<a href="${data.url}" class="qa-result-link">📝 ${esc(data.title)}</a><span class="qa-result-hint">새 개념 페이지가 생성되었습니다</span>`;
+    result.style.display = 'block';
+
+    // Replace highlight with a link to the new page
+    if (highlightMark && highlightMark.parentNode) {
+      const link = document.createElement('a');
+      link.href = data.url;
+      link.textContent = highlightMark.textContent;
+      link.className = 'wiki-link dynamic-link';
+      link.title = '📝 ' + data.title;
+      highlightMark.parentNode.replaceChild(link, highlightMark);
+      highlightMark = null;
+    }
+  }
+
+  function showError(msg) {
+    loading.style.display = 'none';
+    isGenerating = false;
+    errorDiv.textContent = msg;
+    errorDiv.style.display = 'block';
+    // Show retry button
+    popover.querySelector('.qa-popover-body').style.display = 'flex';
+  }
+
+  // Event: text selection with 500ms delay
   document.addEventListener('mouseup', (e) => {
-    // Don't trigger if clicking inside popover
     if (popover.contains(e.target)) return;
+
+    clearTimeout(popoverTimer);
 
     const selection = window.getSelection();
     const text = selection?.toString().trim();
 
     if (!text || text.length < 3) {
-      // Only hide if clicking outside popover and no active result
       if (!popover.contains(e.target) && result.style.display !== 'block') {
         setTimeout(() => {
           if (!popover.contains(document.activeElement)) hidePopover();
@@ -188,10 +249,20 @@
       : ancestor.parentElement?.closest('.page-body');
     if (!pageBody) return;
 
-    showPopover(text, range.getBoundingClientRect(), range.cloneRange());
+    // Delay popover by 500ms to allow editing the selection
+    const savedRange = range.cloneRange();
+    const savedRect = range.getBoundingClientRect();
+    popoverTimer = setTimeout(() => {
+      // Verify selection still exists after delay
+      const currentSelection = window.getSelection();
+      const currentText = currentSelection?.toString().trim();
+      if (currentText && currentText.length >= 3) {
+        showPopover(currentText, savedRect, savedRange);
+      }
+    }, 500);
   });
 
-  // Mobile: use selectionchange with debounce
+  // Mobile: use selectionchange with debounce (already has delay)
   let selectionTimer;
   document.addEventListener('selectionchange', () => {
     clearTimeout(selectionTimer);
@@ -208,15 +279,14 @@
       if (!pageBody) return;
 
       showPopover(text, range.getBoundingClientRect(), range.cloneRange());
-    }, 500);
+    }, 800); // Slightly longer delay for mobile
   });
 
-  // Event: ask button
-  btn.addEventListener('click', askQuestion);
+  // Event: generate button
+  generateBtn.addEventListener('click', generateConcept);
 
-  // Event: Enter key in input
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') askQuestion();
+  // Event: Escape key
+  document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') hidePopover();
   });
 

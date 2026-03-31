@@ -8,24 +8,33 @@ import { buildGraphData } from "../pipeline/graph";
 import { renderPage, renderIndex, renderGraph, renderQuizPage, renderDashboardPage } from "./templates";
 
 // Convert marked mermaid code blocks to mermaid-renderable divs
+const ENTITY_MAP: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" };
+
 function convertMermaidBlocks(html: string): string {
+  if (!html.includes('language-mermaid')) return html;
   return html.replace(
     /<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g,
     (_match, code: string) => {
-      // Decode HTML entities back to raw text for mermaid
-      const decoded = code
-        .replace(/&amp;/g, '&').replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+      const decoded = code.replace(/&(?:amp|lt|gt|quot|#39);/g, m => ENTITY_MAP[m] || m);
+      if (!decoded.trim()) return ''; // Skip empty mermaid blocks
       return `<pre class="mermaid">${decoded}</pre>`;
     }
   );
 }
 
 // Fix internal wiki links: /wiki/slug → /wiki/slug.html
-function fixWikiLinks(html: string): string {
+// Mark non-existent pages as "red links" (wiki convention for missing pages)
+function fixWikiLinks(html: string, existingSlugs?: Set<string>): string {
   return html.replace(/href="\/wiki\/([^"]+?)"/g, (match, slug) => {
-    if (slug.endsWith(".html")) return match;
-    return `href="/wiki/${slug}.html"`;
+    const cleanSlug = slug.endsWith(".html") ? slug.replace(".html", "") : slug;
+    const decodedSlug = decodeURIComponent(cleanSlug);
+    const href = slug.endsWith(".html") ? match : `href="/wiki/${slug}.html"`;
+
+    // If we have slug list and this page doesn't exist, mark as red link
+    if (existingSlugs && !existingSlugs.has(decodedSlug) && !existingSlugs.has(cleanSlug)) {
+      return `${href} class="redlink" title="문서 없음: ${decodedSlug}"`;
+    }
+    return href;
   });
 }
 
@@ -58,7 +67,7 @@ function generateToc(markdown: string): string {
 }
 
 // Shared markdown rendering + sanitization logic
-async function renderPageContent(page: { content: string }): Promise<string> {
+async function renderPageContent(page: { content: string }, existingSlugs?: Set<string>): Promise<string> {
   // Convert [[wiki links]] to markdown links before rendering
   // [[slug]] → [slug](/wiki/slug.html)
   // [[slug|display text]] → [display text](/wiki/slug.html)
@@ -104,7 +113,7 @@ async function renderPageContent(page: { content: string }): Promise<string> {
     },
     allowedSchemes: ['http', 'https', 'mailto'],
   });
-  htmlContent = fixWikiLinks(htmlContent);
+  htmlContent = fixWikiLinks(htmlContent, existingSlugs);
   return htmlContent;
 }
 
@@ -138,9 +147,10 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
   const conceptPages = store.listConceptPages();
   const wikiName = config.project.name;
   const backlinksMap = store.getAllBacklinksGrouped();
+  const allSlugs = new Set(pages.map(p => p.slug));
 
   for (const page of pages) {
-    const htmlContent = await renderPageContent(page);
+    const htmlContent = await renderPageContent(page, allSlugs);
 
     const { body, externalRefs } = extractExternalRefs(htmlContent);
     const toc = generateToc(page.content);

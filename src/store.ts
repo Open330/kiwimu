@@ -546,7 +546,7 @@ export class Store {
     return row?.last_batch ?? -1;
   }
 
-  isPhaseComplete(sourceId: number, phase: string): boolean {
+  hasPhaseCheckpoint(sourceId: number, phase: string): boolean {
     const row = this.db.prepare(
       "SELECT COUNT(*) as cnt FROM pipeline_checkpoints WHERE source_id = ? AND phase = ? AND status = 'completed'"
     ).get(sourceId, phase) as { cnt: number };
@@ -562,6 +562,28 @@ export class Store {
 
   clearCheckpoints(sourceId: number): void {
     this.db.prepare("DELETE FROM pipeline_checkpoints WHERE source_id = ?").run(sourceId);
+  }
+
+  searchPages(query: string, limit: number = 5): Array<{slug: string; title: string; pageType: string; origin: string; preview: string}> {
+    // Search by title first (exact-ish match), then content
+    const words = query.split(/\s+/).filter(w => w.length >= 2);
+    if (!words.length) return [];
+
+    // Build LIKE conditions for each word
+    const conditions = words.map(() => "(title LIKE ? OR content LIKE ?)").join(" AND ");
+    const params = words.flatMap(w => [`%${w}%`, `%${w}%`]);
+
+    const rows = this.db.prepare(`
+      SELECT slug, title, page_type, origin, substr(content, 1, 200) as preview
+      FROM pages
+      WHERE ${conditions}
+      ORDER BY
+        CASE WHEN title LIKE ? THEN 0 ELSE 1 END,
+        length(title) ASC
+      LIMIT ?
+    `).all(...params, `%${query}%`, limit);
+
+    return rows as any[];
   }
 
   getSourcePages(sourceId: number): Page[] {
