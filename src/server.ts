@@ -417,6 +417,17 @@ export function startServer(root: string, port: number, host: string): void {
         return Response.json({ results, method: 'fts' });
       }
 
+      if (url.pathname === "/api/lint" && req.method === "GET") {
+        try {
+          const { lintWiki } = await import("./services/lint");
+          const report = await lintWiki(store);
+          return Response.json(report);
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          return Response.json({ error: message }, { status: 500 });
+        }
+      }
+
       if (url.pathname === "/api/status") {
         const sources = store.listSourcesMeta();
         const sourcePages = store.listSourcePages();

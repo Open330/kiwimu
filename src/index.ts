@@ -479,6 +479,69 @@ program
     }
   });
 
+// --- lint ---
+program
+  .command("lint")
+  .description("위키 건강 상태를 검사합니다 (orphan pages, dead links, etc.)")
+  .action(async () => {
+    const root = findProjectRoot();
+    const store = new Store(join(root, DB_FILE));
+    try {
+      const { lintWiki } = await import("./services/lint");
+      const report = await lintWiki(store);
+
+      const { summary, issues } = report;
+
+      console.log(`\n\x1b[1m🔍 Wiki Lint Report\x1b[0m\n`);
+      console.log(`  Pages: ${summary.total_pages}  Links: ${summary.total_links}\n`);
+
+      if (issues.length === 0) {
+        console.log("\x1b[32m  ✅ No issues found!\x1b[0m\n");
+      } else {
+        const errors = issues.filter(i => i.severity === 'error');
+        const warnings = issues.filter(i => i.severity === 'warning');
+        const infos = issues.filter(i => i.severity === 'info');
+
+        if (errors.length > 0) {
+          console.log(`\x1b[31m  ❌ Errors (${errors.length})\x1b[0m`);
+          for (const issue of errors) {
+            console.log(`    \x1b[31m• [${issue.type}] ${issue.message}\x1b[0m`);
+            if (issue.suggestion) console.log(`      \x1b[2m→ ${issue.suggestion}\x1b[0m`);
+          }
+          console.log();
+        }
+
+        if (warnings.length > 0) {
+          console.log(`\x1b[33m  ⚠ Warnings (${warnings.length})\x1b[0m`);
+          for (const issue of warnings) {
+            console.log(`    \x1b[33m• [${issue.type}] ${issue.message}\x1b[0m`);
+            if (issue.suggestion) console.log(`      \x1b[2m→ ${issue.suggestion}\x1b[0m`);
+          }
+          console.log();
+        }
+
+        if (infos.length > 0) {
+          console.log(`\x1b[36m  ℹ Info (${infos.length})\x1b[0m`);
+          for (const issue of infos) {
+            console.log(`    \x1b[36m• [${issue.type}] ${issue.message}\x1b[0m`);
+            if (issue.suggestion) console.log(`      \x1b[2m→ ${issue.suggestion}\x1b[0m`);
+          }
+          console.log();
+        }
+
+        console.log(`\x1b[1m  Summary: \x1b[31m${summary.errors} errors\x1b[0m, \x1b[33m${summary.warnings} warnings\x1b[0m, \x1b[36m${summary.info} info\x1b[0m\n`);
+      }
+
+      if (summary.errors > 0) process.exit(1);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error(`\x1b[31m❌ ${message}\x1b[0m`);
+      process.exit(1);
+    } finally {
+      store.close();
+    }
+  });
+
 // --- status ---
 program
   .command("status")
