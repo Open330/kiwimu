@@ -7,3 +7,4 @@ kiwi.toml
 bun.lock
 .env
 certs/
+.claude/worktrees/
