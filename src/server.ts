@@ -16,6 +16,9 @@ export function startServer(root: string, port: number, host: string): void {
   let isProcessing = false;
   let processingStatus = "";
 
+  // Cached content index for /api/index
+  let cachedIndex: { data: any; pageCount: number } | null = null;
+
   const askRateLimit = new Map<string, number[]>(); // ip -> timestamps
   const ASK_RATE_LIMIT = 10; // max requests
   const ASK_RATE_WINDOW = 60_000; // per minute
@@ -415,6 +418,27 @@ export function startServer(root: string, port: number, host: string): void {
         // Fallback: FTS5 / LIKE search
         const results = store.searchPages(query, 5);
         return Response.json({ results, method: 'fts' });
+      }
+
+      // Content index API
+      if (url.pathname === "/api/index" && req.method === "GET") {
+        const refresh = url.searchParams.get("refresh") === "true";
+        const currentPageCount = store.countPages();
+
+        if (!refresh && cachedIndex && cachedIndex.pageCount === currentPageCount) {
+          return Response.json(cachedIndex.data);
+        }
+
+        const { generateContentIndex } = await import("./services/index-generator");
+        const useLLM = url.searchParams.get("llm") === "true";
+        const currentConfig = loadConfig(root);
+        const indexData = await generateContentIndex(store, {
+          useLLM,
+          llmConfig: currentConfig.llm,
+        });
+
+        cachedIndex = { data: indexData, pageCount: currentPageCount };
+        return Response.json(indexData);
       }
 
       if (url.pathname === "/api/status") {

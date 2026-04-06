@@ -5,7 +5,7 @@ import sanitizeHtml from "sanitize-html";
 import { loadConfig, type KiwiConfig } from "../config";
 import type { Store } from "../store";
 import { buildGraphData } from "../pipeline/graph";
-import { renderPage, renderIndex, renderGraph, renderQuizPage, renderDashboardPage } from "./templates";
+import { renderPage, renderIndex, renderGraph, renderQuizPage, renderDashboardPage, renderCatalogPage } from "./templates";
 
 // Convert marked mermaid code blocks to mermaid-renderable divs
 const ENTITY_MAP: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" };
@@ -228,6 +228,22 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
       stats,
       weakConcepts,
       recentAttempts,
+      sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
+      conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title })),
+    })
+  );
+
+  // Catalog (index) page
+  const { generateContentIndex } = await import("../services/index-generator");
+  const contentIndex = await generateContentIndex(store);
+  await Bun.write(
+    join(outputDir, "catalog.html"),
+    renderCatalogPage({
+      wikiName,
+      categories: contentIndex.categories,
+      totalPages: contentIndex.totalPages,
+      totalLinks: contentIndex.totalLinks,
+      generatedAt: contentIndex.generatedAt,
       sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
       conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title })),
     })

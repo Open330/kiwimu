@@ -1556,4 +1556,86 @@ a.redlink:hover {
     /* Footer badge */
     .kiwimu-badge { border-top-color: var(--border); }
     .kiwimu-badge a { color: var(--namu-green); }
+
+    /* Catalog page dark mode */
+    .catalog-category { border-color: var(--border); }
+    .catalog-category-header { background: var(--bg-alt); }
+    .catalog-item:hover { background: var(--bg-hover); }
+    .catalog-badge.source { background: #1a3a2a; color: #6ecfa0; }
+    .catalog-badge.concept { background: #1a2a3a; color: #6eb0cf; }
+    .catalog-link-count { color: var(--text-muted); }
+    .catalog-filter input { background: var(--bg-alt); color: var(--text); border-color: var(--border); }
+}
+
+/* ─── Catalog Page ─── */
+
+.catalog-page { max-width: 960px; }
+.catalog-page h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 4px; }
+.catalog-desc { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 20px; }
+
+.catalog-filter { margin-bottom: 20px; }
+.catalog-filter input {
+    width: 100%;
+    padding: 10px 14px;
+    font-size: 0.95rem;
+    border: 1px solid var(--border);
+    background: var(--bg-alt);
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s;
+}
+.catalog-filter input:focus { border-color: var(--namu-green); }
+
+.catalog-category {
+    border: 1px solid var(--border);
+    margin-bottom: 12px;
+}
+.catalog-category-header {
+    padding: 10px 14px;
+    cursor: pointer;
+    background: var(--bg-alt);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 600;
+    user-select: none;
+}
+.catalog-category-header:hover { background: var(--bg-hover); }
+.catalog-category-name { font-size: 1rem; }
+.catalog-category-count { font-size: 0.8rem; color: var(--text-muted); }
+.catalog-category-desc { padding: 6px 14px 0; color: var(--text-muted); font-size: 0.85rem; }
+
+.catalog-list { list-style: none; padding: 0; margin: 0; }
+.catalog-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px;
+    border-top: 1px solid var(--border);
+    font-size: 0.9rem;
+}
+.catalog-item:hover { background: var(--bg-hover); }
+.catalog-item a { color: var(--link); text-decoration: none; flex: 1; }
+.catalog-item a:hover { text-decoration: underline; }
+
+.catalog-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.catalog-badge.source { background: #e0f5f3; color: #007a6e; }
+.catalog-badge.concept { background: #e0eef5; color: #0a5e8a; }
+
+.catalog-link-count {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.catalog-empty {
+    padding: 40px;
+    text-align: center;
+    color: var(--text-muted);
 }
