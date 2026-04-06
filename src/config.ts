@@ -26,11 +26,16 @@ export interface EmbeddingConfig {
   api_key: string;
 }
 
+export interface QAConfig {
+  auto_promote: boolean; // If true, automatically save all Q&A answers as wiki pages
+}
+
 export interface KiwiConfig {
   project: { name: string; created: string };
   build: { output_dir: string };
   llm: LLMConfig;
   embedding?: EmbeddingConfig; // separate config for embeddings (optional, falls back to llm)
+  qa?: QAConfig; // Q&A feedback loop settings
   deploy: { target: string };
   personas?: Persona[];
   active_persona?: string; // name of the active persona
