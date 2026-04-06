@@ -163,5 +163,7 @@ Return a JSON object:
   const estimatedCostUsd = llmClient.getEstimatedCost();
   store.addUsageLog(null, usage.totalCalls, usage.promptTokens, usage.completionTokens, usage.totalTokens, estimatedCostUsd);
 
+  store.addActivityLog('query', `Asked: ${userQuestion.slice(0, 80)}`, 'page', pageId, { parentSlug: parentPage.slug, selectedText: selectedText.slice(0, 200) });
+
   return { pageId, slug: finalSlug, title: parsed.title, content: parsed.content };
 }
