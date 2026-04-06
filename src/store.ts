@@ -52,6 +52,16 @@ export interface Quiz {
   page_slug?: string;
 }
 
+export interface ActivityLogEntry {
+  id: number;
+  action: string;
+  entity_type: string | null;
+  entity_id: number | null;
+  title: string;
+  details: string | null;
+  created_at: string;
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS sources (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,6 +145,17 @@ CREATE TABLE IF NOT EXISTS page_embeddings (
   updated_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS activity_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  action TEXT NOT NULL,
+  entity_type TEXT,
+  entity_id INTEGER,
+  title TEXT,
+  details TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_activity_log_action ON activity_log(action);
+CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at);
 `;
 
 const FTS_SCHEMA = `
@@ -496,6 +517,10 @@ export class Store {
     this.db
       .prepare("INSERT INTO quiz_attempts (quiz_id, is_correct) VALUES (?, ?)")
       .run(quizId, isCorrect ? 1 : 0);
+    const quiz = this.db.prepare("SELECT question FROM quizzes WHERE id = ?").get(quizId) as { question: string } | undefined;
+    if (quiz) {
+      this.addActivityLog('quiz_attempted', `Answered quiz: ${quiz.question.slice(0, 80)}`, 'quiz', quizId, { is_correct: isCorrect });
+    }
   }
 
   getQuizStats(): { total: number; correct: number; incorrect: number; unattempted: number } {
@@ -672,5 +697,37 @@ export class Store {
     return this.db.prepare(
       "SELECT * FROM pages WHERE source_id = ? AND page_type = 'source' ORDER BY display_order"
     ).all(sourceId) as Page[];
+  }
+
+  // --- Activity Log ---
+
+  addActivityLog(action: string, title: string, entityType?: string, entityId?: number, details?: Record<string, any>): void {
+    this.db.prepare(
+      "INSERT INTO activity_log (action, entity_type, entity_id, title, details) VALUES (?, ?, ?, ?, ?)"
+    ).run(action, entityType ?? null, entityId ?? null, title, details ? JSON.stringify(details) : null);
+  }
+
+  getActivityLog(limit: number = 50, offset: number = 0, action?: string): ActivityLogEntry[] {
+    if (action) {
+      return this.db.prepare(
+        "SELECT * FROM activity_log WHERE action = ? ORDER BY created_at DESC LIMIT ? OFFSET ?"
+      ).all(action, limit, offset) as ActivityLogEntry[];
+    }
+    return this.db.prepare(
+      "SELECT * FROM activity_log ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    ).all(limit, offset) as ActivityLogEntry[];
+  }
+
+  getActivityStats(): { total: number; byAction: Record<string, number>; recentDays: { date: string; count: number }[] } {
+    const total = (this.db.prepare("SELECT COUNT(*) as c FROM activity_log").get() as any).c;
+    const byActionRows = this.db.prepare(
+      "SELECT action, COUNT(*) as c FROM activity_log GROUP BY action"
+    ).all() as Array<{ action: string; c: number }>;
+    const byAction: Record<string, number> = {};
+    for (const row of byActionRows) byAction[row.action] = row.c;
+    const recentDays = this.db.prepare(
+      "SELECT date(created_at) as date, COUNT(*) as count FROM activity_log WHERE created_at >= datetime('now', '-30 days') GROUP BY date(created_at) ORDER BY date DESC"
+    ).all() as Array<{ date: string; count: number }>;
+    return { total, byAction, recentDays };
   }
 }

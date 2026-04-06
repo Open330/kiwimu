@@ -523,4 +523,31 @@ program
     }
   });
 
+// --- log ---
+program
+  .command("log")
+  .description("활동 로그를 표시합니다")
+  .option("-n, --count <count>", "표시할 항목 수", "20")
+  .option("--action <action>", "액션으로 필터링 (ingest, page_created, quiz_attempted, query 등)")
+  .action((opts) => {
+    const root = findProjectRoot();
+    const store = new Store(join(root, DB_FILE));
+    try {
+      const limit = parseInt(opts.count) || 20;
+      const entries = store.getActivityLog(limit, 0, opts.action || undefined);
+      if (entries.length === 0) {
+        console.log("\x1b[33m활동 로그가 없습니다.\x1b[0m");
+        return;
+      }
+      for (const e of entries) {
+        const action = e.action.toUpperCase().padEnd(15);
+        console.log(`\x1b[2m[${e.created_at}]\x1b[0m \x1b[36m[${action}]\x1b[0m ${e.title}`);
+      }
+      const stats = store.getActivityStats();
+      console.log(`\n\x1b[2m총 ${stats.total}건\x1b[0m`);
+    } finally {
+      store.close();
+    }
+  });
+
 program.parse();

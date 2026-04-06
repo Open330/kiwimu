@@ -54,6 +54,8 @@ export async function ingestUrl(
   const estimatedCostUsd = client.getEstimatedCost();
   store.addUsageLog(source.id, u.totalCalls, u.promptTokens, u.completionTokens, u.totalTokens, estimatedCostUsd);
 
+  store.addActivityLog('ingest', `Ingested ${title}`, 'source', source.id, { url, sourceCount, conceptCount });
+
   return {
     sourceCount,
     conceptCount,
@@ -142,6 +144,8 @@ export async function ingestFile(
   const u = client.getUsageStats();
   const estimatedCostUsd = client.getEstimatedCost();
   store.addUsageLog(source.id, u.totalCalls, u.promptTokens, u.completionTokens, u.totalTokens, estimatedCostUsd);
+
+  store.addActivityLog('ingest', `Ingested ${originalName}`, 'source', source.id, { filePath, sourceCount, conceptCount });
 
   return {
     sourceCount,

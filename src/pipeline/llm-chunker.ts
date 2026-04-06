@@ -297,7 +297,8 @@ export async function llmChunkDocument(
         if (existing) {
           store.updatePageContent(existing.id, existing.content + "\n\n" + section.content);
         } else {
-          store.addPage(slug, section.title, section.content, sourceId, slug, "source", orderCounter++);
+          const page = store.addPage(slug, section.title, section.content, sourceId, slug, "source", orderCounter++);
+          store.addActivityLog('page_created', `Created page: ${section.title}`, 'page', page.id);
           sourcePageSummaries.push(`- ${section.title}: ${section.content.slice(0, 150).replace(/\n/g, " ")}`);
         }
       }
@@ -376,7 +377,8 @@ export async function llmChunkDocument(
               }
             }
 
-            store.addPage(slug, concept.title, content, sourceId, slug, "concept", 0);
+            const conceptPage = store.addPage(slug, concept.title, content, sourceId, slug, "concept", 0);
+            store.addActivityLog('page_created', `Created page: ${concept.title}`, 'page', conceptPage.id);
             existingConceptTitles.add(concept.title);
             conceptCount++;
           }

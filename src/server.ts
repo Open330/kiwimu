@@ -470,6 +470,22 @@ export function startServer(root: string, port: number, host: string): void {
         return Response.json({ slug: page.slug, title: page.title, content: page.content, origin: page.origin });
       }
 
+      // Activity log API
+      if (url.pathname === "/api/activity" && req.method === "GET") {
+        const limit = parseInt(url.searchParams.get("limit") || "50") || 50;
+        const offset = parseInt(url.searchParams.get("offset") || "0") || 0;
+        const action = url.searchParams.get("action") || undefined;
+        const entries = store.getActivityLog(limit, offset, action);
+        return Response.json(entries);
+      }
+
+      // Activity log page
+      if (url.pathname === "/activity") {
+        const stats = store.getActivityStats();
+        const html = renderActivityPage(authToken, config.project.name, stats);
+        return new Response(html, { headers: { "Content-Type": "text/html" } });
+      }
+
       // ── Static file serving ──
       let pathname = decodeURIComponent(url.pathname);
       if (pathname === "/") pathname = "/index.html";
@@ -498,4 +514,143 @@ export function startServer(root: string, port: number, host: string): void {
       return new Response("Not Found", { status: 404 });
     },
   });
+}
+
+function renderActivityPage(
+  authToken: string,
+  wikiName: string,
+  stats: { total: number; byAction: Record<string, number>; recentDays: { date: string; count: number }[] }
+): string {
+  const actionIcons: Record<string, string> = {
+    ingest: "📥", page_created: "📄", page_updated: "✏️", quiz_generated: "🧩",
+    quiz_attempted: "📝", query: "❓", build: "🔨", deploy: "🚀", expand: "🧠",
+  };
+  const actionLabels: Record<string, string> = {
+    ingest: "Ingest", page_created: "Page Created", page_updated: "Page Updated",
+    quiz_generated: "Quiz Generated", quiz_attempted: "Quiz Attempted", query: "Q&A",
+    build: "Build", deploy: "Deploy", expand: "Expand",
+  };
+  const filterButtons = Object.entries(stats.byAction)
+    .map(([action, count]) => `<button class="filter-btn" data-action="${action}">${actionIcons[action] || "📌"} ${actionLabels[action] || action} <span class="count">(${count})</span></button>`)
+    .join("\n          ");
+
+  return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="kiwi-auth" content="${authToken}">
+  <title>Activity Log - ${wikiName}</title>
+  <style>
+    :root { --bg: #fff; --fg: #1a1a2e; --card-bg: #f8f9fa; --border: #e0e0e0; --accent: #4a90d9; --muted: #6c757d; --badge-bg: #e8f0fe; --badge-fg: #1a73e8; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #1a1a2e; --fg: #e0e0e0; --card-bg: #16213e; --border: #2a2a4a; --accent: #64b5f6; --muted: #9e9e9e; --badge-bg: #1e3a5f; --badge-fg: #90caf9; }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--fg); line-height: 1.6; }
+    .container { max-width: 860px; margin: 0 auto; padding: 2rem 1rem; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .subtitle { color: var(--muted); margin-bottom: 1.5rem; }
+    .filters { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.5rem; }
+    .filter-btn { background: var(--card-bg); border: 1px solid var(--border); border-radius: 1rem; padding: 0.3rem 0.8rem; cursor: pointer; font-size: 0.85rem; color: var(--fg); transition: all 0.15s; }
+    .filter-btn:hover, .filter-btn.active { background: var(--badge-bg); color: var(--badge-fg); border-color: var(--accent); }
+    .filter-btn .count { color: var(--muted); font-size: 0.75rem; }
+    .timeline { list-style: none; border-left: 2px solid var(--border); padding-left: 1.5rem; }
+    .timeline-item { position: relative; padding: 0.75rem 0; }
+    .timeline-item::before { content: ""; position: absolute; left: -1.75rem; top: 1.1rem; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); }
+    .timeline-item .time { font-size: 0.75rem; color: var(--muted); }
+    .timeline-item .badge { display: inline-block; background: var(--badge-bg); color: var(--badge-fg); font-size: 0.75rem; padding: 0.1rem 0.5rem; border-radius: 0.75rem; margin-left: 0.5rem; }
+    .timeline-item .title { font-weight: 500; margin-top: 0.15rem; }
+    .timeline-item .details { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
+    .load-more { display: block; width: 100%; padding: 0.6rem; margin-top: 1rem; background: var(--card-bg); border: 1px solid var(--border); border-radius: 0.5rem; cursor: pointer; color: var(--fg); font-size: 0.9rem; text-align: center; }
+    .load-more:hover { background: var(--badge-bg); }
+    .empty { text-align: center; color: var(--muted); padding: 3rem; }
+    a.back { color: var(--accent); text-decoration: none; font-size: 0.9rem; }
+    a.back:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a class="back" href="/">&larr; Back to Wiki</a>
+    <h1>Activity Log</h1>
+    <p class="subtitle">${stats.total} total events</p>
+    <div class="filters">
+      <button class="filter-btn active" data-action="">All (${stats.total})</button>
+      ${filterButtons}
+    </div>
+    <ul class="timeline" id="timeline"></ul>
+    <button class="load-more" id="load-more">Load more</button>
+    <div class="empty" id="empty" style="display:none;">No activity yet.</div>
+  </div>
+  <script>
+    const authToken = document.querySelector('meta[name="kiwi-auth"]')?.content || '';
+    const icons = ${JSON.stringify(actionIcons)};
+    const labels = ${JSON.stringify(actionLabels)};
+    let currentAction = '';
+    let offset = 0;
+    const limit = 50;
+
+    function formatTime(iso) {
+      const d = new Date(iso + 'Z');
+      const now = new Date();
+      const diff = now - d;
+      if (diff < 60000) return 'just now';
+      if (diff < 3600000) return Math.floor(diff/60000) + 'm ago';
+      if (diff < 86400000) return Math.floor(diff/3600000) + 'h ago';
+      return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    }
+
+    function renderEntry(e) {
+      const icon = icons[e.action] || '📌';
+      const label = labels[e.action] || e.action;
+      let detailsHtml = '';
+      if (e.details) {
+        try {
+          const d = JSON.parse(e.details);
+          detailsHtml = '<span class="details">' + Object.entries(d).map(([k,v]) => k + ': ' + String(v).slice(0,60)).join(' | ') + '</span>';
+        } catch {}
+      }
+      return '<li class="timeline-item" data-action="' + e.action + '">' +
+        '<span class="time">' + formatTime(e.created_at) + '</span>' +
+        '<span class="badge">' + icon + ' ' + label + '</span>' +
+        '<div class="title">' + (e.title || '') + '</div>' +
+        detailsHtml + '</li>';
+    }
+
+    async function loadEntries(append) {
+      const params = new URLSearchParams({ limit: String(limit), offset: String(offset), token: authToken });
+      if (currentAction) params.set('action', currentAction);
+      const res = await fetch('/api/activity?' + params);
+      const entries = await res.json();
+      const tl = document.getElementById('timeline');
+      if (!append) tl.innerHTML = '';
+      if (entries.length === 0 && offset === 0) {
+        document.getElementById('empty').style.display = '';
+        document.getElementById('load-more').style.display = 'none';
+      } else {
+        document.getElementById('empty').style.display = 'none';
+        document.getElementById('load-more').style.display = entries.length < limit ? 'none' : '';
+        tl.innerHTML += entries.map(renderEntry).join('');
+      }
+    }
+
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentAction = btn.dataset.action;
+        offset = 0;
+        loadEntries(false);
+      });
+    });
+
+    document.getElementById('load-more').addEventListener('click', () => {
+      offset += limit;
+      loadEntries(true);
+    });
+
+    loadEntries(false);
+  </script>
+</body>
+</html>`;
 }
