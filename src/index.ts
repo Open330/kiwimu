@@ -130,6 +130,7 @@ program
     const persona = getActivePersona(config);
     const store = new Store(join(root, DB_FILE));
     try {
+      const schema = config.schema;
       const isUrl = source.startsWith("http://") || source.startsWith("https://");
 
       if (isUrl) {
@@ -137,7 +138,7 @@ program
         validateUrl(source);
         console.log(`\x1b[34m📥 URL 가져오는 중: ${source}\x1b[0m`);
         const { ingestUrl } = await import("./services/ingest");
-        const result = await ingestUrl(root, store, source, config.llm, persona, (s) => console.log(`  ${s}`));
+        const result = await ingestUrl(root, store, source, config.llm, persona, (s) => console.log(`  ${s}`), schema);
         console.log(`\x1b[32m✅ 📖 ${result.sourceCount}개 원본 + 📝 ${result.conceptCount}개 개념 문서 생성\x1b[0m`);
         console.log(`\x1b[34m📊 LLM: ${result.usage.totalCalls}회 호출, ~$${result.usage.estimatedCostUsd.toFixed(4)}\x1b[0m`);
       } else {
@@ -168,7 +169,7 @@ program
           const { ingestFile } = await import("./services/ingest");
           for (const mdFile of mdFiles) {
             console.log(`\x1b[34m📥 파일 처리 중: ${basename(mdFile)}\x1b[0m`);
-            const result = await ingestFile(root, store, mdFile, basename(mdFile), config.llm, persona, (s) => console.log(`  ${s}`));
+            const result = await ingestFile(root, store, mdFile, basename(mdFile), config.llm, persona, (s) => console.log(`  ${s}`), schema);
             console.log(`\x1b[32m✅ 📖 ${result.sourceCount}개 원본 + 📝 ${result.conceptCount}개 개념\x1b[0m`);
           }
         } else {
@@ -185,7 +186,7 @@ program
           }
           console.log(`\x1b[34m📥 파일 처리 중: ${source}\x1b[0m`);
           const { ingestFile } = await import("./services/ingest");
-          const result = await ingestFile(root, store, absPath, source, config.llm, persona, (s) => console.log(`  ${s}`));
+          const result = await ingestFile(root, store, absPath, source, config.llm, persona, (s) => console.log(`  ${s}`), schema);
           console.log(`\x1b[32m✅ 📖 ${result.sourceCount}개 원본 + 📝 ${result.conceptCount}개 개념 문서 생성\x1b[0m`);
           console.log(`\x1b[34m📊 LLM: ${result.usage.totalCalls}회 호출, ~$${result.usage.estimatedCostUsd.toFixed(4)}\x1b[0m`);
         }
@@ -521,6 +522,146 @@ program
     } finally {
       store.close();
     }
+  });
+
+// --- schema ---
+program
+  .command("schema")
+  .description("스키마 설정을 관리합니다")
+  .option("--init", "기본 [schema] 섹션을 kiwi.toml에 추가합니다")
+  .option("--validate", "기존 페이지가 스키마 규칙에 부합하는지 확인합니다")
+  .action(async (opts: { init?: boolean; validate?: boolean }) => {
+    if (opts.init) {
+      // Generate default schema section and append to kiwi.toml
+      const root = findProjectRoot();
+      const { readFileSync, writeFileSync } = await import("fs");
+      const configPath = join(root, CONFIG_FILE);
+      const existing = readFileSync(configPath, "utf-8");
+
+      if (existing.includes("[schema]")) {
+        console.log("\x1b[33m[schema] 섹션이 이미 존재합니다.\x1b[0m");
+        return;
+      }
+
+      const defaultSchema = `
+[schema]
+# Wiki structure rules
+categories = ["Fundamentals", "Advanced Topics", "Applications", "History", "People"]
+# Naming conventions: 'noun_phrase', 'question', 'topic'
+naming_convention = "noun_phrase"
+# Content length rules (characters)
+min_page_length = 200
+max_page_length = 3000
+
+[schema.terms]
+# Term standardization: abbreviation = "Standard Form"
+# "ML" = "Machine Learning"
+# "DL" = "Deep Learning"
+
+[schema.page_template]
+sections = ["Definition", "Explanation", "Examples", "Related Concepts"]
+`;
+      writeFileSync(configPath, existing.trimEnd() + "\n" + defaultSchema);
+      console.log("\x1b[32m[schema] 섹션이 kiwi.toml에 추가되었습니다.\x1b[0m");
+      console.log("  필요에 맞게 수정해주세요.");
+      return;
+    }
+
+    if (opts.validate) {
+      const root = findProjectRoot();
+      const config = loadConfig(root);
+      const schema = config.schema;
+
+      if (!schema) {
+        console.log("\x1b[33m스키마가 정의되지 않았습니다. 'kiwimu schema --init'으로 생성하세요.\x1b[0m");
+        return;
+      }
+
+      const store = new Store(join(root, DB_FILE));
+      try {
+        const pages = store.listPages();
+        let issueCount = 0;
+
+        for (const page of pages) {
+          const issues: string[] = [];
+
+          // Check min length
+          if (schema.min_page_length && page.content.length < schema.min_page_length) {
+            issues.push(`길이 ${page.content.length}자 < 최소 ${schema.min_page_length}자`);
+          }
+          // Check max length
+          if (schema.max_page_length && page.content.length > schema.max_page_length) {
+            issues.push(`길이 ${page.content.length}자 > 최대 ${schema.max_page_length}자`);
+          }
+          // Check required sections
+          if (schema.page_template?.sections?.length && page.page_type === "concept") {
+            for (const section of schema.page_template.sections) {
+              const sectionPattern = new RegExp(`^##\\s+${section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "mi");
+              if (!sectionPattern.test(page.content)) {
+                issues.push(`누락된 섹션: "${section}"`);
+              }
+            }
+          }
+          // Check category assignment
+          if (schema.categories?.length && page.page_type === "concept" && !page.category) {
+            issues.push("카테고리 미지정");
+          }
+
+          if (issues.length > 0) {
+            issueCount += issues.length;
+            console.log(`\x1b[33m  ${page.title}\x1b[0m (${page.slug})`);
+            for (const issue of issues) {
+              console.log(`    - ${issue}`);
+            }
+          }
+        }
+
+        if (issueCount === 0) {
+          console.log("\x1b[32m모든 페이지가 스키마 규칙에 부합합니다.\x1b[0m");
+        } else {
+          console.log(`\n\x1b[33m총 ${issueCount}개 이슈 발견 (${pages.length}개 페이지 검사)\x1b[0m`);
+        }
+      } finally {
+        store.close();
+      }
+      return;
+    }
+
+    // Default: display current schema settings
+    const root = findProjectRoot();
+    const config = loadConfig(root);
+    const schema = config.schema;
+
+    if (!schema) {
+      console.log("\x1b[33m스키마가 정의되지 않았습니다.\x1b[0m");
+      console.log("  'kiwimu schema --init'으로 기본 스키마를 생성하세요.");
+      return;
+    }
+
+    console.log("\n\x1b[1m[schema] 설정:\x1b[0m\n");
+
+    if (schema.categories?.length) {
+      console.log(`  카테고리: ${schema.categories.join(", ")}`);
+    }
+    if (schema.naming_convention) {
+      console.log(`  명명 규칙: ${schema.naming_convention}`);
+    }
+    if (schema.min_page_length != null) {
+      console.log(`  최소 페이지 길이: ${schema.min_page_length}자`);
+    }
+    if (schema.max_page_length != null) {
+      console.log(`  최대 페이지 길이: ${schema.max_page_length}자`);
+    }
+    if (schema.terms && Object.keys(schema.terms).length > 0) {
+      console.log(`  용어 표준화:`);
+      for (const [abbrev, standard] of Object.entries(schema.terms)) {
+        console.log(`    ${abbrev} -> ${standard}`);
+      }
+    }
+    if (schema.page_template?.sections?.length) {
+      console.log(`  페이지 템플릿 섹션: ${schema.page_template.sections.join(", ")}`);
+    }
+    console.log();
   });
 
 program.parse();

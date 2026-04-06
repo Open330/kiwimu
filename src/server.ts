@@ -102,7 +102,7 @@ export function startServer(root: string, port: number, host: string): void {
 
             await ingestFile(root, store, filePath, file.name, currentConfig.llm, currentPersona, (status) => {
               processingStatus = status;
-            });
+            }, currentConfig.schema);
 
             processingStatus = "빌드 중...";
             const { buildSite } = await import("./build/renderer");
@@ -150,7 +150,7 @@ export function startServer(root: string, port: number, host: string): void {
 
             await ingestUrl(root, store, body.source, currentConfig.llm, currentPersona, (status) => {
               processingStatus = status;
-            });
+            }, currentConfig.schema);
 
             processingStatus = "빌드 중...";
             const { buildSite } = await import("./build/renderer");

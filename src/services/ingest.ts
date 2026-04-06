@@ -1,5 +1,5 @@
 import { Store } from "../store";
-import { type LLMConfig, type Persona } from "../config";
+import { type LLMConfig, type Persona, type WikiSchema } from "../config";
 import { LLMClient, type UsageStats } from "../llm-client";
 
 export interface IngestResult {
@@ -15,7 +15,8 @@ export async function ingestUrl(
   url: string,
   llmConfig: LLMConfig,
   persona: Persona | null,
-  onProgress?: (status: string) => void
+  onProgress?: (status: string) => void,
+  schema?: WikiSchema
 ): Promise<IngestResult> {
   const client = new LLMClient(llmConfig);
   client.resetUsageStats();
@@ -45,7 +46,7 @@ export async function ingestUrl(
 
   const isResume = store.hasCheckpoints(source.id);
   onProgress?.(isResume ? "⏳ LLM 분석 재개..." : "⏳ LLM 분석 시작...");
-  const { sourceCount, conceptCount } = await llmChunkDocument(rawText, title, source.id, store, 0, persona, client, onProgress);
+  const { sourceCount, conceptCount } = await llmChunkDocument(rawText, title, source.id, store, 0, persona, client, onProgress, schema);
 
   // Pipeline completed successfully — clear checkpoints for clean future re-ingests
   store.clearCheckpoints(source.id);
@@ -69,7 +70,8 @@ export async function ingestFile(
   originalName: string,
   llmConfig: LLMConfig,
   persona: Persona | null,
-  onProgress?: (status: string) => void
+  onProgress?: (status: string) => void,
+  schema?: WikiSchema
 ): Promise<IngestResult> {
   const client = new LLMClient(llmConfig);
   client.resetUsageStats();
@@ -134,7 +136,7 @@ export async function ingestFile(
 
   const isResume = store.hasCheckpoints(source.id);
   onProgress?.(isResume ? "⏳ LLM 분석 재개..." : "⏳ LLM 분석 시작...");
-  const { sourceCount, conceptCount } = await llmChunkDocument(text, title, source.id, store, 0, persona, client, onProgress);
+  const { sourceCount, conceptCount } = await llmChunkDocument(text, title, source.id, store, 0, persona, client, onProgress, schema);
 
   // Pipeline completed successfully — clear checkpoints for clean future re-ingests
   store.clearCheckpoints(source.id);
