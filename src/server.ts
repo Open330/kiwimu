@@ -5,6 +5,8 @@ import { existsSync } from "fs";
 import { DB_FILE, SUPPORTED_EXTENSIONS, loadConfig, saveConfig, getActivePersona } from "./config";
 import { Store } from "./store";
 import type { KiwiConfig } from "./config";
+import type { ContentIndex } from "./services/index-generator";
+import { renderActivityPage } from "./build/templates";
 
 export function startServer(root: string, port: number, host: string): void {
   const config = loadConfig(root);
@@ -17,7 +19,7 @@ export function startServer(root: string, port: number, host: string): void {
   let processingStatus = "";
 
   // Cached content index for /api/index
-  let cachedIndex: { data: any; pageCount: number } | null = null;
+  let cachedIndex: { data: ContentIndex; pageCount: number } | null = null;
 
   const askRateLimit = new Map<string, number[]>(); // ip -> timestamps
   const ASK_RATE_LIMIT = 10; // max requests
@@ -54,7 +56,7 @@ export function startServer(root: string, port: number, host: string): void {
       const url = new URL(req.url);
 
       // ── Auth middleware for /api/* and /admin ──
-      if (url.pathname.startsWith("/api/") || url.pathname === "/manage") {
+      if (url.pathname.startsWith("/api/") || url.pathname === "/manage" || url.pathname === "/activity" || url.pathname === "/provenance") {
         const authHeader = req.headers.get("Authorization");
         const queryToken = url.searchParams.get("token");
         const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
@@ -348,21 +350,19 @@ export function startServer(root: string, port: number, host: string): void {
               if (qaConfig?.auto_promote && result.isPromotable) {
                 // Auto-promote: create permanent wiki page with quizzes
                 try {
-                  const promoteResp = await fetch(`http://localhost:${port}/api/promote`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-                    body: JSON.stringify({
-                      question: autoQuestion,
-                      answer: result.content,
-                      title: result.suggestedTitle,
-                      sourcePageId: parentPage.id,
-                      selectedText: selected_text,
-                    }),
-                  });
-                  const promoteData = await promoteResp.json() as Record<string, unknown>;
-                  if (promoteData.ok) {
-                    console.log(`\x1b[32m✅ Auto-promoted: ${result.title}\x1b[0m`);
-                  }
+                  const { promoteToWiki } = await import("./services/promote");
+                  const promoteResult = await promoteToWiki(store, {
+                    question: autoQuestion,
+                    answer: result.content,
+                    title: result.suggestedTitle,
+                    sourcePageId: parentPage.id,
+                    selectedText: selected_text,
+                  }, currentConfig.llm);
+
+                  // Hot-render the promoted page
+                  await buildSinglePage(root, store, promoteResult.slug);
+
+                  console.log(`\x1b[32m✅ Auto-promoted: ${result.title}\x1b[0m`);
                 } catch (promoteErr) {
                   console.log(`\x1b[33m⚠ Auto-promote failed: ${promoteErr}\x1b[0m`);
                 }
@@ -428,136 +428,37 @@ export function startServer(root: string, port: number, host: string): void {
             return Response.json({ error: "question, answer, title, sourcePageId가 필요합니다" }, { status: 400 });
           }
 
-          const sourcePage = store.listPages().find(p => p.id === body.sourcePageId);
+          if (body.title.length > 200) {
+            return Response.json({ error: "title은 200자 이하여야 합니다" }, { status: 400 });
+          }
+          if (body.question.length > 2000) {
+            return Response.json({ error: "question은 2000자 이하여야 합니다" }, { status: 400 });
+          }
+          if (body.answer.length > 50000) {
+            return Response.json({ error: "answer는 50000자 이하여야 합니다" }, { status: 400 });
+          }
+
+          const sourcePage = store.getPageById(body.sourcePageId);
           if (!sourcePage) {
             return Response.json({ error: "원본 페이지를 찾을 수 없습니다" }, { status: 404 });
           }
 
-          // Deduplication: check if similar page already exists
-          const existing = store.findSimilarPage(body.title);
-          if (existing) {
-            // Update existing page content instead of creating duplicate
-            const updatedContent = existing.content + "\n\n---\n\n" + body.answer;
-            store.updatePageContent(existing.id, updatedContent);
+          const currentConfig = loadConfig(root);
+          const { promoteToWiki } = await import("./services/promote");
+          const result = await promoteToWiki(store, body, currentConfig.llm);
 
-            // Hot-render updated page
-            const { buildSinglePage } = await import("./build/renderer");
-            await buildSinglePage(root, store, existing.slug);
-
-            return Response.json({
-              ok: true,
-              slug: existing.slug,
-              title: existing.title,
-              url: `/wiki/${existing.slug}.html`,
-              updated: true,
-              message: "기존 페이지에 내용이 추가되었습니다",
-            });
-          }
-
-          // Create new concept page from Q&A answer
-          const { slugify } = await import("./pipeline/chunker");
-          let slug = slugify(body.title);
-          if (!slug) slug = slugify(body.question);
-          if (!slug) slug = `qa-${Date.now()}`;
-
-          let finalSlug = slug;
-          let counter = 2;
-          while (store.getPage(finalSlug)) {
-            finalSlug = `${slug}-${counter++}`;
-          }
-
-          // Build page content with context
-          let pageContent = body.answer;
-          if (body.selectedText) {
-            pageContent = `> ${body.selectedText.slice(0, 500)}\n\n${pageContent}`;
-          }
-
-          const page = store.addPage(finalSlug, body.title, pageContent, undefined, undefined, "concept", 0);
-
-          // Mark as user-generated origin (addPage defaults to 'batch')
-          const db = (store as any).db as import("bun:sqlite").Database;
-          db.prepare("UPDATE pages SET origin = 'user', user_question = ?, parent_page_id = ? WHERE slug = ?")
-            .run(body.question, body.sourcePageId, finalSlug);
-
-          // Inject wiki links into the new page (targeted, not full re-link)
-          const allPages = store.listPages();
-          const targets = allPages
-            .filter(p => p.id !== page.id && p.title.length >= 3)
-            .sort((a, b) => b.title.length - a.title.length);
-
-          let linkedContent = pageContent;
-          const linkedSlugs = new Set<string>();
-          for (const target of targets) {
-            if (linkedSlugs.has(target.slug)) continue;
-            const escaped = target.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            const regex = new RegExp(`(?<!\\[)(?<!\\w)(${escaped})(?!\\w)(?!\\])`, "i");
-            const match = regex.exec(linkedContent);
-            if (match) {
-              const replacement = `[${match[1]}](/wiki/${target.slug})`;
-              linkedContent = linkedContent.slice(0, match.index) + replacement + linkedContent.slice(match.index + match[0].length);
-              linkedSlugs.add(target.slug);
-              store.addLink(page.id, target.id, match[1]);
-            }
-          }
-          if (linkedSlugs.size > 0) {
-            store.updatePageContent(page.id, linkedContent);
-          }
-
-          // Add link from source page to new page
-          store.addLink(body.sourcePageId, page.id, body.title);
-
-          // Generate 1-2 quizzes for the new concept
-          try {
-            const currentConfig = loadConfig(root);
-            const { LLMClient } = await import("./llm-client");
-            const llmClient = new LLMClient(currentConfig.llm);
-
-            const quizSystem = `You are a quiz generator for a study wiki. Generate quiz questions that test UNDERSTANDING, not just memorization.
-Focus on higher-order thinking: "왜?", "어떻게?", "비교하라", "설명하라" style questions.
-Return valid JSON only. No markdown fences.`;
-
-            const quizPrompt = `Based on this wiki content, generate 1-2 quiz questions that test UNDERSTANDING.
-Types: "fill_blank" (빈칸 채우기), "ox" (OX 퀴즈 - true/false), "short_answer" (단답형)
-
-Content title: ${body.title}
-Content:
-${body.answer.slice(0, 3000)}
-
-Respond with a JSON array only:
-[{"question": "...", "answer": "...", "explanation": "...", "type": "fill_blank"}]
-
-Rules:
-- For fill_blank: use ___ to mark the blank in the question
-- For ox: question should be a statement, answer should be "O" or "X"
-- For short_answer: question should be answerable in 1-3 words
-- Include "explanation" field: a brief 1-2 sentence explanation of WHY the answer is correct`;
-
-            const raw = await llmClient.chatComplete(quizSystem, quizPrompt, 2048);
-            let cleaned = raw.replace(/^```json?\n?/m, "").replace(/\n?```\s*$/m, "").trim();
-            const quizzes = JSON.parse(cleaned) as Array<{ question: string; answer: string; explanation?: string; type: string }>;
-
-            for (const q of quizzes) {
-              if (q.question && q.answer && q.type) {
-                store.addQuiz(page.id, q.question, q.answer, q.type, q.explanation || "");
-              }
-            }
-          } catch {
-            // Quiz generation is non-critical; silently skip failures
-            console.log(`\x1b[33m⚠ 프로모트 퀴즈 생성 실패\x1b[0m`);
-          }
-
-          // Hot-render the new page + re-render source page
+          // Hot-render the affected pages
           const { buildSinglePage } = await import("./build/renderer");
-          await buildSinglePage(root, store, finalSlug);
+          await buildSinglePage(root, store, result.slug);
           await buildSinglePage(root, store, sourcePage.slug);
 
           return Response.json({
             ok: true,
-            slug: finalSlug,
-            title: body.title,
-            url: `/wiki/${finalSlug}.html`,
-            updated: false,
-            message: "새 위키 페이지가 생성되었습니다",
+            slug: result.slug,
+            title: result.title,
+            url: `/wiki/${result.slug}.html`,
+            updated: !result.isNew,
+            message: result.isNew ? "새 위키 페이지가 생성되었습니다" : "기존 페이지에 내용이 추가되었습니다",
           });
         } catch (e: unknown) {
           const message = e instanceof Error ? e.message : String(e);
@@ -607,7 +508,7 @@ Rules:
       if (url.pathname === "/api/lint" && req.method === "GET") {
         try {
           const { lintWiki } = await import("./services/lint");
-          const report = await lintWiki(store);
+          const report = lintWiki(store);
           return Response.json(report);
         } catch (e: unknown) {
           const message = e instanceof Error ? e.message : String(e);
@@ -640,7 +541,7 @@ Rules:
         const sources = store.listSourcesMeta();
         const sourcePages = store.listSourcePages();
         const conceptPages = store.listConceptPages();
-        const links = store.getAllLinks();
+        const linkCount = store.countLinks();
         const usage = store.getUsageSummary();
 
         return Response.json({
@@ -649,7 +550,7 @@ Rules:
           sources: sources.length,
           sourcePages: sourcePages.length,
           conceptPages: conceptPages.length,
-          links: links.length,
+          links: linkCount,
           usage,
         });
       }
@@ -684,12 +585,14 @@ Rules:
       // Citation endpoints
       if (url.pathname.match(/^\/api\/pages\/(\d+)\/citations$/) && req.method === "GET") {
         const pageId = parseInt(url.pathname.split("/")[3]);
+        if (isNaN(pageId)) return Response.json({ error: "잘못된 ID입니다" }, { status: 400 });
         const citations = store.getCitationsForPage(pageId);
         return Response.json({ citations });
       }
 
       if (url.pathname.match(/^\/api\/sources\/(\d+)\/citations$/) && req.method === "GET") {
         const sourceId = parseInt(url.pathname.split("/")[3]);
+        if (isNaN(sourceId)) return Response.json({ error: "잘못된 ID입니다" }, { status: 400 });
         const citations = store.getCitationsForSource(sourceId);
         return Response.json({ citations });
       }
@@ -703,17 +606,18 @@ Rules:
       if (url.pathname.startsWith("/api/page/") && req.method === "GET") {
         const slug = url.pathname.replace("/api/page/", "");
         const page = store.getPage(decodeURIComponent(slug));
-        if (!page) return Response.json({ error: "Not found" }, { status: 404 });
+        if (!page) return Response.json({ error: "찾을 수 없습니다" }, { status: 404 });
         return Response.json({ slug: page.slug, title: page.title, content: page.content, origin: page.origin });
       }
 
       // Activity log API
       if (url.pathname === "/api/activity" && req.method === "GET") {
-        const limit = parseInt(url.searchParams.get("limit") || "50") || 50;
-        const offset = parseInt(url.searchParams.get("offset") || "0") || 0;
+        const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") || "50") || 50, 1), 200);
+        const offset = Math.max(parseInt(url.searchParams.get("offset") || "0") || 0, 0);
         const action = url.searchParams.get("action") || undefined;
         const entries = store.getActivityLog(limit, offset, action);
-        return Response.json(entries);
+        const stats = store.getActivityStats();
+        return Response.json({ entries, total: stats.total });
       }
 
       // Activity log page
@@ -779,12 +683,18 @@ Rules:
       if (await staticFile.exists()) {
         const isHtml = pathname.endsWith(".html");
         const cspValue = "default-src 'self'; script-src 'self' 'unsafe-inline' cdn.jsdelivr.net d3js.org static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' cdn.jsdelivr.net fonts.googleapis.com; font-src fonts.gstatic.com *.gstatic.com; img-src * data:; connect-src 'self' cloudflareinsights.com";
-        if (isHtml && authToken) {
-          let html = await staticFile.text();
-          if (!html.includes('kiwi-auth')) {
-            html = html.replace('</head>', `<meta name="kiwi-auth" content="${authToken}"></head>`);
+        if (isHtml) {
+          const queryToken = url.searchParams.get("token");
+          const authHeader = req.headers.get("Authorization");
+          const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+          const isAuthed = bearerToken === authToken || queryToken === authToken;
+          if (isAuthed) {
+            let html = await staticFile.text();
+            if (!html.includes('kiwi-auth')) {
+              html = html.replace('</head>', `<meta name="kiwi-auth" content="${authToken}"></head>`);
+            }
+            return new Response(html, { headers: { "Content-Type": "text/html", "Content-Security-Policy": cspValue } });
           }
-          return new Response(html, { headers: { "Content-Type": "text/html", "Content-Security-Policy": cspValue } });
         }
         if (isHtml) {
           return new Response(staticFile, { headers: { "Content-Type": "text/html", "Content-Security-Policy": cspValue } });
@@ -796,141 +706,3 @@ Rules:
   });
 }
 
-function renderActivityPage(
-  authToken: string,
-  wikiName: string,
-  stats: { total: number; byAction: Record<string, number>; recentDays: { date: string; count: number }[] }
-): string {
-  const actionIcons: Record<string, string> = {
-    ingest: "📥", page_created: "📄", page_updated: "✏️", quiz_generated: "🧩",
-    quiz_attempted: "📝", query: "❓", build: "🔨", deploy: "🚀", expand: "🧠",
-  };
-  const actionLabels: Record<string, string> = {
-    ingest: "Ingest", page_created: "Page Created", page_updated: "Page Updated",
-    quiz_generated: "Quiz Generated", quiz_attempted: "Quiz Attempted", query: "Q&A",
-    build: "Build", deploy: "Deploy", expand: "Expand",
-  };
-  const filterButtons = Object.entries(stats.byAction)
-    .map(([action, count]) => `<button class="filter-btn" data-action="${action}">${actionIcons[action] || "📌"} ${actionLabels[action] || action} <span class="count">(${count})</span></button>`)
-    .join("\n          ");
-
-  return `<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="kiwi-auth" content="${authToken}">
-  <title>Activity Log - ${wikiName}</title>
-  <style>
-    :root { --bg: #fff; --fg: #1a1a2e; --card-bg: #f8f9fa; --border: #e0e0e0; --accent: #4a90d9; --muted: #6c757d; --badge-bg: #e8f0fe; --badge-fg: #1a73e8; }
-    @media (prefers-color-scheme: dark) {
-      :root { --bg: #1a1a2e; --fg: #e0e0e0; --card-bg: #16213e; --border: #2a2a4a; --accent: #64b5f6; --muted: #9e9e9e; --badge-bg: #1e3a5f; --badge-fg: #90caf9; }
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--fg); line-height: 1.6; }
-    .container { max-width: 860px; margin: 0 auto; padding: 2rem 1rem; }
-    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
-    .subtitle { color: var(--muted); margin-bottom: 1.5rem; }
-    .filters { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.5rem; }
-    .filter-btn { background: var(--card-bg); border: 1px solid var(--border); border-radius: 1rem; padding: 0.3rem 0.8rem; cursor: pointer; font-size: 0.85rem; color: var(--fg); transition: all 0.15s; }
-    .filter-btn:hover, .filter-btn.active { background: var(--badge-bg); color: var(--badge-fg); border-color: var(--accent); }
-    .filter-btn .count { color: var(--muted); font-size: 0.75rem; }
-    .timeline { list-style: none; border-left: 2px solid var(--border); padding-left: 1.5rem; }
-    .timeline-item { position: relative; padding: 0.75rem 0; }
-    .timeline-item::before { content: ""; position: absolute; left: -1.75rem; top: 1.1rem; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); }
-    .timeline-item .time { font-size: 0.75rem; color: var(--muted); }
-    .timeline-item .badge { display: inline-block; background: var(--badge-bg); color: var(--badge-fg); font-size: 0.75rem; padding: 0.1rem 0.5rem; border-radius: 0.75rem; margin-left: 0.5rem; }
-    .timeline-item .title { font-weight: 500; margin-top: 0.15rem; }
-    .timeline-item .details { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
-    .load-more { display: block; width: 100%; padding: 0.6rem; margin-top: 1rem; background: var(--card-bg); border: 1px solid var(--border); border-radius: 0.5rem; cursor: pointer; color: var(--fg); font-size: 0.9rem; text-align: center; }
-    .load-more:hover { background: var(--badge-bg); }
-    .empty { text-align: center; color: var(--muted); padding: 3rem; }
-    a.back { color: var(--accent); text-decoration: none; font-size: 0.9rem; }
-    a.back:hover { text-decoration: underline; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <a class="back" href="/">&larr; Back to Wiki</a>
-    <h1>Activity Log</h1>
-    <p class="subtitle">${stats.total} total events</p>
-    <div class="filters">
-      <button class="filter-btn active" data-action="">All (${stats.total})</button>
-      ${filterButtons}
-    </div>
-    <ul class="timeline" id="timeline"></ul>
-    <button class="load-more" id="load-more">Load more</button>
-    <div class="empty" id="empty" style="display:none;">No activity yet.</div>
-  </div>
-  <script>
-    const authToken = document.querySelector('meta[name="kiwi-auth"]')?.content || '';
-    const icons = ${JSON.stringify(actionIcons)};
-    const labels = ${JSON.stringify(actionLabels)};
-    let currentAction = '';
-    let offset = 0;
-    const limit = 50;
-
-    function formatTime(iso) {
-      const d = new Date(iso + 'Z');
-      const now = new Date();
-      const diff = now - d;
-      if (diff < 60000) return 'just now';
-      if (diff < 3600000) return Math.floor(diff/60000) + 'm ago';
-      if (diff < 86400000) return Math.floor(diff/3600000) + 'h ago';
-      return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    }
-
-    function renderEntry(e) {
-      const icon = icons[e.action] || '📌';
-      const label = labels[e.action] || e.action;
-      let detailsHtml = '';
-      if (e.details) {
-        try {
-          const d = JSON.parse(e.details);
-          detailsHtml = '<span class="details">' + Object.entries(d).map(([k,v]) => k + ': ' + String(v).slice(0,60)).join(' | ') + '</span>';
-        } catch {}
-      }
-      return '<li class="timeline-item" data-action="' + e.action + '">' +
-        '<span class="time">' + formatTime(e.created_at) + '</span>' +
-        '<span class="badge">' + icon + ' ' + label + '</span>' +
-        '<div class="title">' + (e.title || '') + '</div>' +
-        detailsHtml + '</li>';
-    }
-
-    async function loadEntries(append) {
-      const params = new URLSearchParams({ limit: String(limit), offset: String(offset), token: authToken });
-      if (currentAction) params.set('action', currentAction);
-      const res = await fetch('/api/activity?' + params);
-      const entries = await res.json();
-      const tl = document.getElementById('timeline');
-      if (!append) tl.innerHTML = '';
-      if (entries.length === 0 && offset === 0) {
-        document.getElementById('empty').style.display = '';
-        document.getElementById('load-more').style.display = 'none';
-      } else {
-        document.getElementById('empty').style.display = 'none';
-        document.getElementById('load-more').style.display = entries.length < limit ? 'none' : '';
-        tl.innerHTML += entries.map(renderEntry).join('');
-      }
-    }
-
-    document.querySelectorAll('.filter-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        currentAction = btn.dataset.action;
-        offset = 0;
-        loadEntries(false);
-      });
-    });
-
-    document.getElementById('load-more').addEventListener('click', () => {
-      offset += limit;
-      loadEntries(true);
-    });
-
-    loadEntries(false);
-  </script>
-</body>
-</html>`;
-}

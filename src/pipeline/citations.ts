@@ -1,4 +1,5 @@
 import type { Store, Citation } from "../store";
+import { escapeHtml } from "../utils";
 
 /**
  * Parse [^src:SLUG] citation markers in page body.
@@ -9,7 +10,7 @@ export function parseCitations(body: string, pageId: number, store: Store): stri
   if (!page) return body;
 
   // Find all [^src:SLUG] markers
-  const markerRegex = /\[\^src:([^\]]+)\]/g;
+  const markerRegex = /\[\^src:([a-z0-9가-힣][-a-z0-9가-힣]*)\]/gi;
   const markers: Array<{ fullMatch: string; slug: string; index: number }> = [];
   let match: RegExpExecArray | null;
 
@@ -87,7 +88,7 @@ export function renderCitationFootnotes(citations: Citation[]): string {
     .map(({ num, citation }) => {
       const title = citation.source_page_title || citation.source_title || `Source #${citation.source_id}`;
       const slug = citation.source_page_slug;
-      const link = slug ? `<a href="/wiki/${slug}.html">${escapeHtml(title)}</a>` : escapeHtml(title);
+      const link = slug ? `<a href="/wiki/${encodeURIComponent(slug)}.html">${escapeHtml(title)}</a>` : escapeHtml(title);
       const excerpt = citation.excerpt
         ? `<span class="citation-excerpt">"${escapeHtml(citation.excerpt.slice(0, 200))}"</span>`
         : "";
@@ -103,6 +104,4 @@ ${items}
 </aside>`;
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
+// escapeHtml imported from ../utils

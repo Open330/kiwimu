@@ -12,10 +12,10 @@ export async function setupDemo(store: Store): Promise<void> {
 
   // 2. Insert demo pages (physics + CS)
   for (const page of DEMO_PAGES) {
-    store.addPage(page.slug, page.title, page.content, page.source_id, undefined, page.page_type);
+    store.addPage(page.slug, page.title, page.content, page.source_id, undefined, page.page_type as 'source' | 'concept');
   }
   for (const page of CS_DEMO_PAGES) {
-    store.addPage(page.slug, page.title, page.content, page.source_id, undefined, page.page_type);
+    store.addPage(page.slug, page.title, page.content, page.source_id, undefined, page.page_type as 'source' | 'concept');
   }
 
   // 3. Insert demo links (physics + CS)

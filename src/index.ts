@@ -489,7 +489,7 @@ program
     const store = new Store(join(root, DB_FILE));
     try {
       const { lintWiki } = await import("./services/lint");
-      const report = await lintWiki(store);
+      const report = lintWiki(store);
 
       const { summary, issues } = report;
 
@@ -648,13 +648,13 @@ program
       const sources = store.listSources();
       const sourcePages = store.listSourcePages();
       const conceptPages = store.listConceptPages();
-      const links = store.getAllLinks();
+      const linkCount = store.countLinks();
 
       console.log(`\n\x1b[1m🥝 ${config.project.name}\x1b[0m\n`);
       console.log(`  소스     ${sources.length}`);
       console.log(`  📖 원본  ${sourcePages.length}`);
       console.log(`  📝 개념  ${conceptPages.length}`);
-      console.log(`  🔗 링크  ${links.length}`);
+      console.log(`  🔗 링크  ${linkCount}`);
       console.log(`  빌드     ${config.build.output_dir}`);
       console.log(`  배포     ${config.deploy.target}`);
 

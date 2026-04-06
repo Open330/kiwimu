@@ -2,6 +2,7 @@ import { Store } from "../store";
 import { LLMClient } from "../llm-client";
 import { loadConfig, getActivePersona, type Persona, type LLMConfig } from "../config";
 import { slugify } from "../pipeline/chunker";
+import { stripJsonFences } from "../utils";
 
 export interface DynamicQAResult {
   pageId: number;
@@ -80,7 +81,7 @@ Return a JSON object:
   let parsed: { title: string; content: string; isPromotable?: boolean; keyConcepts?: string[] };
   try {
     // Remove markdown code fences if present
-    let cleaned = raw.replace(/^```json?\n?/m, "").replace(/\n?```\s*$/m, "").trim();
+    let cleaned = stripJsonFences(raw);
 
     // Try to extract JSON object from response
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
@@ -114,8 +115,7 @@ Return a JSON object:
   } catch {
     // Fallback: treat the entire raw response as markdown content
     // Strip any JSON artifacts from the beginning
-    let fallbackContent = raw
-      .replace(/^```json?\n?/m, "").replace(/\n?```\s*$/m, "")
+    let fallbackContent = stripJsonFences(raw)
       .replace(/^\s*\{\s*"title"\s*:\s*"[^"]*"\s*,\s*"content"\s*:\s*"?/m, "")
       .replace(/"\s*\}\s*$/m, "")
       .trim();

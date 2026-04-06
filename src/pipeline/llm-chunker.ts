@@ -4,6 +4,7 @@ import { slugify } from "./chunker";
 import type { Persona, WikiSchema } from "../config";
 import { compileTerms, standardizeTerms } from "./standardizer";
 import { parseCitations } from "./citations";
+import { stripJsonFences } from "../utils";
 
 // ── Phase 1: Extract original document structure ──
 
@@ -188,7 +189,7 @@ function splitBySize(text: string, maxSize: number): Array<{ chapterHint: string
 }
 
 function parseJSON<T>(raw: string): T {
-  let cleaned = raw.replace(/^```json?\n?/m, "").replace(/\n?```\s*$/m, "").trim();
+  let cleaned = stripJsonFences(raw);
   try {
     return JSON.parse(cleaned);
   } catch (e1) {
@@ -359,6 +360,8 @@ export async function llmChunkDocument(
   // ── Phase 2: Extract concept pages ──
   const batchSize = 5;
   let conceptCount = 0;
+  // Cache concept pages list for reuse in Phase 2 and Phase 2.5
+  let cachedConceptPages: ReturnType<typeof store.listConceptPages> | null = null;
 
   if (sourcePageSummaries.length === 0) {
     console.log(`\x1b[33m⏭ Phase 2 건너뜀 (원본 페이지 없음)\x1b[0m`);
@@ -368,7 +371,8 @@ export async function llmChunkDocument(
     const lastCompletedBatch = store.getLastCompletedBatch(sourceId, 'phase2');
 
     if (lastCompletedBatch >= totalBatches - 1 && store.hasPhaseCheckpoint(sourceId, 'phase2')) {
-      conceptCount = store.listConceptPages().length;
+      cachedConceptPages = store.listConceptPages();
+      conceptCount = cachedConceptPages.length;
       console.log(`\x1b[32m⏭ Phase 2 건너뜀 (이미 완료) — 📝 ${conceptCount}개 개념 페이지\x1b[0m`);
       onProgress?.(`Phase 2 건너뜀 (${conceptCount}개 개념 이미 존재)`);
     } else {
@@ -450,6 +454,8 @@ export async function llmChunkDocument(
 
       const phase2Sec = ((performance.now() - phase2Start) / 1000).toFixed(1);
       console.log(`\x1b[32m✅ Phase 2 완료 (${phase2Sec}초) — 📝 ${conceptCount}개 개념 페이지 생성\x1b[0m`);
+      // Invalidate cache since new concepts were added
+      cachedConceptPages = null;
     }
   }
 
@@ -478,7 +484,7 @@ export async function llmChunkDocument(
     onProgress?.(`Phase 2.5 건너뜀 (퀴즈 이미 존재)`);
   } else {
     try {
-      const conceptPagesForQuiz = store.listConceptPages();
+      const conceptPagesForQuiz = cachedConceptPages ?? store.listConceptPages();
       if (conceptPagesForQuiz.length > 0) {
         console.log(`\x1b[34m⏳ Phase 2.5: 퀴즈 생성 중... (${conceptPagesForQuiz.length}개 개념 페이지)\x1b[0m`);
         onProgress?.(`Phase 2.5: 퀴즈 생성 중...`);

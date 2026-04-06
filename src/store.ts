@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { normalizeTitle } from "./utils";
 
 export interface Source {
   id: number;
@@ -16,7 +17,7 @@ export interface Page {
   content: string;
   source_id: number | null;
   section_anchor: string | null;
-  page_type: string; // 'source' | 'concept'
+  page_type: 'source' | 'concept';
   display_order: number;
   origin: string; // 'batch' | 'user'
   user_question: string | null;
@@ -77,6 +78,13 @@ export interface ActivityLogEntry {
   title: string;
   details: string | null;
   created_at: string;
+}
+
+export interface SourceCoverage {
+  sourceId: number;
+  sourceTitle: string;
+  citationCount: number;
+  pageCount: number;
 }
 
 const SCHEMA = `
@@ -147,6 +155,7 @@ CREATE INDEX IF NOT EXISTS idx_links_from_page ON links(from_page_id);
 CREATE INDEX IF NOT EXISTS idx_quizzes_page_id ON quizzes(page_id);
 CREATE INDEX IF NOT EXISTS idx_pages_origin ON pages(origin);
 CREATE INDEX IF NOT EXISTS idx_pages_parent ON pages(parent_page_id);
+CREATE INDEX IF NOT EXISTS idx_pages_category ON pages(category);
 CREATE TABLE IF NOT EXISTS pipeline_checkpoints (
   source_id INTEGER NOT NULL,
   phase TEXT NOT NULL,
@@ -289,7 +298,7 @@ export class Store {
     content: string,
     sourceId?: number,
     sectionAnchor?: string,
-    pageType: string = "concept",
+    pageType: 'source' | 'concept' = "concept",
     displayOrder: number = 0
   ): Page {
     this.db
@@ -435,15 +444,19 @@ export class Store {
     return this.db.prepare("SELECT * FROM links").all() as Link[];
   }
 
-  getAllBacklinksGrouped(): Map<number, Array<{id: number; slug: string; title: string; page_type: string}>> {
+  countLinks(): number {
+    return (this.db.prepare("SELECT COUNT(*) as c FROM links").get() as any).c;
+  }
+
+  getAllBacklinksGrouped(): Map<number, Array<{id: number; slug: string; title: string; page_type: 'source' | 'concept'}>> {
     const rows = this.db.prepare(`
       SELECT l.to_page_id, p.id, p.slug, p.title, p.page_type
       FROM links l
       JOIN pages p ON p.id = l.from_page_id
       ORDER BY l.to_page_id
-    `).all() as Array<{to_page_id: number; id: number; slug: string; title: string; page_type: string}>;
+    `).all() as Array<{to_page_id: number; id: number; slug: string; title: string; page_type: 'source' | 'concept'}>;
 
-    const map = new Map<number, Array<{id: number; slug: string; title: string; page_type: string}>>();
+    const map = new Map<number, Array<{id: number; slug: string; title: string; page_type: 'source' | 'concept'}>>();
     for (const row of rows) {
       if (!map.has(row.to_page_id)) map.set(row.to_page_id, []);
       map.get(row.to_page_id)!.push({ id: row.id, slug: row.slug, title: row.title, page_type: row.page_type });
@@ -673,10 +686,11 @@ export class Store {
     this.db.prepare("DELETE FROM pipeline_checkpoints WHERE source_id = ?").run(sourceId);
   }
 
-  searchPages(query: string, limit: number = 5): Array<{slug: string; title: string; page_type: string; origin: string; preview: string; rank: number}> {
+  searchPages(query: string, limit: number = 5): Array<{slug: string; title: string; page_type: 'source' | 'concept'; origin: string; preview: string; rank: number}> {
     try {
       // Try FTS5 search first (much better relevance)
-      const ftsQuery = query.split(/\s+/).filter(w => w.length >= 2).map(w => `"${w}"`).join(' OR ');
+      const ftsQuery = query.split(/\s+/).filter(w => w.length >= 2).map(w => `"${w.replace(/"/g, "")}"`)
+.join(' OR ');
       if (!ftsQuery) return [];
 
       return this.db.prepare(`
@@ -746,13 +760,16 @@ export class Store {
 
   /** Find a page with a very similar title (normalized: lowercase, trimmed, no punctuation) */
   findSimilarPage(title: string): Page | null {
-    const normalized = title.toLowerCase().trim().replace(/[^\w\s가-힣ㄱ-ㅎㅏ-ㅣ]/g, "").replace(/\s+/g, " ");
+    const normalized = normalizeTitle(title);
     if (!normalized) return null;
 
-    const allPages = this.db.prepare("SELECT * FROM pages WHERE page_type = 'concept'").all() as Page[];
-    for (const page of allPages) {
-      const pageNorm = page.title.toLowerCase().trim().replace(/[^\w\s가-힣ㄱ-ㅎㅏ-ㅣ]/g, "").replace(/\s+/g, " ");
-      if (pageNorm === normalized) return page;
+    const rows = this.db.prepare("SELECT id, slug, title FROM pages WHERE page_type = 'concept'")
+      .all() as Array<{ id: number; slug: string; title: string }>;
+    for (const row of rows) {
+      if (normalizeTitle(row.title) === normalized) {
+        // Fetch the full page only for the match
+        return this.getPage(row.slug);
+      }
     }
     return null;
   }
@@ -800,24 +817,31 @@ export class Store {
   getPagesBySource(): Array<{
     sourceId: number;
     sourceTitle: string;
-    pages: Array<{ id: number; title: string; slug: string; page_type: string; linkCount: number }>;
+    pages: Array<{ id: number; title: string; slug: string; page_type: 'source' | 'concept'; linkCount: number }>;
   }> {
     const rows = this.db.prepare(`
       SELECT p.id, p.title, p.slug, p.page_type, p.source_id,
              COALESCE(s.title, '미분류') as source_title,
-             (SELECT COUNT(*) FROM links WHERE from_page_id = p.id OR to_page_id = p.id) as link_count
+             COALESCE(lc.cnt, 0) as link_count
       FROM pages p
       LEFT JOIN sources s ON s.id = p.source_id
+      LEFT JOIN (
+        SELECT page_id, COUNT(*) as cnt FROM (
+          SELECT from_page_id as page_id FROM links
+          UNION ALL
+          SELECT to_page_id as page_id FROM links
+        ) GROUP BY page_id
+      ) lc ON lc.page_id = p.id
       ORDER BY COALESCE(s.title, 'zzz'), p.display_order, p.title
     `).all() as Array<{
-      id: number; title: string; slug: string; page_type: string;
+      id: number; title: string; slug: string; page_type: 'source' | 'concept';
       source_id: number | null; source_title: string; link_count: number;
     }>;
 
     const groupMap = new Map<number | -1, {
       sourceId: number;
       sourceTitle: string;
-      pages: Array<{ id: number; title: string; slug: string; page_type: string; linkCount: number }>;
+      pages: Array<{ id: number; title: string; slug: string; page_type: 'source' | 'concept'; linkCount: number }>;
     }>();
 
     for (const row of rows) {
@@ -879,7 +903,7 @@ export class Store {
     `).all(sourceId) as Citation[];
   }
 
-  getSourceCoverage(): Array<{ sourceId: number; sourceTitle: string; citationCount: number; pageCount: number }> {
+  getSourceCoverage(): SourceCoverage[] {
     return this.db.prepare(`
       SELECT s.id as sourceId, s.title as sourceTitle,
         COUNT(c.id) as citationCount,
@@ -888,7 +912,7 @@ export class Store {
       LEFT JOIN citations c ON c.source_id = s.id
       GROUP BY s.id
       ORDER BY citationCount DESC
-    `).all() as any[];
+    `).all() as SourceCoverage[];
   }
 
   deleteCitationsForPage(pageId: number): void {
@@ -901,5 +925,21 @@ export class Store {
 
   getPageById(id: number): Page | null {
     return (this.db.prepare("SELECT * FROM pages WHERE id = ?").get(id) as Page) ?? null;
+  }
+
+  /** Update origin metadata for a page (used by promote). */
+  updatePageOrigin(slug: string, origin: string, userQuestion: string, parentPageId: number): void {
+    this.db
+      .prepare("UPDATE pages SET origin = ?, user_question = ?, parent_page_id = ? WHERE slug = ?")
+      .run(origin, userQuestion, parentPageId, slug);
+  }
+
+  /** Return lightweight page summaries (no content) for wiki-linking. */
+  listPageSummaries(): Array<{ id: number; slug: string; title: string }> {
+    return this.db.prepare("SELECT id, slug, title FROM pages ORDER BY title").all() as Array<{
+      id: number;
+      slug: string;
+      title: string;
+    }>;
   }
 }

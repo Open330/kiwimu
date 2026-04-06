@@ -1,4 +1,5 @@
 import type { Store } from "../store";
+import { normalizeTitle } from "../utils";
 
 export interface LintIssue {
   type: 'orphan' | 'dead_link' | 'disconnected' | 'missing_backlink' | 'thin_content' | 'duplicate';
@@ -15,7 +16,7 @@ export interface LintReport {
   timestamp: string;
 }
 
-export async function lintWiki(store: Store): Promise<LintReport> {
+export function lintWiki(store: Store): LintReport {
   const pages = store.listPages();
   const links = store.getAllLinks();
 
@@ -154,8 +155,8 @@ export async function lintWiki(store: Store): Promise<LintReport> {
   }
 
   // --- f) Duplicate Concepts ---
-  // Normalize titles and compare
-  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9가-힣]/g, '').trim();
+  // Normalize titles and compare (strip spaces for stricter dedup matching)
+  const normalize = (s: string) => normalizeTitle(s).replace(/\s/g, "");
   const seen = new Map<string, { id: number; title: string }>();
   for (const page of pages) {
     const norm = normalize(page.title);
@@ -184,6 +185,8 @@ export async function lintWiki(store: Store): Promise<LintReport> {
       const b = normalize(titles[j].title);
       if (a.length < 3 || b.length < 3) continue;
       const maxLen = Math.max(a.length, b.length);
+      // Skip pairs where length difference is too large for 85% similarity
+      if (Math.abs(a.length - b.length) > maxLen * 0.2) continue;
       const dist = levenshtein(a, b);
       const similarity = 1 - dist / maxLen;
       if (similarity >= 0.85 && similarity < 1) {
