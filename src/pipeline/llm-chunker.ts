@@ -3,6 +3,7 @@ import type { Store } from "../store";
 import { slugify } from "./chunker";
 import type { Persona, WikiSchema } from "../config";
 import { compileTerms, standardizeTerms } from "./standardizer";
+import { parseCitations } from "./citations";
 
 // ── Phase 1: Extract original document structure ──
 
@@ -90,9 +91,15 @@ Create 3-6 concept pages for the most important terms, definitions, laws, and eq
 Do NOT duplicate the source pages — instead, create focused concept pages that the source pages can link to.
 Keep each page concise (2-3 paragraphs).${styleNote}
 
+IMPORTANT — Provenance citations:
+When a claim or fact comes from a specific source page, add an inline citation marker at the end of that sentence using the format [^src:SOURCE_PAGE_SLUG].
+The SOURCE_PAGE_SLUG must match one of the source page slugs listed above (the hyphenated identifier shown after the title).
+Example: "Quantum entanglement allows particles to share states instantly [^src:chapter-3-quantum-states]"
+Only cite when a fact clearly originates from a specific source page. Not every sentence needs a citation.
+
 Return a JSON array where each element has:
 - "title": string — Short concept name, 1-3 words (e.g., "Synchrotron Radiation", "Flux Density", "Angular Resolution"). Keep titles short so they match naturally in text.
-- "content": string — Educational markdown content with [[wiki links]] to other concepts and source pages${categoryField}
+- "content": string — Educational markdown content with [[wiki links]] to other concepts and source pages, and [^src:slug] citations where appropriate${categoryField}
 - "suggested_links": Array<{text: string, url: string}> — Wikipedia/external reference links`;
 }
 
@@ -279,7 +286,7 @@ export async function llmChunkDocument(
     const existingPages = store.getSourcePages(sourceId);
     sourceCount = existingPages.length;
     sourcePageSummaries = existingPages.map(p =>
-      `- ${p.title}: ${p.content.slice(0, 150).replace(/\n/g, " ")}`
+      `- ${p.title} [slug: ${p.slug}]: ${p.content.slice(0, 150).replace(/\n/g, " ")}`
     );
     console.log(`\x1b[32m⏭ Phase 1 건너뜀 (이미 완료) — 📖 ${sourceCount}개 원본 페이지\x1b[0m`);
     onProgress?.(`Phase 1 건너뜀 (${sourceCount}개 페이지 이미 존재)`);
@@ -337,7 +344,8 @@ export async function llmChunkDocument(
         } else {
           const page = store.addPage(slug, section.title, section.content, sourceId, slug, "source", orderCounter++);
           store.addActivityLog('page_created', `Created page: ${section.title}`, 'page', page.id);
-          sourcePageSummaries.push(`- ${section.title}: ${section.content.slice(0, 150).replace(/\n/g, " ")}`);
+          sourcePageSummaries.push(`- ${section.title} [slug: ${slug}]: ${section.content.slice(0, 150).replace(/\n/g, " ")}`);
+
         }
       }
     }
@@ -442,6 +450,24 @@ export async function llmChunkDocument(
 
       const phase2Sec = ((performance.now() - phase2Start) / 1000).toFixed(1);
       console.log(`\x1b[32m✅ Phase 2 완료 (${phase2Sec}초) — 📝 ${conceptCount}개 개념 페이지 생성\x1b[0m`);
+    }
+  }
+
+  // ── Phase 2 post-processing: Parse citation markers ──
+  {
+    const conceptPagesForCitations = store.listConceptPages();
+    let citationCount = 0;
+    for (const page of conceptPagesForCitations) {
+      if (page.content.includes("[^src:")) {
+        const parsed = parseCitations(page.content, page.id, store);
+        if (parsed !== page.content) {
+          store.updatePageContent(page.id, parsed);
+          citationCount++;
+        }
+      }
+    }
+    if (citationCount > 0) {
+      console.log(`\x1b[32m  📚 ${citationCount}개 페이지에서 인용 정보 생성 완료\x1b[0m`);
     }
   }
 

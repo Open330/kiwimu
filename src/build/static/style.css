@@ -1606,6 +1606,9 @@ a.redlink:hover {
     .catalog-badge.concept { background: #1a2a3a; color: #6eb0cf; }
     .catalog-link-count { color: var(--text-muted); }
     .catalog-filter input { background: var(--bg-alt); color: var(--text); border-color: var(--border); }
+
+    /* Citations dark mode */
+    .citations-section { border-color: var(--border); background: var(--bg-alt); }
 }
 
 /* ─── Catalog Page ─── */
@@ -1679,4 +1682,47 @@ a.redlink:hover {
     padding: 40px;
     text-align: center;
     color: var(--text-muted);
+}
+
+/* ── Citations ── */
+.citation-ref { font-size: 0.75em; vertical-align: super; line-height: 1; }
+.citation-ref a { color: var(--namu-green, #2e7d32); text-decoration: none; font-weight: 600; }
+.citation-ref a:hover { text-decoration: underline; }
+
+.citations-section {
+    margin-top: 32px;
+    padding: 16px 20px;
+    border: 1px solid var(--border, #e0e0e0);
+    border-radius: 8px;
+    background: var(--bg-secondary, #f8f9fa);
+    font-size: 0.875rem;
+}
+.citations-section h3 {
+    margin: 0 0 12px 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-muted, #666);
+}
+.citation-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.citation-item {
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border, #eee);
+    line-height: 1.5;
+}
+.citation-item:last-child { border-bottom: none; }
+.citation-num {
+    font-weight: 600;
+    color: var(--namu-green, #2e7d32);
+    margin-right: 4px;
+}
+.citation-excerpt {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--text-muted, #888);
+    font-style: italic;
+    margin-top: 2px;
 }

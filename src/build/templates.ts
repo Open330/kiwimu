@@ -46,6 +46,7 @@ function sidebarHtml(sourcePages: PageLink[], conceptPages: PageLink[], activeSl
                 <a href="/quiz.html">📝 퀴즈</a>
                 <a href="/dashboard.html">📊 대시보드</a>
                 <a href="/graph.html">🔗 그래프</a>
+                <a href="/provenance">📚 출처</a>
                 <a href="/manage">⚙️ 관리</a>
             </div>`;
 }
@@ -160,6 +161,7 @@ export function renderPage(opts: {
   externalRefs: string;
   toc: string;
   backlinks: PageLink[];
+  citationsHtml?: string;
   sourcePages: PageLink[];
   conceptPages: PageLink[];
 }): string {
@@ -199,6 +201,8 @@ export function renderPage(opts: {
     ? `<details class="toc-box" open><summary>목차</summary>${opts.toc}</details>`
     : "";
 
+  const citationsHtml = opts.citationsHtml || "";
+
   const content = `
 <article class="wiki-page" data-page-slug="${opts.pageSlug}" data-page-id="${opts.pageId}">
     <header class="page-header">
@@ -207,6 +211,7 @@ export function renderPage(opts: {
     </header>
     ${tocHtml}
     <div class="page-body">${opts.content}</div>
+    ${citationsHtml}
     ${externalRefsHtml}
     ${backlinksHtml}
 </article>
@@ -1201,6 +1206,93 @@ export function renderCatalogPage(opts: {
     sourcePages: opts.sourcePages,
     conceptPages: opts.conceptPages,
     description: `${opts.wikiName} 전체 문서 목록 — ${opts.totalPages}개 문서`,
+    content,
+  });
+}
+
+export function renderProvenancePage(opts: {
+  wikiName: string;
+  coverage: Array<{
+    sourceId: number;
+    sourceTitle: string;
+    citationCount: number;
+    pageCount: number;
+    pages: Array<{ title: string; slug: string }>;
+  }>;
+  sourcePages: PageLink[];
+  conceptPages: PageLink[];
+}): string {
+  const totalCitations = opts.coverage.reduce((s, c) => s + c.citationCount, 0);
+  const totalSourcesCited = opts.coverage.filter(c => c.citationCount > 0).length;
+
+  const rows = opts.coverage.map(c => {
+    const pageLinks = c.pages.map(p =>
+      `<a href="/wiki/${p.slug}.html" class="provenance-page-link">${escapeHtml(p.title)}</a>`
+    ).join(", ") || '<span class="text-muted">-</span>';
+
+    const barWidth = totalCitations > 0 ? Math.max(2, Math.round((c.citationCount / totalCitations) * 100)) : 0;
+    const barColor = c.citationCount === 0 ? '#e0e0e0' : c.citationCount < 3 ? '#ffc107' : '#28a745';
+
+    return `<tr>
+      <td>${escapeHtml(c.sourceTitle || 'Untitled')}</td>
+      <td class="text-center">${c.citationCount}</td>
+      <td class="text-center">${c.pageCount}</td>
+      <td><div class="provenance-bar" style="width:${barWidth}%;background:${barColor}"></div></td>
+      <td class="provenance-pages">${pageLinks}</td>
+    </tr>`;
+  }).join("\n");
+
+  const content = `
+<div class="provenance-page">
+  <h1>Source Provenance</h1>
+  <p class="provenance-summary">
+    ${totalCitations} citations across ${totalSourcesCited}/${opts.coverage.length} sources
+  </p>
+
+  <table class="provenance-table">
+    <thead>
+      <tr>
+        <th>Source</th>
+        <th class="text-center">Citations</th>
+        <th class="text-center">Pages</th>
+        <th>Coverage</th>
+        <th>Citing Pages</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows}
+    </tbody>
+  </table>
+
+  ${opts.coverage.some(c => c.citationCount === 0) ? `
+  <div class="provenance-warning">
+    <strong>Uncited sources:</strong>
+    ${opts.coverage.filter(c => c.citationCount === 0).map(c => escapeHtml(c.sourceTitle || 'Untitled')).join(", ")}
+    <br><small>Run <code>kiwimu cite</code> to retroactively generate citations for existing content.</small>
+  </div>` : ''}
+</div>
+
+<style>
+.provenance-page { max-width: 960px; margin: 0 auto; }
+.provenance-page h1 { margin-bottom: 8px; }
+.provenance-summary { color: var(--text-muted); margin-bottom: 24px; }
+.provenance-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.provenance-table th, .provenance-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+.provenance-table th { font-weight: 600; background: var(--bg-secondary, #f8f9fa); }
+.text-center { text-align: center !important; }
+.text-muted { color: var(--text-muted, #999); }
+.provenance-bar { height: 8px; border-radius: 4px; min-width: 2px; }
+.provenance-pages { font-size: 12px; }
+.provenance-page-link { display: inline-block; margin: 2px 4px 2px 0; padding: 1px 6px; background: var(--bg-secondary, #f0f0f0); border-radius: 3px; text-decoration: none; color: var(--namu-green, #2e7d32); }
+.provenance-page-link:hover { background: var(--namu-green, #2e7d32); color: white; }
+.provenance-warning { margin-top: 24px; padding: 12px 16px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; font-size: 13px; }
+</style>`;
+
+  return base({
+    title: `Source Provenance - ${opts.wikiName}`,
+    wikiName: opts.wikiName,
+    sourcePages: opts.sourcePages,
+    conceptPages: opts.conceptPages,
     content,
   });
 }

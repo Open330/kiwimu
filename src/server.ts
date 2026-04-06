@@ -681,6 +681,24 @@ Rules:
         }
       }
 
+      // Citation endpoints
+      if (url.pathname.match(/^\/api\/pages\/(\d+)\/citations$/) && req.method === "GET") {
+        const pageId = parseInt(url.pathname.split("/")[3]);
+        const citations = store.getCitationsForPage(pageId);
+        return Response.json({ citations });
+      }
+
+      if (url.pathname.match(/^\/api\/sources\/(\d+)\/citations$/) && req.method === "GET") {
+        const sourceId = parseInt(url.pathname.split("/")[3]);
+        const citations = store.getCitationsForSource(sourceId);
+        return Response.json({ citations });
+      }
+
+      if (url.pathname === "/api/provenance" && req.method === "GET") {
+        const coverage = store.getSourceCoverage();
+        return Response.json({ coverage });
+      }
+
       // Get page raw content endpoint
       if (url.pathname.startsWith("/api/page/") && req.method === "GET") {
         const slug = url.pathname.replace("/api/page/", "");
@@ -703,6 +721,49 @@ Rules:
         const stats = store.getActivityStats();
         const html = renderActivityPage(authToken, config.project.name, stats);
         return new Response(html, { headers: { "Content-Type": "text/html" } });
+      }
+
+      // Provenance page (no auth required — it's a public view page)
+      if (url.pathname === "/provenance") {
+        const coverage = store.getSourceCoverage();
+        const sources = store.listSourcesMeta();
+        const conceptPages = store.listConceptPages();
+        const sourcePages = store.listSourcePages();
+        const configData = loadConfig(root);
+
+        // Build citation matrix: for each source, which pages cite it
+        const matrix: Array<{
+          sourceId: number;
+          sourceTitle: string;
+          citationCount: number;
+          pageCount: number;
+          pages: Array<{ title: string; slug: string }>;
+        }> = [];
+
+        for (const cov of coverage) {
+          const citations = store.getCitationsForSource(cov.sourceId);
+          const pageMap = new Map<number, { title: string; slug: string }>();
+          for (const c of citations) {
+            if (c.page_title && c.page_slug && !pageMap.has(c.page_id)) {
+              pageMap.set(c.page_id, { title: c.page_title, slug: c.page_slug });
+            }
+          }
+          matrix.push({
+            sourceId: cov.sourceId,
+            sourceTitle: cov.sourceTitle,
+            citationCount: cov.citationCount,
+            pageCount: cov.pageCount,
+            pages: Array.from(pageMap.values()),
+          });
+        }
+
+        const { renderProvenancePage } = await import("./build/templates");
+        return new Response(renderProvenancePage({
+          wikiName: configData.project.name,
+          coverage: matrix,
+          sourcePages: sourcePages.map(p => ({ slug: p.slug, title: p.title })),
+          conceptPages: conceptPages.map(p => ({ slug: p.slug, title: p.title })),
+        }), { headers: { "Content-Type": "text/html" } });
       }
 
       // ── Static file serving ──

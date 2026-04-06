@@ -38,6 +38,22 @@ export interface Link {
   anchor_text: string;
 }
 
+export interface Citation {
+  id: number;
+  page_id: number;
+  source_id: number;
+  source_page_id: number | null;
+  excerpt: string | null;
+  context: string | null;
+  created_at: string;
+  // Joined fields (optional, populated by queries)
+  source_title?: string;
+  source_page_title?: string;
+  source_page_slug?: string;
+  page_title?: string;
+  page_slug?: string;
+}
+
 export interface Quiz {
   id: number;
   page_id: number;
@@ -157,6 +173,20 @@ CREATE TABLE IF NOT EXISTS activity_log (
 );
 CREATE INDEX IF NOT EXISTS idx_activity_log_action ON activity_log(action);
 CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at);
+CREATE TABLE IF NOT EXISTS citations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  page_id INTEGER NOT NULL,
+  source_id INTEGER NOT NULL,
+  source_page_id INTEGER,
+  excerpt TEXT,
+  context TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE,
+  FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE CASCADE,
+  FOREIGN KEY (source_page_id) REFERENCES pages(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_citations_page ON citations(page_id);
+CREATE INDEX IF NOT EXISTS idx_citations_source ON citations(source_id);
 `;
 
 const FTS_SCHEMA = `
@@ -316,6 +346,10 @@ export class Store {
     this.db.prepare(
       "DELETE FROM links WHERE from_page_id IN (SELECT id FROM pages WHERE source_id = ?) OR to_page_id IN (SELECT id FROM pages WHERE source_id = ?)"
     ).run(sourceId, sourceId);
+    // Delete citations involving these pages
+    this.db.prepare(
+      "DELETE FROM citations WHERE page_id IN (SELECT id FROM pages WHERE source_id = ?) OR source_id = ?"
+    ).run(sourceId, sourceId);
     this.db.prepare("DELETE FROM pages WHERE source_id = ?").run(sourceId);
   }
 
@@ -323,6 +357,7 @@ export class Store {
     this.db.exec("DELETE FROM quiz_attempts");
     this.db.exec("DELETE FROM quizzes");
     this.db.exec("DELETE FROM links");
+    this.db.exec("DELETE FROM citations");
     this.db.exec("DELETE FROM pages");
   }
 
@@ -804,5 +839,67 @@ export class Store {
     }
 
     return Array.from(groupMap.values());
+  }
+
+  // --- Citations ---
+
+  addCitation(pageId: number, sourceId: number, sourcePageId?: number, excerpt?: string, context?: string): number {
+    this.db.prepare(
+      "INSERT INTO citations (page_id, source_id, source_page_id, excerpt, context) VALUES (?, ?, ?, ?, ?)"
+    ).run(pageId, sourceId, sourcePageId ?? null, excerpt ?? null, context ?? null);
+    return (this.db.prepare("SELECT last_insert_rowid() as id").get() as any).id;
+  }
+
+  getCitationsForPage(pageId: number): Citation[] {
+    return this.db.prepare(`
+      SELECT c.*,
+        s.title as source_title,
+        sp.title as source_page_title,
+        sp.slug as source_page_slug
+      FROM citations c
+      JOIN sources s ON s.id = c.source_id
+      LEFT JOIN pages sp ON sp.id = c.source_page_id
+      WHERE c.page_id = ?
+      ORDER BY c.id
+    `).all(pageId) as Citation[];
+  }
+
+  getCitationsForSource(sourceId: number): Citation[] {
+    return this.db.prepare(`
+      SELECT c.*,
+        p.title as page_title,
+        p.slug as page_slug,
+        sp.title as source_page_title,
+        sp.slug as source_page_slug
+      FROM citations c
+      JOIN pages p ON p.id = c.page_id
+      LEFT JOIN pages sp ON sp.id = c.source_page_id
+      WHERE c.source_id = ?
+      ORDER BY c.id
+    `).all(sourceId) as Citation[];
+  }
+
+  getSourceCoverage(): Array<{ sourceId: number; sourceTitle: string; citationCount: number; pageCount: number }> {
+    return this.db.prepare(`
+      SELECT s.id as sourceId, s.title as sourceTitle,
+        COUNT(c.id) as citationCount,
+        COUNT(DISTINCT c.page_id) as pageCount
+      FROM sources s
+      LEFT JOIN citations c ON c.source_id = s.id
+      GROUP BY s.id
+      ORDER BY citationCount DESC
+    `).all() as any[];
+  }
+
+  deleteCitationsForPage(pageId: number): void {
+    this.db.prepare("DELETE FROM citations WHERE page_id = ?").run(pageId);
+  }
+
+  getSourceById(id: number): Source | null {
+    return (this.db.prepare("SELECT * FROM sources WHERE id = ?").get(id) as Source) ?? null;
+  }
+
+  getPageById(id: number): Page | null {
+    return (this.db.prepare("SELECT * FROM pages WHERE id = ?").get(id) as Page) ?? null;
   }
 }
