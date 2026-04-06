@@ -214,8 +214,22 @@
   function showResult(data) {
     loading.style.display = 'none';
     isGenerating = false;
-    result.innerHTML = `<a href="${data.url}" class="qa-result-link">📝 ${esc(data.title)}</a><span class="qa-result-hint">새 개념 페이지가 생성되었습니다</span>`;
+
+    let html = `<a href="${data.url}" class="qa-result-link">\ud83d\udcdd ${esc(data.title)}</a><span class="qa-result-hint">새 개념 페이지가 생성되었습니다</span>`;
+
+    // Show "Save to Wiki" button if the answer is promotable
+    if (data.isPromotable) {
+      html += `<button class="qa-promote-btn" title="퀴즈와 위키 링크가 포함된 영구 페이지로 저장합니다">\ud83d\udcbe 위키에 저장</button>`;
+    }
+
+    result.innerHTML = html;
     result.style.display = 'block';
+
+    // Attach promote handler
+    const promoteBtn = result.querySelector('.qa-promote-btn');
+    if (promoteBtn) {
+      promoteBtn.addEventListener('click', () => promoteToWiki(data));
+    }
 
     // Replace highlight with a link to the new page
     if (highlightMark && highlightMark.parentNode) {
@@ -223,9 +237,59 @@
       link.href = data.url;
       link.textContent = highlightMark.textContent;
       link.className = 'wiki-link dynamic-link';
-      link.title = '📝 ' + data.title;
+      link.title = '\ud83d\udcdd ' + data.title;
       highlightMark.parentNode.replaceChild(link, highlightMark);
       highlightMark = null;
+    }
+  }
+
+  async function promoteToWiki(data) {
+    const promoteBtn = result.querySelector('.qa-promote-btn');
+    if (promoteBtn) {
+      promoteBtn.disabled = true;
+      promoteBtn.textContent = '\u23f3 저장 중...';
+    }
+
+    try {
+      const resp = await fetch('/api/promote', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + authToken
+        },
+        body: JSON.stringify({
+          question: data.question || '',
+          answer: data.content || '',
+          title: data.suggestedTitle || data.title,
+          sourcePageId: data.sourcePageId || parseInt(pageId),
+          selectedText: data.selectedText || selectedText,
+        })
+      });
+
+      const promoteData = await resp.json();
+
+      if (promoteData.ok) {
+        if (promoteBtn) {
+          promoteBtn.remove();
+        }
+        const notice = document.createElement('div');
+        notice.className = 'qa-promote-success';
+        const statusText = promoteData.updated ? '기존 페이지에 내용 추가됨' : '위키 페이지로 저장됨 (퀴즈 포함)';
+        notice.innerHTML = `<span>\u2705 ${esc(statusText)}</span> <a href="${promoteData.url}">\u2192 ${esc(promoteData.title)}</a>`;
+        result.appendChild(notice);
+      } else {
+        if (promoteBtn) {
+          promoteBtn.disabled = false;
+          promoteBtn.textContent = '\ud83d\udcbe 위키에 저장';
+        }
+        alert(promoteData.error || '저장에 실패했습니다');
+      }
+    } catch {
+      if (promoteBtn) {
+        promoteBtn.disabled = false;
+        promoteBtn.textContent = '\ud83d\udcbe 위키에 저장';
+      }
+      alert('서버 연결에 실패했습니다');
     }
   }
 

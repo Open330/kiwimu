@@ -8,6 +8,9 @@ export interface DynamicQAResult {
   slug: string;
   title: string;
   content: string;
+  isPromotable: boolean;
+  suggestedTitle: string;
+  keyConcepts: string[];
 }
 
 export async function generateDynamicPage(
@@ -65,13 +68,16 @@ ${relatedSummaries || '(none)'}
 ${conceptTitles || '(none)'}
 
 Return a JSON object:
-{"title": "Short concept title", "content": "Full markdown content with [[wiki links]]"}`;
+{"title": "Short concept title", "content": "Full markdown content with [[wiki links]]", "isPromotable": true, "keyConcepts": ["concept1", "concept2"]}
+
+- "isPromotable": true if the answer has enough educational substance (2+ paragraphs, definitions, examples) to be a standalone wiki page, false if it's just a brief clarification
+- "keyConcepts": array of 1-5 key concept terms mentioned in the answer`;
 
   // 3. Call LLM
   const raw = await llmClient.chatComplete(systemPrompt, userPrompt, 4096);
 
   // 4. Parse response — robust JSON extraction with multiple fallbacks
-  let parsed: { title: string; content: string };
+  let parsed: { title: string; content: string; isPromotable?: boolean; keyConcepts?: string[] };
   try {
     // Remove markdown code fences if present
     let cleaned = raw.replace(/^```json?\n?/m, "").replace(/\n?```\s*$/m, "").trim();
@@ -165,5 +171,20 @@ Return a JSON object:
 
   store.addActivityLog('query', `Asked: ${userQuestion.slice(0, 80)}`, 'page', pageId, { parentSlug: parentPage.slug, selectedText: selectedText.slice(0, 200) });
 
-  return { pageId, slug: finalSlug, title: parsed.title, content: parsed.content };
+  // Determine promotability: content should be substantial (2+ paragraphs, 200+ chars)
+  const isPromotable = parsed.isPromotable !== undefined
+    ? parsed.isPromotable
+    : parsed.content.length >= 200 && (parsed.content.match(/\n\n/g) || []).length >= 1;
+
+  const keyConcepts = Array.isArray(parsed.keyConcepts) ? parsed.keyConcepts.filter(c => typeof c === 'string') : [];
+
+  return {
+    pageId,
+    slug: finalSlug,
+    title: parsed.title,
+    content: parsed.content,
+    isPromotable,
+    suggestedTitle: parsed.title,
+    keyConcepts,
+  };
 }

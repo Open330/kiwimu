@@ -343,13 +343,45 @@ export function startServer(root: string, port: number, host: string): void {
               await buildSinglePage(root, store, result.slug);
               await buildSinglePage(root, store, page_slug);
 
+              // Check auto_promote config
+              const qaConfig = currentConfig.qa;
+              if (qaConfig?.auto_promote && result.isPromotable) {
+                // Auto-promote: create permanent wiki page with quizzes
+                try {
+                  const promoteResp = await fetch(`http://localhost:${port}/api/promote`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+                    body: JSON.stringify({
+                      question: autoQuestion,
+                      answer: result.content,
+                      title: result.suggestedTitle,
+                      sourcePageId: parentPage.id,
+                      selectedText: selected_text,
+                    }),
+                  });
+                  const promoteData = await promoteResp.json() as Record<string, unknown>;
+                  if (promoteData.ok) {
+                    console.log(`\x1b[32m✅ Auto-promoted: ${result.title}\x1b[0m`);
+                  }
+                } catch (promoteErr) {
+                  console.log(`\x1b[33m⚠ Auto-promote failed: ${promoteErr}\x1b[0m`);
+                }
+              }
+
               bgTasks.set(taskId, {
                 status: 'completed',
                 result: {
                   ok: true,
                   slug: result.slug,
                   title: result.title,
-                  url: `/wiki/${result.slug}.html`
+                  url: `/wiki/${result.slug}.html`,
+                  isPromotable: result.isPromotable,
+                  suggestedTitle: result.suggestedTitle,
+                  keyConcepts: result.keyConcepts,
+                  sourcePageId: parentPage.id,
+                  content: result.content,
+                  question: autoQuestion,
+                  selectedText: selected_text,
                 }
               });
             } catch (e: unknown) {
@@ -379,6 +411,158 @@ export function startServer(root: string, port: number, host: string): void {
           return Response.json({ error: "작업을 찾을 수 없습니다" }, { status: 404 });
         }
         return Response.json(task);
+      }
+
+      // ── Promote Q&A answer to permanent wiki page ──
+      if (url.pathname === "/api/promote" && req.method === "POST") {
+        try {
+          const body = await req.json() as {
+            question: string;
+            answer: string;
+            title: string;
+            sourcePageId: number;
+            selectedText?: string;
+          };
+
+          if (!body.question || !body.answer || !body.title || !body.sourcePageId) {
+            return Response.json({ error: "question, answer, title, sourcePageId가 필요합니다" }, { status: 400 });
+          }
+
+          const sourcePage = store.listPages().find(p => p.id === body.sourcePageId);
+          if (!sourcePage) {
+            return Response.json({ error: "원본 페이지를 찾을 수 없습니다" }, { status: 404 });
+          }
+
+          // Deduplication: check if similar page already exists
+          const existing = store.findSimilarPage(body.title);
+          if (existing) {
+            // Update existing page content instead of creating duplicate
+            const updatedContent = existing.content + "\n\n---\n\n" + body.answer;
+            store.updatePageContent(existing.id, updatedContent);
+
+            // Hot-render updated page
+            const { buildSinglePage } = await import("./build/renderer");
+            await buildSinglePage(root, store, existing.slug);
+
+            return Response.json({
+              ok: true,
+              slug: existing.slug,
+              title: existing.title,
+              url: `/wiki/${existing.slug}.html`,
+              updated: true,
+              message: "기존 페이지에 내용이 추가되었습니다",
+            });
+          }
+
+          // Create new concept page from Q&A answer
+          const { slugify } = await import("./pipeline/chunker");
+          let slug = slugify(body.title);
+          if (!slug) slug = slugify(body.question);
+          if (!slug) slug = `qa-${Date.now()}`;
+
+          let finalSlug = slug;
+          let counter = 2;
+          while (store.getPage(finalSlug)) {
+            finalSlug = `${slug}-${counter++}`;
+          }
+
+          // Build page content with context
+          let pageContent = body.answer;
+          if (body.selectedText) {
+            pageContent = `> ${body.selectedText.slice(0, 500)}\n\n${pageContent}`;
+          }
+
+          const page = store.addPage(finalSlug, body.title, pageContent, undefined, undefined, "concept", 0);
+
+          // Mark as user-generated origin (addPage defaults to 'batch')
+          const db = (store as any).db as import("bun:sqlite").Database;
+          db.prepare("UPDATE pages SET origin = 'user', user_question = ?, parent_page_id = ? WHERE slug = ?")
+            .run(body.question, body.sourcePageId, finalSlug);
+
+          // Inject wiki links into the new page (targeted, not full re-link)
+          const allPages = store.listPages();
+          const targets = allPages
+            .filter(p => p.id !== page.id && p.title.length >= 3)
+            .sort((a, b) => b.title.length - a.title.length);
+
+          let linkedContent = pageContent;
+          const linkedSlugs = new Set<string>();
+          for (const target of targets) {
+            if (linkedSlugs.has(target.slug)) continue;
+            const escaped = target.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const regex = new RegExp(`(?<!\\[)(?<!\\w)(${escaped})(?!\\w)(?!\\])`, "i");
+            const match = regex.exec(linkedContent);
+            if (match) {
+              const replacement = `[${match[1]}](/wiki/${target.slug})`;
+              linkedContent = linkedContent.slice(0, match.index) + replacement + linkedContent.slice(match.index + match[0].length);
+              linkedSlugs.add(target.slug);
+              store.addLink(page.id, target.id, match[1]);
+            }
+          }
+          if (linkedSlugs.size > 0) {
+            store.updatePageContent(page.id, linkedContent);
+          }
+
+          // Add link from source page to new page
+          store.addLink(body.sourcePageId, page.id, body.title);
+
+          // Generate 1-2 quizzes for the new concept
+          try {
+            const currentConfig = loadConfig(root);
+            const { LLMClient } = await import("./llm-client");
+            const llmClient = new LLMClient(currentConfig.llm);
+
+            const quizSystem = `You are a quiz generator for a study wiki. Generate quiz questions that test UNDERSTANDING, not just memorization.
+Focus on higher-order thinking: "왜?", "어떻게?", "비교하라", "설명하라" style questions.
+Return valid JSON only. No markdown fences.`;
+
+            const quizPrompt = `Based on this wiki content, generate 1-2 quiz questions that test UNDERSTANDING.
+Types: "fill_blank" (빈칸 채우기), "ox" (OX 퀴즈 - true/false), "short_answer" (단답형)
+
+Content title: ${body.title}
+Content:
+${body.answer.slice(0, 3000)}
+
+Respond with a JSON array only:
+[{"question": "...", "answer": "...", "explanation": "...", "type": "fill_blank"}]
+
+Rules:
+- For fill_blank: use ___ to mark the blank in the question
+- For ox: question should be a statement, answer should be "O" or "X"
+- For short_answer: question should be answerable in 1-3 words
+- Include "explanation" field: a brief 1-2 sentence explanation of WHY the answer is correct`;
+
+            const raw = await llmClient.chatComplete(quizSystem, quizPrompt, 2048);
+            let cleaned = raw.replace(/^```json?\n?/m, "").replace(/\n?```\s*$/m, "").trim();
+            const quizzes = JSON.parse(cleaned) as Array<{ question: string; answer: string; explanation?: string; type: string }>;
+
+            for (const q of quizzes) {
+              if (q.question && q.answer && q.type) {
+                store.addQuiz(page.id, q.question, q.answer, q.type, q.explanation || "");
+              }
+            }
+          } catch {
+            // Quiz generation is non-critical; silently skip failures
+            console.log(`\x1b[33m⚠ 프로모트 퀴즈 생성 실패\x1b[0m`);
+          }
+
+          // Hot-render the new page + re-render source page
+          const { buildSinglePage } = await import("./build/renderer");
+          await buildSinglePage(root, store, finalSlug);
+          await buildSinglePage(root, store, sourcePage.slug);
+
+          return Response.json({
+            ok: true,
+            slug: finalSlug,
+            title: body.title,
+            url: `/wiki/${finalSlug}.html`,
+            updated: false,
+            message: "새 위키 페이지가 생성되었습니다",
+          });
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          return Response.json({ error: message }, { status: 500 });
+        }
       }
 
       if (url.pathname === "/api/search" && req.method === "GET") {

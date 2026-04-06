@@ -693,6 +693,19 @@ export class Store {
     `).all() as any[];
   }
 
+  /** Find a page with a very similar title (normalized: lowercase, trimmed, no punctuation) */
+  findSimilarPage(title: string): Page | null {
+    const normalized = title.toLowerCase().trim().replace(/[^\w\s가-힣ㄱ-ㅎㅏ-ㅣ]/g, "").replace(/\s+/g, " ");
+    if (!normalized) return null;
+
+    const allPages = this.db.prepare("SELECT * FROM pages WHERE page_type = 'concept'").all() as Page[];
+    for (const page of allPages) {
+      const pageNorm = page.title.toLowerCase().trim().replace(/[^\w\s가-힣ㄱ-ㅎㅏ-ㅣ]/g, "").replace(/\s+/g, " ");
+      if (pageNorm === normalized) return page;
+    }
+    return null;
+  }
+
   getSourcePages(sourceId: number): Page[] {
     return this.db.prepare(
       "SELECT * FROM pages WHERE source_id = ? AND page_type = 'source' ORDER BY display_order"
