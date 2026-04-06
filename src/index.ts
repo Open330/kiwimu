@@ -479,6 +479,99 @@ program
     }
   });
 
+// --- cite (backfill citations) ---
+program
+  .command("cite")
+  .description("기존 개념 페이지에 대해 인용 정보를 역추적합니다 (LLM 호출 필요)")
+  .option("--dry-run", "실제 DB에 저장하지 않고 결과만 표시")
+  .action(async (opts: { dryRun?: boolean }) => {
+    const root = findProjectRoot();
+    const config = loadConfig(root);
+    const store = new Store(join(root, DB_FILE));
+    try {
+      const conceptPages = store.listConceptPages();
+      const sourcePages = store.listSourcePages();
+
+      if (conceptPages.length === 0) {
+        console.log("\x1b[33m개념 페이지가 없습니다.\x1b[0m");
+        return;
+      }
+      if (sourcePages.length === 0) {
+        console.log("\x1b[33m원본 페이지가 없습니다.\x1b[0m");
+        return;
+      }
+      if (!config.llm.api_key || config.llm.provider === "demo") {
+        console.error("\x1b[31m❌ LLM API 키가 필요합니다.\x1b[0m");
+        process.exit(1);
+      }
+
+      const { LLMClient } = await import("./llm-client");
+      const llmClient = new LLMClient(config.llm);
+
+      const sourcePageList = sourcePages.map(p => `- ${p.title} [slug: ${p.slug}]`).join("\n");
+
+      console.log(`\x1b[34m📚 ${conceptPages.length}개 개념 페이지에 대해 인용 역추적 시작...\x1b[0m`);
+      console.log(`  원본 페이지: ${sourcePages.length}개\n`);
+
+      let totalCitations = 0;
+
+      for (let i = 0; i < conceptPages.length; i++) {
+        const page = conceptPages[i];
+        console.log(`  [${i + 1}/${conceptPages.length}] ${page.title}...`);
+
+        const system = `You analyze wiki content and identify which source pages each claim comes from.
+Return valid JSON only. No markdown fences.`;
+
+        const prompt = `Given this concept page content and a list of source pages, identify which source pages each major claim or fact comes from.
+
+Concept page: "${page.title}"
+Content:
+${page.content.slice(0, 3000)}
+
+Available source pages:
+${sourcePageList}
+
+Return a JSON array of citation matches:
+[{"source_page_slug": "the-slug", "excerpt": "brief relevant quote or claim from the concept page (max 150 chars)"}]
+
+Only include matches where you are confident the content derives from that source. Return an empty array [] if no clear matches.`;
+
+        try {
+          const raw = await llmClient.chatComplete(system, prompt, 2048);
+          let cleaned = raw.replace(/^```json?\n?/m, "").replace(/\n?```\s*$/m, "").trim();
+          const matches = JSON.parse(cleaned) as Array<{ source_page_slug: string; excerpt?: string }>;
+
+          for (const match of matches) {
+            const sourcePage = store.getPage(match.source_page_slug);
+            if (!sourcePage || !sourcePage.source_id) continue;
+
+            if (!opts.dryRun) {
+              store.addCitation(page.id, sourcePage.source_id, sourcePage.id, match.excerpt || null, null);
+            }
+            totalCitations++;
+            console.log(`    → ${sourcePage.title}${match.excerpt ? ': "' + match.excerpt.slice(0, 60) + '..."' : ''}`);
+          }
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          console.log(`    \x1b[33m⚠ 실패: ${message}\x1b[0m`);
+        }
+      }
+
+      if (opts.dryRun) {
+        console.log(`\n\x1b[33m🔍 DRY RUN: ${totalCitations}개 인용 발견 (저장하지 않음)\x1b[0m`);
+      } else {
+        console.log(`\n\x1b[32m✅ ${totalCitations}개 인용 정보가 생성되었습니다.\x1b[0m`);
+        console.log(`  인용 현황: kiwimu serve 후 /provenance 페이지에서 확인`);
+      }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error(`\x1b[31m❌ ${message}\x1b[0m`);
+      process.exit(1);
+    } finally {
+      store.close();
+    }
+  });
+
 // --- status ---
 program
   .command("status")

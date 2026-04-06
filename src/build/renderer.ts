@@ -5,6 +5,7 @@ import sanitizeHtml from "sanitize-html";
 import { loadConfig, type KiwiConfig } from "../config";
 import type { Store } from "../store";
 import { buildGraphData } from "../pipeline/graph";
+import { renderCitationFootnotes } from "../pipeline/citations";
 import { renderPage, renderIndex, renderGraph, renderQuizPage, renderDashboardPage } from "./templates";
 
 // Convert marked mermaid code blocks to mermaid-renderable divs
@@ -160,6 +161,10 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
       pageType: bl.page_type,
     }));
 
+    // Citations footer
+    const citations = store.getCitationsForPage(page.id);
+    const citationsHtml = renderCitationFootnotes(citations);
+
     const html = renderPage({
       wikiName,
       pageTitle: page.title,
@@ -171,6 +176,7 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
       externalRefs,
       toc,
       backlinks,
+      citationsHtml,
       sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
       conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title, origin: p.origin })),
     });
@@ -282,6 +288,10 @@ export async function buildSinglePage(root: string, store: Store, slug: string):
     pageType: bl.page_type,
   }));
 
+  // Citations footer
+  const citations = store.getCitationsForPage(page.id);
+  const citationsHtml = renderCitationFootnotes(citations);
+
   const html = renderPage({
     wikiName,
     pageTitle: page.title,
@@ -293,6 +303,7 @@ export async function buildSinglePage(root: string, store: Store, slug: string):
     externalRefs,
     toc,
     backlinks,
+    citationsHtml,
     sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
     conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title, origin: p.origin })),
   });
