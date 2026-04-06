@@ -30,6 +30,15 @@ export interface QAConfig {
   auto_promote: boolean; // If true, automatically save all Q&A answers as wiki pages
 }
 
+export interface WikiSchema {
+  categories?: string[];
+  naming_convention?: 'noun_phrase' | 'question' | 'topic';
+  min_page_length?: number;
+  max_page_length?: number;
+  terms?: Record<string, string>;
+  page_template?: { sections?: string[] };
+}
+
 export interface KiwiConfig {
   project: { name: string; created: string };
   build: { output_dir: string };
@@ -39,6 +48,7 @@ export interface KiwiConfig {
   deploy: { target: string };
   personas?: Persona[];
   active_persona?: string; // name of the active persona
+  schema?: WikiSchema;
 }
 
 /** Directory containing built-in persona JSON files (shipped with the package) */

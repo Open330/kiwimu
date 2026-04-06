@@ -21,6 +21,7 @@ export interface Page {
   origin: string; // 'batch' | 'user'
   user_question: string | null;
   parent_page_id: number | null;
+  category: string | null;
 }
 
 export interface SourceMeta {
@@ -195,6 +196,7 @@ export class Store {
     try { this.db.exec("ALTER TABLE pages ADD COLUMN origin TEXT NOT NULL DEFAULT 'batch'"); } catch {}
     try { this.db.exec("ALTER TABLE pages ADD COLUMN user_question TEXT DEFAULT NULL"); } catch {}
     try { this.db.exec("ALTER TABLE pages ADD COLUMN parent_page_id INTEGER DEFAULT NULL"); } catch {}
+    try { this.db.exec("ALTER TABLE pages ADD COLUMN category TEXT DEFAULT NULL"); } catch {}
     // SM-2 spaced repetition columns
     try { this.db.exec("ALTER TABLE quizzes ADD COLUMN ease_factor REAL NOT NULL DEFAULT 2.5"); } catch {}
     try { this.db.exec("ALTER TABLE quizzes ADD COLUMN interval INTEGER NOT NULL DEFAULT 0"); } catch {}
@@ -335,6 +337,20 @@ export class Store {
 
   updatePageContentBySlug(slug: string, content: string): void {
     this.db.prepare("UPDATE pages SET content = ?, updated_at = datetime('now') WHERE slug = ?").run(content, slug);
+  }
+
+  updatePageCategory(pageId: number, category: string): void {
+    this.db.prepare("UPDATE pages SET category = ? WHERE id = ?").run(category, pageId);
+  }
+
+  listPagesByCategory(category: string): Page[] {
+    return this.db.prepare("SELECT * FROM pages WHERE category = ? ORDER BY title").all(category) as Page[];
+  }
+
+  listCategories(): Array<{ category: string; count: number }> {
+    return this.db.prepare(
+      "SELECT category, COUNT(*) as count FROM pages WHERE category IS NOT NULL GROUP BY category ORDER BY category"
+    ).all() as Array<{ category: string; count: number }>;
   }
 
   addDynamicPage(slug: string, title: string, content: string, parentPageId: number, userQuestion: string): number {

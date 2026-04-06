@@ -1,7 +1,8 @@
 import { LLMClient } from "../llm-client";
 import type { Store } from "../store";
 import { slugify } from "./chunker";
-import type { Persona } from "../config";
+import type { Persona, WikiSchema } from "../config";
+import { compileTerms, standardizeTerms } from "./standardizer";
 
 // ── Phase 1: Extract original document structure ──
 
@@ -25,7 +26,7 @@ Return at most 8 sections per response to keep output manageable.`;
 
 // ── Phase 2: Extract concepts for separate pages ──
 
-function getConceptSystem(persona: Persona | null): string {
+function getConceptSystem(persona: Persona | null, schema?: WikiSchema): string {
   const base = `You are a study wiki editor. Given source material pages, identify important concepts, terms, and definitions that deserve their own dedicated wiki pages.
 
 Rules:
@@ -39,15 +40,45 @@ Rules:
 
 Return valid JSON only. No markdown fences.`;
 
-  if (persona) {
-    return `${persona.system_prompt}\n\n${base}\n\nIMPORTANT: ${persona.content_style}`;
+  let schemaRules = "";
+  if (schema) {
+    const rules: string[] = [];
+    if (schema.categories?.length) {
+      rules.push(`- Assign each concept to one of these categories: ${schema.categories.join(", ")}. Include a "category" field in your JSON output.`);
+    }
+    if (schema.page_template?.sections?.length) {
+      rules.push(`- Structure each concept page with these sections (use ## headings): ${schema.page_template.sections.join(", ")}`);
+    }
+    if (schema.naming_convention) {
+      const conventions: Record<string, string> = {
+        noun_phrase: "Use noun phrases for titles (e.g., 'Neural Network', 'Gradient Descent')",
+        question: "Use question form for titles (e.g., 'What is a Neural Network?', 'How does Gradient Descent work?')",
+        topic: "Use simple topic words for titles (e.g., 'Backpropagation', 'Optimization')",
+      };
+      rules.push(`- Title format: ${conventions[schema.naming_convention] || schema.naming_convention}`);
+    }
+    if (schema.terms && Object.keys(schema.terms).length > 0) {
+      const termList = Object.entries(schema.terms).map(([k, v]) => `${k} -> ${v}`).join(", ");
+      rules.push(`- Use these standard terms (replace abbreviations with full forms): ${termList}`);
+    }
+    if (rules.length > 0) {
+      schemaRules = `\n\nSchema rules:\n${rules.join("\n")}`;
+    }
   }
-  return base;
+
+  if (persona) {
+    return `${persona.system_prompt}\n\n${base}${schemaRules}\n\nIMPORTANT: ${persona.content_style}`;
+  }
+  return `${base}${schemaRules}`;
 }
 
-function getConceptPrompt(persona: Persona | null): string {
+function getConceptPrompt(persona: Persona | null, schema?: WikiSchema): string {
   const styleNote = persona
     ? `\n\nWrite content in the following style:\n${persona.content_style}`
+    : "";
+
+  const categoryField = schema?.categories?.length
+    ? `\n- "category": string — One of: ${schema.categories.join(", ")}`
     : "";
 
   return `Based on these source pages, create concept/glossary wiki pages for important terms.
@@ -61,7 +92,7 @@ Keep each page concise (2-3 paragraphs).${styleNote}
 
 Return a JSON array where each element has:
 - "title": string — Short concept name, 1-3 words (e.g., "Synchrotron Radiation", "Flux Density", "Angular Resolution"). Keep titles short so they match naturally in text.
-- "content": string — Educational markdown content with [[wiki links]] to other concepts and source pages
+- "content": string — Educational markdown content with [[wiki links]] to other concepts and source pages${categoryField}
 - "suggested_links": Array<{text: string, url: string}> — Wikipedia/external reference links`;
 }
 
@@ -85,6 +116,7 @@ interface StructurePage {
 interface ConceptPage {
   title: string;
   content: string;
+  category?: string;
   suggested_links?: Array<{ text: string; url: string }>;
 }
 
@@ -219,10 +251,16 @@ export async function llmChunkDocument(
   maxChunks: number = 0, // 0 = unlimited
   persona: Persona | null = null,
   llmClient: LLMClient,
-  onProgress?: (status: string) => void
+  onProgress?: (status: string) => void,
+  schema?: WikiSchema
 ): Promise<{ sourceCount: number; conceptCount: number }> {
   const chat = (system: string, user: string, maxTokens?: number) =>
     llmClient.chatComplete(system, user, maxTokens);
+
+  // Pre-compile term standardization regexes if schema.terms is defined
+  const compiledTerms = schema?.terms && Object.keys(schema.terms).length > 0
+    ? compileTerms(schema.terms)
+    : null;
 
   let chunks = splitByChapters(rawText);
   if (maxChunks > 0 && chunks.length > maxChunks) {
@@ -354,9 +392,9 @@ export async function llmChunkDocument(
         const existingConceptsNote = existingConceptTitles.size > 0
           ? `\n\nAlready created concept pages (do not duplicate): ${[...existingConceptTitles].join(", ")}`
           : "";
-        const conceptPrompt = getConceptPrompt(persona);
+        const conceptPrompt = getConceptPrompt(persona, schema);
         const prompt = conceptPrompt.replace("{sourcePages}", batch.join("\n")) + existingConceptsNote;
-        const conceptSystem = getConceptSystem(persona);
+        const conceptSystem = getConceptSystem(persona, schema);
 
         try {
           const raw = await chat(conceptSystem, prompt, 16384);
@@ -370,6 +408,10 @@ export async function llmChunkDocument(
             if (existing) continue;
 
             let content = concept.content;
+            // Apply term standardization if schema.terms is defined
+            if (compiledTerms) {
+              content = standardizeTerms(content, compiledTerms);
+            }
             if (concept.suggested_links?.length) {
               content += "\n\n## External References\n\n";
               for (const link of concept.suggested_links) {
@@ -379,6 +421,10 @@ export async function llmChunkDocument(
 
             const conceptPage = store.addPage(slug, concept.title, content, sourceId, slug, "concept", 0);
             store.addActivityLog('page_created', `Created page: ${concept.title}`, 'page', conceptPage.id);
+            // Store category if provided by LLM and schema supports it
+            if (concept.category && schema?.categories?.length) {
+              store.updatePageCategory(conceptPage.id, concept.category);
+            }
             existingConceptTitles.add(concept.title);
             conceptCount++;
           }
@@ -411,8 +457,13 @@ export async function llmChunkDocument(
         console.log(`\x1b[34m⏳ Phase 2.5: 퀴즈 생성 중... (${conceptPagesForQuiz.length}개 개념 페이지)\x1b[0m`);
         onProgress?.(`Phase 2.5: 퀴즈 생성 중...`);
 
+        let quizSystemExtra = "";
+        if (schema?.terms && Object.keys(schema.terms).length > 0) {
+          const termList = Object.entries(schema.terms).map(([k, v]) => `${k} -> ${v}`).join(", ");
+          quizSystemExtra = `\nUse these standard terms in questions and answers (replace abbreviations with full forms): ${termList}`;
+        }
         const quizSystem = `You are a quiz generator for a study wiki. Generate quiz questions that test UNDERSTANDING, not just memorization.
-Focus on higher-order thinking: "왜?", "어떻게?", "비교하라", "설명하라" style questions.
+Focus on higher-order thinking: "왜?", "어떻게?", "비교하라", "설명하라" style questions.${quizSystemExtra}
 Return valid JSON only. No markdown fences.`;
 
         await parallelMap(conceptPagesForQuiz, 3, async (page, i) => {
@@ -441,7 +492,10 @@ Rules:
 
             for (const q of quizzes) {
               if (q.question && q.answer && q.type) {
-                store.addQuiz(page.id, q.question, q.answer, q.type, q.explanation || "");
+                const question = compiledTerms ? standardizeTerms(q.question, compiledTerms) : q.question;
+                const answer = compiledTerms ? standardizeTerms(q.answer, compiledTerms) : q.answer;
+                const explanation = compiledTerms && q.explanation ? standardizeTerms(q.explanation, compiledTerms) : (q.explanation || "");
+                store.addQuiz(page.id, question, answer, q.type, explanation);
                 quizCount++;
               }
             }
