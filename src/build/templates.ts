@@ -41,6 +41,7 @@ function sidebarHtml(sourcePages: PageLink[], conceptPages: PageLink[], activeSl
                 <ul class="page-list">${conceptItems}</ul>
             </div>
             <div class="sidebar-mobile-nav">
+                <a href="/catalog.html">📑 목록</a>
                 <a href="/wiki/random.html">🎲 임의 문서</a>
                 <a href="/quiz.html">📝 퀴즈</a>
                 <a href="/dashboard.html">📊 대시보드</a>
@@ -92,6 +93,7 @@ function base(opts: {
             <div id="search-results" class="search-dropdown"></div>
         </div>
         <div class="topbar-links">
+            <a href="/catalog.html" class="btn-graph">📑 목록</a>
             <a href="/wiki/random.html" class="btn-graph">🎲 임의</a>
             <a href="/quiz.html" class="btn-graph">📝 퀴즈</a>
             <a href="/dashboard.html" class="btn-graph">📊 대시보드</a>
@@ -280,6 +282,7 @@ export function renderIndex(opts: {
         </section>
         <section class="index-section">
             <div class="quick-links">
+                <a href="/catalog.html" class="quick-link">📑 문서 목록</a>
                 <a href="/quiz.html" class="quick-link">📝 학습 퀴즈</a>
                 <a href="/graph.html" class="quick-link">📊 지식 그래프 보기</a>
             </div>
@@ -1115,4 +1118,89 @@ export function renderAdmin(opts: {
     </script>
 </body>
 </html>`;
+}
+
+export function renderCatalogPage(opts: {
+  wikiName: string;
+  categories: Array<{
+    name: string;
+    slug: string;
+    description?: string;
+    pages: Array<{ id: number; title: string; slug: string; type: string; linkCount: number }>;
+  }>;
+  totalPages: number;
+  totalLinks: number;
+  generatedAt: string;
+  sourcePages: PageLink[];
+  conceptPages: PageLink[];
+}): string {
+  const categoriesHtml = opts.categories.map((cat) => {
+    const pagesHtml = cat.pages.map((p) => {
+      const typeBadge = p.type === 'source'
+        ? '<span class="catalog-badge source">📖 원본</span>'
+        : '<span class="catalog-badge concept">📝 개념</span>';
+      const linkBadge = p.linkCount > 0
+        ? `<span class="catalog-link-count" title="연결된 문서 수">🔗 ${p.linkCount}</span>`
+        : '';
+      return `<li class="catalog-item" data-title="${escapeHtml(p.title.toLowerCase())}">
+        <a href="/wiki/${p.slug}.html">${escapeHtml(p.title)}</a>
+        ${typeBadge}
+        ${linkBadge}
+      </li>`;
+    }).join("\n");
+
+    return `
+    <details class="catalog-category" open>
+      <summary class="catalog-category-header">
+        <span class="catalog-category-name">${escapeHtml(cat.name)}</span>
+        <span class="catalog-category-count">${cat.pages.length}개 문서</span>
+      </summary>
+      ${cat.description ? `<p class="catalog-category-desc">${escapeHtml(cat.description)}</p>` : ''}
+      <ul class="catalog-list">${pagesHtml}</ul>
+    </details>`;
+  }).join("\n");
+
+  const content = `
+<div class="catalog-page">
+    <h1>📑 문서 목록</h1>
+    <p class="catalog-desc">전체 ${opts.totalPages}개 문서 · ${opts.totalLinks}개 링크 · ${opts.categories.length}개 카테고리</p>
+
+    <div class="catalog-filter">
+        <input type="text" id="catalog-search" placeholder="문서 이름으로 검색..." autocomplete="off">
+    </div>
+
+    <div id="catalog-categories">
+        ${categoriesHtml || '<p class="catalog-empty">아직 문서가 없습니다. 소스를 추가하면 자동으로 목록이 생성됩니다.</p>'}
+    </div>
+</div>
+<script>
+(function() {
+  const input = document.getElementById('catalog-search');
+  if (!input) return;
+  input.addEventListener('input', function() {
+    const q = this.value.toLowerCase().trim();
+    document.querySelectorAll('.catalog-item').forEach(function(item) {
+      const title = item.getAttribute('data-title') || '';
+      item.style.display = (!q || title.includes(q)) ? '' : 'none';
+    });
+    // Hide empty categories
+    document.querySelectorAll('.catalog-category').forEach(function(cat) {
+      const visible = cat.querySelectorAll('.catalog-item[style=""], .catalog-item:not([style])');
+      const allItems = cat.querySelectorAll('.catalog-item');
+      let visibleCount = 0;
+      allItems.forEach(function(item) { if (item.style.display !== 'none') visibleCount++; });
+      cat.style.display = (q && visibleCount === 0) ? 'none' : '';
+    });
+  });
+})();
+</script>`;
+
+  return base({
+    title: `문서 목록 - ${opts.wikiName}`,
+    wikiName: opts.wikiName,
+    sourcePages: opts.sourcePages,
+    conceptPages: opts.conceptPages,
+    description: `${opts.wikiName} 전체 문서 목록 — ${opts.totalPages}개 문서`,
+    content,
+  });
 }

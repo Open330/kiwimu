@@ -730,4 +730,50 @@ export class Store {
     ).all() as Array<{ date: string; count: number }>;
     return { total, byAction, recentDays };
   }
+
+  // --- Content Index ---
+
+  getPagesBySource(): Array<{
+    sourceId: number;
+    sourceTitle: string;
+    pages: Array<{ id: number; title: string; slug: string; page_type: string; linkCount: number }>;
+  }> {
+    const rows = this.db.prepare(`
+      SELECT p.id, p.title, p.slug, p.page_type, p.source_id,
+             COALESCE(s.title, '미분류') as source_title,
+             (SELECT COUNT(*) FROM links WHERE from_page_id = p.id OR to_page_id = p.id) as link_count
+      FROM pages p
+      LEFT JOIN sources s ON s.id = p.source_id
+      ORDER BY COALESCE(s.title, 'zzz'), p.display_order, p.title
+    `).all() as Array<{
+      id: number; title: string; slug: string; page_type: string;
+      source_id: number | null; source_title: string; link_count: number;
+    }>;
+
+    const groupMap = new Map<number | -1, {
+      sourceId: number;
+      sourceTitle: string;
+      pages: Array<{ id: number; title: string; slug: string; page_type: string; linkCount: number }>;
+    }>();
+
+    for (const row of rows) {
+      const key = row.source_id ?? -1;
+      if (!groupMap.has(key)) {
+        groupMap.set(key, {
+          sourceId: row.source_id ?? -1,
+          sourceTitle: row.source_title,
+          pages: [],
+        });
+      }
+      groupMap.get(key)!.pages.push({
+        id: row.id,
+        title: row.title,
+        slug: row.slug,
+        page_type: row.page_type,
+        linkCount: row.link_count,
+      });
+    }
+
+    return Array.from(groupMap.values());
+  }
 }
