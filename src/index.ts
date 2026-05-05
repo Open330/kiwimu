@@ -43,8 +43,9 @@ program
       console.log(`\x1b[32m✅ ${count}개 페이지가 빌드되었습니다!\x1b[0m`);
 
       const { startServer } = await import("./server");
-      console.log("🎉 데모 위키가 준비되었습니다! http://localhost:8000 에서 확인하세요");
-      startServer(root, 8000, "localhost");
+      const demoPort = parseInt(process.env.KIWI_PORT || '8000', 10);
+      console.log(`🎉 데모 위키가 준비되었습니다! http://localhost:${demoPort} 에서 확인하세요`);
+      startServer(root, demoPort, "localhost");
       return;
     }
 

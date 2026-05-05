@@ -215,11 +215,11 @@
     loading.style.display = 'none';
     isGenerating = false;
 
-    let html = `<a href="${data.url}" class="qa-result-link">\ud83d\udcdd ${esc(data.title)}</a><span class="qa-result-hint">새 개념 페이지가 생성되었습니다</span>`;
+    let html = `<a href="${data.url}" class="qa-result-link">📝 ${esc(data.title)}</a><span class="qa-result-hint">새 개념 페이지가 생성되었습니다</span>`;
 
     // Show "Save to Wiki" button if the answer is promotable
     if (data.isPromotable) {
-      html += `<button class="qa-promote-btn" title="퀴즈와 위키 링크가 포함된 영구 페이지로 저장합니다">\ud83d\udcbe 위키에 저장</button>`;
+      html += `<button class="qa-promote-btn" title="퀴즈와 위키 링크가 포함된 영구 페이지로 저장합니다">💾 위키에 저장</button>`;
     }
 
     result.innerHTML = html;
@@ -237,7 +237,7 @@
       link.href = data.url;
       link.textContent = highlightMark.textContent;
       link.className = 'wiki-link dynamic-link';
-      link.title = '\ud83d\udcdd ' + data.title;
+      link.title = '📝 ' + data.title;
       highlightMark.parentNode.replaceChild(link, highlightMark);
       highlightMark = null;
     }
@@ -247,7 +247,7 @@
     const promoteBtn = result.querySelector('.qa-promote-btn');
     if (promoteBtn) {
       promoteBtn.disabled = true;
-      promoteBtn.textContent = '\u23f3 저장 중...';
+      promoteBtn.textContent = '⏳ 저장 중...';
     }
 
     try {
@@ -275,21 +275,68 @@
         const notice = document.createElement('div');
         notice.className = 'qa-promote-success';
         const statusText = promoteData.updated ? '기존 페이지에 내용 추가됨' : '위키 페이지로 저장됨 (퀴즈 포함)';
-        notice.innerHTML = `<span>\u2705 ${esc(statusText)}</span> <a href="${promoteData.url}">\u2192 ${esc(promoteData.title)}</a>`;
+        notice.innerHTML = `<span>✅ ${esc(statusText)}</span> <a href="${promoteData.url}">→ ${esc(promoteData.title)}</a>`;
         result.appendChild(notice);
+
+        const toastMsg = promoteData.updated ? '위키 페이지가 업데이트되었습니다' : '위키 페이지가 추가되었습니다';
+        showToast(toastMsg, 'success', { href: promoteData.url, label: promoteData.title });
+
+        if (!promoteData.updated && promoteData.slug) {
+          injectSidebarEntry(promoteData.slug, promoteData.title);
+        }
       } else {
         if (promoteBtn) {
           promoteBtn.disabled = false;
-          promoteBtn.textContent = '\ud83d\udcbe 위키에 저장';
+          promoteBtn.textContent = '💾 위키에 저장';
         }
-        alert(promoteData.error || '저장에 실패했습니다');
+        showToast(promoteData.error || '저장에 실패했습니다', 'error');
       }
     } catch {
       if (promoteBtn) {
         promoteBtn.disabled = false;
-        promoteBtn.textContent = '\ud83d\udcbe 위키에 저장';
+        promoteBtn.textContent = '💾 위키에 저장';
       }
-      alert('서버 연결에 실패했습니다');
+      showToast('서버 연결에 실패했습니다', 'error');
+    }
+  }
+
+  function showToast(msg, kind, link) {
+    const existing = document.querySelector('.kiwi-toast');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.className = 'kiwi-toast ' + (kind === 'error' ? 'error' : 'success');
+    const icon = kind === 'error' ? '⚠️' : '✅';
+    let inner = `<span class="kiwi-toast-icon">${icon}</span><span class="kiwi-toast-text">${esc(msg)}</span>`;
+    if (link && link.href) {
+      inner += ` <a class="kiwi-toast-link" href="${link.href}">→ ${esc(link.label || '바로가기')}</a>`;
+    }
+    toast.innerHTML = inner;
+    document.body.appendChild(toast);
+
+    requestAnimationFrame(() => toast.classList.add('show'));
+    setTimeout(() => {
+      toast.classList.remove('show');
+      setTimeout(() => toast.remove(), 400);
+    }, 3500);
+  }
+
+  function injectSidebarEntry(slug, title) {
+    const conceptList = document.querySelector('#tab-concept .page-list');
+    if (!conceptList) return;
+    if (conceptList.querySelector(`a[href="/wiki/${CSS.escape(slug)}.html"]`)) return;
+
+    const li = document.createElement('li');
+    li.className = 'sidebar-new-entry';
+    li.innerHTML = `<a href="/wiki/${esc(slug)}.html">💬 ${esc(title)}</a>`;
+    conceptList.prepend(li);
+
+    const conceptTab = document.querySelector('.sidebar-tab[data-tab="concept"]');
+    if (conceptTab) {
+      const m = conceptTab.textContent.match(/\((\d+)\)/);
+      if (m) {
+        conceptTab.textContent = conceptTab.textContent.replace(/\(\d+\)/, `(${parseInt(m[1]) + 1})`);
+      }
     }
   }
 
