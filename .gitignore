@@ -8,3 +8,5 @@ bun.lock
 .env
 certs/
 .claude/worktrees/
+.context/
+docker-compose.override.yml

@@ -13,7 +13,7 @@ services:
     environment:
       - NODE_ENV=production
     healthcheck:
-      test: ["CMD", "bun", "-e", "fetch('https://localhost:8000/',{tls:{rejectUnauthorized:false}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>fetch('http://localhost:8000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1)))"]
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:8000/manage').then(r=>{if(r.status>=500)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3

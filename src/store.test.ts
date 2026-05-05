@@ -13,6 +13,17 @@ describe("Store", () => {
     store.close();
   });
 
+  test("schema: pages table has all migrated columns on a fresh DB", () => {
+    // Guards against CREATE TABLE / ALTER TABLE drift: every column added
+    // via the migration block must also exist after a fresh init, otherwise
+    // an index that references it (or downstream code) will break.
+    const db = (store as any).db;
+    const cols = db.query("PRAGMA table_info(pages)").all().map((r: any) => r.name);
+    for (const required of ["origin", "user_question", "parent_page_id", "category"]) {
+      expect(cols).toContain(required);
+    }
+  });
+
   test("addSource and listSources", () => {
     const src = store.addSource("file:///test.pdf", "pdf", "Test PDF", "raw content");
     expect(src.id).toBeGreaterThan(0);
