@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS pages (
   origin TEXT NOT NULL DEFAULT 'batch',
   user_question TEXT DEFAULT NULL,
   parent_page_id INTEGER DEFAULT NULL,
+  category TEXT DEFAULT NULL,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
