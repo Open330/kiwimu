@@ -1808,3 +1808,52 @@ a.redlink:hover {
     font-style: italic;
     margin-top: 2px;
 }
+/* === Track-based grouping (sidebar + index) === */
+.sidebar-group {
+  margin-bottom: 8px;
+}
+.sidebar-group > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 4px 0;
+  user-select: none;
+  list-style: none;
+}
+.sidebar-group > summary::before {
+  content: "▸";
+  display: inline-block;
+  width: 14px;
+  transition: transform 0.15s;
+  font-size: 10px;
+}
+.sidebar-group[open] > summary::before {
+  transform: rotate(90deg);
+}
+.sidebar-group > summary::-webkit-details-marker {
+  display: none;
+}
+.sidebar-count {
+  color: var(--text-muted, #57606a);
+  font-weight: 400;
+  font-size: 11px;
+  margin-left: 4px;
+}
+.sidebar-group .page-list {
+  padding-left: 14px;
+}
+.page-group {
+  margin-bottom: 18px;
+}
+.page-group-title {
+  font-size: 14px;
+  margin: 0 0 8px;
+  color: var(--text-secondary, #57606a);
+  font-weight: 600;
+}
+.page-group-count {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-muted, #8b949e);
+  margin-left: 4px;
+}

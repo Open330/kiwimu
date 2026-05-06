@@ -5,15 +5,96 @@ interface PageLink {
   title: string;
   pageType?: string;
   origin?: string;
+  sourceUri?: string;
 }
 
-function sidebarHtml(sourcePages: PageLink[], conceptPages: PageLink[], activeSlug?: string): string {
-  const sourceItems = sourcePages
-    .map(
-      (p) =>
-        `<li><a href="/wiki/${p.slug}.html"${p.slug === activeSlug ? ' class="active"' : ""}>${escapeHtml(p.title)}</a></li>`
-    )
-    .join("\n");
+/** Configurable category definition (matches SourceCategory in config.ts). */
+interface CategorySpec {
+  name: string;
+  order: number;
+  patterns: string[];
+}
+
+/**
+ * Convert a glob-like pattern (`*` wildcard) into a case-insensitive RegExp.
+ * Anchors are NOT applied — the result is meant to be tested against either
+ * the basename or the full URI, matching either substring is acceptable.
+ */
+function patternToRegex(pat: string): RegExp {
+  // Escape regex specials except *
+  const escaped = pat.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp(escaped, "i");
+}
+
+/**
+ * Categorize a source URI against user-supplied categories. Returns the first
+ * matching category; falls back to "기타" / "Other" with a high order if no match.
+ * If `categories` is empty/undefined the caller should treat the result as
+ * "no grouping" (caller decides — see `groupByCategory`).
+ */
+function categorize(
+  uri: string | undefined,
+  categories: CategorySpec[] | undefined
+): { name: string; order: number; sortKey: string } {
+  const u = uri || "";
+  const base = u.split("/").pop()?.replace(/\.[a-z0-9]+$/i, "") || "";
+  if (categories && categories.length > 0) {
+    for (const cat of categories) {
+      for (const pat of cat.patterns) {
+        const re = patternToRegex(pat);
+        if (re.test(base) || re.test(u)) {
+          return { name: cat.name, order: cat.order, sortKey: base };
+        }
+      }
+    }
+  }
+  return { name: "기타", order: 9999, sortKey: base };
+}
+
+function groupByCategory(
+  pages: PageLink[],
+  categories: CategorySpec[] | undefined
+): { name: string; order: number; pages: PageLink[] }[] {
+  const groups = new Map<string, { name: string; order: number; pages: PageLink[] }>();
+  for (const p of pages) {
+    const c = categorize(p.sourceUri, categories);
+    if (!groups.has(c.name)) groups.set(c.name, { name: c.name, order: c.order, pages: [] });
+    groups.get(c.name)!.pages.push(p);
+  }
+  const sorted = [...groups.values()].sort((a, b) => a.order - b.order);
+  for (const g of sorted) {
+    g.pages.sort((a, b) => {
+      const ka = (a.sourceUri || "") + "|" + a.title;
+      const kb = (b.sourceUri || "") + "|" + b.title;
+      return ka.localeCompare(kb);
+    });
+  }
+  return sorted;
+}
+
+function sidebarHtml(sourcePages: PageLink[], conceptPages: PageLink[], activeSlug?: string, categories?: CategorySpec[]): string {
+  // Group sources by category only when we have both sourceUri info AND user-defined categories.
+  const hasUri = sourcePages.some((p) => p.sourceUri);
+  const hasCats = !!(categories && categories.length > 0);
+  let sourceItems: string;
+  if (hasUri && hasCats) {
+    const groups = groupByCategory(sourcePages, categories);
+    sourceItems = groups
+      .map((g) => {
+        const items = g.pages
+          .map((p) => `<li><a href="/wiki/${p.slug}.html"${p.slug === activeSlug ? ' class="active"' : ""}>${escapeHtml(p.title)}</a></li>`)
+          .join("\n");
+        return `<details open class="sidebar-group"><summary>${escapeHtml(g.name)} <span class="sidebar-count">${g.pages.length}</span></summary><ul class="page-list">${items}</ul></details>`;
+      })
+      .join("\n");
+  } else {
+    sourceItems = sourcePages
+      .map(
+        (p) =>
+          `<li><a href="/wiki/${p.slug}.html"${p.slug === activeSlug ? ' class="active"' : ""}>${escapeHtml(p.title)}</a></li>`
+      )
+      .join("\n");
+  }
 
   const conceptItems = conceptPages
     .map(
@@ -57,6 +138,7 @@ function base(opts: {
   activeSlug?: string;
   description?: string;
   content: string;
+  categories?: CategorySpec[];
 }) {
   const ogDescription = escapeHtml(opts.description || 'LLM으로 자동 생성된 학습 위키');
   return `<!DOCTYPE html>
@@ -103,7 +185,7 @@ function base(opts: {
     <div class="sidebar-overlay"></div>
     <div class="layout">
         <aside class="sidebar">
-            ${sidebarHtml(opts.sourcePages, opts.conceptPages, opts.activeSlug)}
+            ${sidebarHtml(opts.sourcePages, opts.conceptPages, opts.activeSlug, opts.categories)}
         </aside>
         <main class="content">
             ${opts.content}
@@ -162,6 +244,7 @@ export function renderPage(opts: {
   citationsHtml?: string;
   sourcePages: PageLink[];
   conceptPages: PageLink[];
+  categories?: CategorySpec[];
 }): string {
   let typeBadge: string;
   if (opts.origin === 'user') {
@@ -232,9 +315,11 @@ export function renderPage(opts: {
     wikiName: opts.wikiName,
     sourcePages: opts.sourcePages,
     conceptPages: opts.conceptPages,
+    categories: opts.categories,
     activeSlug: opts.pageSlug,
     description: `${opts.pageTitle} - ${opts.wikiName} 학습 위키`,
     content,
+    categories: opts.categories,
   });
 }
 
@@ -243,13 +328,30 @@ export function renderIndex(opts: {
   sourcePages: PageLink[];
   conceptPages: PageLink[];
   sourceCount: number;
+  categories?: CategorySpec[];
 }): string {
-  const sourceCards = opts.sourcePages
-    .map(
-      (p) =>
-        `<a href="/wiki/${p.slug}.html" class="page-card source"><span class="card-title">${escapeHtml(p.title)}</span></a>`
-    )
-    .join("\n");
+  // Group source cards only when both sourceUri AND user categories are present.
+  const sourceHasUri = opts.sourcePages.some((p) => p.sourceUri);
+  const hasCats = !!(opts.categories && opts.categories.length > 0);
+  const shouldGroup = sourceHasUri && hasCats;
+  const sourceCards = shouldGroup
+    ? groupByCategory(opts.sourcePages, opts.categories)
+        .map((g) => {
+          const cards = g.pages
+            .map(
+              (p) =>
+                `<a href="/wiki/${p.slug}.html" class="page-card source"><span class="card-title">${escapeHtml(p.title)}</span></a>`
+            )
+            .join("\n");
+          return `<div class="page-group"><h3 class="page-group-title">${escapeHtml(g.name)} <span class="page-group-count">${g.pages.length}</span></h3><div class="page-cards">${cards}</div></div>`;
+        })
+        .join("\n")
+    : opts.sourcePages
+        .map(
+          (p) =>
+            `<a href="/wiki/${p.slug}.html" class="page-card source"><span class="card-title">${escapeHtml(p.title)}</span></a>`
+        )
+        .join("\n");
 
   const conceptCards = opts.conceptPages
     .map(
@@ -277,7 +379,7 @@ export function renderIndex(opts: {
 
         <section class="index-section">
             <h2>📖 원본 문서</h2>
-            <div class="page-cards">${sourceCards.length > 0 ? sourceCards : '<div class="empty-state">아직 원본 문서가 없습니다. URL이나 파일을 추가해보세요!</div>'}</div>
+            ${sourceCards.length > 0 ? (shouldGroup ? sourceCards : `<div class="page-cards">${sourceCards}</div>`) : '<div class="page-cards"><div class="empty-state">아직 원본 문서가 없습니다. URL이나 파일을 추가해보세요!</div></div>'}
         </section>
         <section class="index-section">
             <h2>📝 개념 문서</h2>
@@ -299,8 +401,10 @@ export function renderIndex(opts: {
     wikiName: opts.wikiName,
     sourcePages: opts.sourcePages,
     conceptPages: opts.conceptPages,
+    categories: opts.categories,
     description: `${opts.wikiName} — LLM으로 자동 생성된 학습 위키`,
     content,
+    categories: opts.categories,
   });
 }
 
@@ -308,6 +412,7 @@ export function renderGraph(opts: {
   wikiName: string;
   sourcePages: PageLink[];
   conceptPages: PageLink[];
+  categories?: CategorySpec[];
 }): string {
   const content = `
 <div class="graph-page">
@@ -328,6 +433,7 @@ export function renderGraph(opts: {
     sourcePages: opts.sourcePages,
     conceptPages: opts.conceptPages,
     content,
+    categories: opts.categories,
   });
 }
 
@@ -336,6 +442,7 @@ export function renderQuizPage(opts: {
   quizzes: Array<{ id: number; question: string; answer: string; explanation?: string; quiz_type: string; page_title?: string; page_slug?: string }>;
   sourcePages: PageLink[];
   conceptPages: PageLink[];
+  categories?: CategorySpec[];
 }): string {
   const quizzesJson = JSON.stringify(opts.quizzes).replace(/</g, "\\u003c");
 
@@ -678,6 +785,7 @@ export function renderDashboardPage(opts: {
   recentAttempts: Array<{ quiz_id: number; question: string; is_correct: boolean; attempted_at: string }>;
   sourcePages: PageLink[];
   conceptPages: PageLink[];
+  categories?: CategorySpec[];
 }): string {
   const { stats } = opts;
   const progressPct = stats.total > 0 ? Math.round((stats.mastered / stats.total) * 100) : 0;
@@ -1203,6 +1311,10 @@ export function renderCatalogPage(opts: {
     wikiName: opts.wikiName,
     sourcePages: opts.sourcePages,
     conceptPages: opts.conceptPages,
+    // NOTE: renderCatalogPage's `opts.categories` has its own shape
+    // (catalog UI categories with `.pages`), distinct from SourceCategory.
+    // We deliberately don't forward it to `base()` to avoid the name clash;
+    // catalog page's sidebar therefore uses the flat fallback rendering.
     description: `${opts.wikiName} 전체 문서 목록 — ${opts.totalPages}개 문서`,
     content,
   });
@@ -1219,6 +1331,7 @@ export function renderProvenancePage(opts: {
   }>;
   sourcePages: PageLink[];
   conceptPages: PageLink[];
+  categories?: CategorySpec[];
 }): string {
   const totalCitations = opts.coverage.reduce((s, c) => s + c.citationCount, 0);
   const totalSourcesCited = opts.coverage.filter(c => c.citationCount > 0).length;

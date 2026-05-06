@@ -149,6 +149,17 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
   const wikiName = config.project.name;
   const backlinksMap = store.getAllBacklinksGrouped();
   const allSlugs = new Set(pages.map(p => p.slug));
+  const categories = config.categories;
+
+  // Build source_id → uri map so PageLink rows can carry sourceUri (used by templates for category grouping)
+  const sourceUriMap = new Map<number, string>();
+  for (const s of store.listSources()) sourceUriMap.set(s.id, s.uri);
+  const sourceLink = (p: { slug: string; title: string; source_id: number; origin?: string }) => ({
+    slug: p.slug,
+    title: p.title,
+    sourceUri: sourceUriMap.get(p.source_id),
+    ...(p.origin ? { origin: p.origin } : {}),
+  });
 
   for (const page of pages) {
     const htmlContent = await renderPageContent(page, allSlugs);
@@ -177,8 +188,9 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
       toc,
       backlinks,
       citationsHtml,
-      sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
+      sourcePages: sourcePages.map(sourceLink),
       conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title, origin: p.origin })),
+      categories,
     });
 
     await Bun.write(join(wikiDir, `${page.slug}.html`), html);
@@ -186,9 +198,10 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
 
   const indexHtml = renderIndex({
     wikiName,
-    sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
+    sourcePages: sourcePages.map(sourceLink),
     conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title })),
     sourceCount: store.countSources(),
+    categories,
   });
   await Bun.write(join(outputDir, "index.html"), indexHtml);
 
@@ -198,8 +211,9 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
     join(outputDir, "graph.html"),
     renderGraph({
       wikiName,
-      sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
+      sourcePages: sourcePages.map(sourceLink),
       conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title })),
+      categories,
     })
   );
 
@@ -218,8 +232,9 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
         page_title: q.page_title,
         page_slug: q.page_slug,
       })),
-      sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
+      sourcePages: sourcePages.map(sourceLink),
       conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title })),
+      categories,
     })
   );
 
@@ -234,8 +249,9 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
       stats,
       weakConcepts,
       recentAttempts,
-      sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
+      sourcePages: sourcePages.map(sourceLink),
       conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title })),
+      categories,
     })
   );
 
@@ -250,7 +266,7 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
       totalPages: contentIndex.totalPages,
       totalLinks: contentIndex.totalLinks,
       generatedAt: contentIndex.generatedAt,
-      sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
+      sourcePages: sourcePages.map(sourceLink),
       conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title })),
     })
   );
@@ -293,6 +309,15 @@ export async function buildSinglePage(root: string, store: Store, slug: string):
   const wikiName = config.project.name;
   const backlinksMap = store.getAllBacklinksGrouped();
 
+  const sourceUriMap = new Map<number, string>();
+  for (const s of store.listSources()) sourceUriMap.set(s.id, s.uri);
+  const sourceLink = (p: { slug: string; title: string; source_id: number; origin?: string }) => ({
+    slug: p.slug,
+    title: p.title,
+    sourceUri: sourceUriMap.get(p.source_id),
+    ...(p.origin ? { origin: p.origin } : {}),
+  });
+
   // Render the single page
   const htmlContent = await renderPageContent(page);
 
@@ -320,8 +345,9 @@ export async function buildSinglePage(root: string, store: Store, slug: string):
     toc,
     backlinks,
     citationsHtml,
-    sourcePages: sourcePages.map((p) => ({ slug: p.slug, title: p.title })),
+    sourcePages: sourcePages.map(sourceLink),
     conceptPages: conceptPages.map((p) => ({ slug: p.slug, title: p.title, origin: p.origin })),
+    categories: config.categories,
   });
 
   await Bun.write(join(wikiDir, `${page.slug}.html`), html);

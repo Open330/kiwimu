@@ -39,6 +39,21 @@ export interface WikiSchema {
   page_template?: { sections?: string[] };
 }
 
+/** A user-defined source category for sidebar/index grouping. */
+export interface SourceCategory {
+  /** Display label, e.g. "📋 PRD". Korean/emoji OK. */
+  name: string;
+  /** Display order; lower numbers appear first. */
+  order: number;
+  /**
+   * Glob-like patterns matched against the source URI (case-insensitive).
+   * Supports `*` as a wildcard. Patterns are tested against the basename
+   * (filename) and the full URI; matching either counts.
+   * Examples: "F[0-9][0-9]_*", "weekly/*", "STUDY_PLAN*"
+   */
+  patterns: string[];
+}
+
 export interface KiwiConfig {
   project: { name: string; created: string };
   build: { output_dir: string };
@@ -49,6 +64,7 @@ export interface KiwiConfig {
   personas?: Persona[];
   active_persona?: string; // name of the active persona
   schema?: WikiSchema;
+  categories?: SourceCategory[]; // optional source categorization for grouped rendering
 }
 
 /** Directory containing built-in persona JSON files (shipped with the package) */
