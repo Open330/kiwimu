@@ -102,28 +102,35 @@ async function main() {
     fs.unlinkSync(join(OUT_DIR, f));
   }
 
-  // Bootstrap a clean demo workspace (init --demo creates kiwi.toml + sample data)
+  // Wipe + recreate workspace so `init --demo` runs non-interactively.
+  // `init --demo` does setup AND auto-starts the server on KIWI_PORT — so it is the server.
   console.log('🛠  Bootstrapping demo workspace at', WORKSPACE);
+  const fsSync = await import('fs');
+  fsSync.rmSync(WORKSPACE, { recursive: true, force: true });
   mkdirSync(WORKSPACE, { recursive: true });
-  execSync(`bun run ${join(ROOT, 'src/index.ts')} init --demo`, {
-    cwd: WORKSPACE,
-    stdio: 'inherit'
-  });
 
-  // Start kiwimu serve from the workspace
-  console.log('🚀 Starting kiwimu serve on port', PORT);
+  console.log('🚀 Starting kiwimu init+serve on port', PORT);
   const { spawn } = await import('child_process');
-  const server = spawn('bun', ['run', join(ROOT, 'src/index.ts'), 'serve', '--port', String(PORT)], {
+  const server = spawn('bun', ['run', join(ROOT, 'src/index.ts'), 'init', '--demo'], {
     cwd: WORKSPACE,
     stdio: 'pipe',
-    env: { ...process.env, NODE_ENV: 'development' }
+    env: { ...process.env, NODE_ENV: 'development', KIWI_PORT: String(PORT) }
   });
 
-  // Wait for server to be ready (matches the "Kiwi Mu 서버 시작" banner)
+  // Server is ready when the banner mentions our PORT (init prints "http://localhost:<PORT>")
+  // Also capture the auth token: the dynamic-qa.js feature self-disables without it.
   let serverReady = false;
-  const readinessMarker = (text) => text.includes('Kiwi Mu') || text.includes(`localhost:${PORT}`);
-  server.stdout.on('data', (data) => { if (readinessMarker(data.toString())) serverReady = true; });
-  server.stderr.on('data', (data) => { if (readinessMarker(data.toString())) serverReady = true; });
+  let authToken = null;
+  const readinessMarker = (text) => text.includes(`localhost:${PORT}`);
+  const tokenMatcher = /인증 토큰:\s*([0-9a-f-]{36})/;
+  const handleServerOutput = (t, isErr) => {
+    (isErr ? process.stderr : process.stdout).write(`  [server${isErr ? '-err' : ''}] ${t}`);
+    if (readinessMarker(t)) serverReady = true;
+    const m = t.match(tokenMatcher);
+    if (m) authToken = m[1];
+  };
+  server.stdout.on('data', (data) => handleServerOutput(data.toString(), false));
+  server.stderr.on('data', (data) => handleServerOutput(data.toString(), true));
 
   // Wait up to 30s for server
   for (let i = 0; i < 60; i++) {
@@ -190,61 +197,73 @@ async function main() {
     });
   });
 
-  // Navigate to BST page
+  if (!authToken) {
+    console.error('❌ Could not capture auth token from server output');
+    await browser.close();
+    server.kill();
+    process.exit(1);
+  }
+  console.log('🔑 Auth token:', authToken.slice(0, 8) + '…');
+
+  // Navigate to BST page WITH auth token — the dynamic-qa popover only mounts
+  // when the kiwi-auth meta tag is present, which the server only injects
+  // for authenticated requests. ?token= also sets a cookie for follow-ups.
   console.log('📄 Loading BST page...');
-  await page.goto(`${BASE}/wiki/이진탐색트리.html`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/wiki/이진탐색트리.html?token=${authToken}`, { waitUntil: 'networkidle' });
   await captureFrame(page, 'page-loaded', 1000);
 
-  // --- Step 1: User drags "회전(rotation)" ---
+  // --- Step 1: Programmatically select "회전(rotation)" ---
+  // Headless mouse drag doesn't reliably populate window.getSelection() across
+  // browsers, so we set the Range directly and fire mouseup to trigger the popover.
   console.log('🔍 Selecting text...');
+  const TARGET = '회전(rotation)';
+  const ok = await page.evaluate((target) => {
+    const root = document.querySelector('.page-body');
+    if (!root) return false;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const idx = node.textContent.indexOf(target);
+      if (idx >= 0) {
+        const range = document.createRange();
+        range.setStart(node, idx);
+        range.setEnd(node, idx + target.length);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        // The popover listens on document mouseup
+        document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        return true;
+      }
+    }
+    return false;
+  }, TARGET);
 
-  // Find the text "회전(rotation)" in the page body
-  const pageBody = page.locator('.page-body');
-  const targetText = pageBody.locator('text=회전(rotation)');
-  const box = await targetText.boundingBox();
-
-  if (!box) {
-    console.error('❌ Could not find "회전(rotation)" text');
+  if (!ok) {
+    console.error(`❌ Could not find "${TARGET}" text in .page-body`);
     await browser.close();
     server.kill();
     process.exit(1);
   }
 
-  // Simulate mouse drag selection
-  const startX = box.x + 2;
-  const startY = box.y + box.height / 2;
-  const endX = box.x + box.width - 2;
-  const endY = box.y + box.height / 2;
-
-  await page.mouse.move(startX, startY);
-  await page.mouse.down();
-  // Slow drag for natural feel
-  for (let step = 0; step <= 10; step++) {
-    const x = startX + (endX - startX) * (step / 10);
-    await page.mouse.move(x, startY);
-    await sleep(30);
-  }
-  await page.mouse.up();
-
-  // Wait for popover (500ms delay in dynamic-qa.js)
   await captureFrame(page, 'text-selected', 200);
-  await sleep(600);
+  // Popover has a 500ms delay in dynamic-qa.js, then we want it visible
+  await sleep(700);
 
   // --- Step 2: Popover appears ---
   console.log('💬 Popover appeared...');
   await captureFrame(page, 'popover-visible', 300);
 
   // --- Step 3: User types question ---
+  // input.type() simulates physical keypresses which don't compose Korean Hangul.
+  // fill() sets the value directly and fires the input event — works for any script.
   console.log('⌨️  Typing question...');
   const input = page.locator('.qa-popover-input');
+  await input.waitFor({ state: 'visible', timeout: 10000 });
   await input.click();
   await sleep(200);
-
-  // Type character by character for natural feel
   const question = '어떻게 균형을 유지하나요?';
-  for (const char of question) {
-    await input.type(char, { delay: 80 });
-  }
+  await input.fill(question);
   await captureFrame(page, 'question-typed', 300);
 
   // --- Step 4: Click generate ---
