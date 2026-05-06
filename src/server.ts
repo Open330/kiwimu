@@ -640,12 +640,24 @@ export function startServer(root: string, port: number, host: string): void {
         return Response.json({ coverage });
       }
 
-      // Get page raw content endpoint
+      // Get page raw content endpoint. ?format=html also returns the rendered
+      // article HTML fragment (used by the peek panel client-side).
       if (url.pathname.startsWith("/api/page/") && req.method === "GET") {
         const slug = url.pathname.replace("/api/page/", "");
         const page = store.getPage(decodeURIComponent(slug));
         if (!page) return Response.json({ error: "찾을 수 없습니다" }, { status: 404 });
-        return Response.json({ slug: page.slug, title: page.title, content: page.content, origin: page.origin });
+        const body: Record<string, unknown> = {
+          slug: page.slug,
+          title: page.title,
+          content: page.content,
+          origin: page.origin,
+        };
+        if (url.searchParams.get("format") === "html") {
+          const { renderPageContent } = await import("./build/renderer");
+          const allSlugs = new Set(store.listPages().map(p => p.slug));
+          body.html = await renderPageContent(page, allSlugs);
+        }
+        return Response.json(body);
       }
 
       // Activity log API

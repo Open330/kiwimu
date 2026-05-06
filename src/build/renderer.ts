@@ -8,17 +8,20 @@ import { buildGraphData } from "../pipeline/graph";
 import { renderCitationFootnotes } from "../pipeline/citations";
 import { renderPage, renderIndex, renderGraph, renderQuizPage, renderDashboardPage, renderCatalogPage } from "./templates";
 
-// Convert marked mermaid code blocks to mermaid-renderable divs
-const ENTITY_MAP: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" };
+function escapeHtmlChars(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
+// Fallback: catches any ```mermaid block that slipped past the placeholder pre-pass.
+// Keeps marked's existing escaping intact — the browser decodes via textContent
+// when mermaid.js reads the diagram source.
 function convertMermaidBlocks(html: string): string {
   if (!html.includes('language-mermaid')) return html;
   return html.replace(
     /<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g,
     (_match, code: string) => {
-      const decoded = code.replace(/&(?:amp|lt|gt|quot|#39);/g, m => ENTITY_MAP[m] || m);
-      if (!decoded.trim()) return ''; // Skip empty mermaid blocks
-      return `<pre class="mermaid">${decoded}</pre>`;
+      if (!code.trim()) return '';
+      return `<pre class="mermaid">${code}</pre>`;
     }
   );
 }
@@ -68,7 +71,7 @@ function generateToc(markdown: string): string {
 }
 
 // Shared markdown rendering + sanitization logic
-async function renderPageContent(page: { content: string }, existingSlugs?: Set<string>): Promise<string> {
+export async function renderPageContent(page: { content: string }, existingSlugs?: Set<string>): Promise<string> {
   // Convert [[wiki links]] to markdown links before rendering
   // [[slug]] → [slug](/wiki/slug.html)
   // [[slug|display text]] → [display text](/wiki/slug.html)
@@ -89,13 +92,22 @@ async function renderPageContent(page: { content: string }, existingSlugs?: Set<
     return `%%MATH_INLINE_${mathPlaceholders.length - 1}%%`;
   });
 
+  // Protect mermaid fenced blocks: extract verbatim before marked sees them, so
+  // node labels containing markdown chars (*, _, |) or HTML chars (<, >, ")
+  // never get mangled by marked or stripped by sanitize-html.
+  const mermaidBlocks: string[] = [];
+  markdown = markdown.replace(/```mermaid\r?\n([\s\S]*?)```/g, (_match, body: string) => {
+    mermaidBlocks.push(body);
+    return `\n\n%%MERMAID_BLOCK_${mermaidBlocks.length - 1}%%\n\n`;
+  });
+
   let htmlContent = await marked(markdown);
 
   // Restore LaTeX math from placeholders
   htmlContent = htmlContent.replace(/%%MATH_(BLOCK|INLINE)_(\d+)%%/g, (_match, _type, idx) => {
     return mathPlaceholders[parseInt(idx)] || '';
   });
-  // Convert mermaid code blocks BEFORE sanitization
+  // Fallback: convert any leftover marked-emitted mermaid code blocks
   htmlContent = convertMermaidBlocks(htmlContent);
   htmlContent = sanitizeHtml(htmlContent, {
     allowedTags: sanitizeHtml.defaults.allowedTags.concat([
@@ -114,6 +126,19 @@ async function renderPageContent(page: { content: string }, existingSlugs?: Set<
     },
     allowedSchemes: ['http', 'https', 'mailto'],
   });
+
+  // Restore mermaid blocks AFTER sanitize so the diagram source is preserved
+  // verbatim. Escape only the HTML structural chars so the browser's textContent
+  // (which mermaid.js uses) yields the original characters.
+  htmlContent = htmlContent.replace(
+    /(?:<p>\s*)?%%MERMAID_BLOCK_(\d+)%%(?:\s*<\/p>)?/g,
+    (_match, idx) => {
+      const body = mermaidBlocks[parseInt(idx, 10)] || '';
+      if (!body.trim()) return '';
+      return `<pre class="mermaid">${escapeHtmlChars(body)}</pre>`;
+    }
+  );
+
   htmlContent = fixWikiLinks(htmlContent, existingSlugs);
   return htmlContent;
 }

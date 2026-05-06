@@ -157,10 +157,35 @@ function base(opts: {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/peek-panel.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]})"></script>
-    <script>if(document.currentScript){document.addEventListener('DOMContentLoaded',function(){if(document.querySelector('.mermaid')){import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs').then(function(m){m.default.initialize({startOnLoad:true,theme:'neutral',securityLevel:'strict'});m.default.run();})}})}</script>
+    <script>
+    // Mermaid: lazy-load on first need, expose window.kiwiRenderMermaid(root)
+    // for static + dynamically injected content (peek panel, dynamic-qa).
+    (function(){
+      var loadPromise = null;
+      function load(){
+        if (!loadPromise) {
+          loadPromise = import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs').then(function(m){
+            m.default.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'strict' });
+            return m.default;
+          });
+        }
+        return loadPromise;
+      }
+      window.kiwiRenderMermaid = function(root){
+        var scope = root && root.querySelectorAll ? root : document;
+        var nodes = scope.querySelectorAll('.mermaid:not([data-processed="true"])');
+        if (!nodes.length) return Promise.resolve();
+        return load().then(function(mermaid){
+          return mermaid.run({ nodes: nodes }).catch(function(e){ console.warn('mermaid render failed', e); });
+        });
+      };
+      document.addEventListener('DOMContentLoaded', function(){ window.kiwiRenderMermaid(); });
+    })();
+    </script>
 </head>
 <body>
     <nav class="topbar">
@@ -194,6 +219,7 @@ function base(opts: {
     <script src="/static/search.js"></script>
     <script src="/static/dynamic-qa.js"></script>
     <script src="/static/edit-page.js"></script>
+    <script src="/static/peek-panel.js"></script>
     <script>
         // Mobile hamburger menu
         (function() {
