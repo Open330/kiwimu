@@ -1,7 +1,7 @@
 import { join } from "path";
 import path from "path";
 import crypto from "crypto";
-import { existsSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { DB_FILE, SUPPORTED_EXTENSIONS, loadConfig, saveConfig, getActivePersona } from "./config";
 import { Store } from "./store";
 import type { KiwiConfig } from "./config";
@@ -29,7 +29,42 @@ export function startServer(root: string, port: number, host: string): void {
   const bgTasks = new Map<string, { status: 'processing' | 'completed' | 'error'; result?: any; error?: string }>();
 
   const hostname = host;
-  const authToken = crypto.randomUUID();
+
+  // Persistent auth token: env var → on-disk file → fresh UUID (cached to file).
+  // This keeps the manage URL stable across server restarts and lets the
+  // settings page / dynamic Q&A keep working once a user has authed in once.
+  const tokenFile = join(root, ".kiwi-token");
+  function loadOrCreateToken(): string {
+    const fromEnv = process.env.KIWIMU_AUTH_TOKEN;
+    if (fromEnv && fromEnv.trim().length >= 16) return fromEnv.trim();
+    try {
+      const cached = readFileSync(tokenFile, "utf-8").trim();
+      if (cached.length >= 16) return cached;
+    } catch { /* file does not exist — fall through */ }
+    const fresh = crypto.randomUUID();
+    try { writeFileSync(tokenFile, fresh, { mode: 0o600 }); } catch { /* best effort */ }
+    return fresh;
+  }
+  const authToken = loadOrCreateToken();
+  const AUTH_COOKIE_NAME = "kiwi-auth";
+  const AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+
+  function readCookie(req: Request, name: string): string | null {
+    const raw = req.headers.get("cookie") || "";
+    const part = raw.split(";").map(s => s.trim()).find(s => s.startsWith(name + "="));
+    return part ? decodeURIComponent(part.slice(name.length + 1)) : null;
+  }
+  function isAuthenticated(req: Request, url: URL): boolean {
+    const queryToken = url.searchParams.get("token");
+    const authHeader = req.headers.get("Authorization");
+    const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    const cookieToken = readCookie(req, AUTH_COOKIE_NAME);
+    return queryToken === authToken || bearerToken === authToken || cookieToken === authToken;
+  }
+  function authCookieHeader(): string {
+    return `${AUTH_COOKIE_NAME}=${encodeURIComponent(authToken)}; Path=/; Max-Age=${AUTH_COOKIE_MAX_AGE}; SameSite=Lax; HttpOnly`;
+  }
+
   console.log(`\x1b[32m🥝 Kiwi Mu 서버 시작!\x1b[0m`);
   console.log(`  http://${hostname === "0.0.0.0" ? "localhost" : hostname}:${port}`);
   console.log(`  관리 페이지: http://${hostname === "0.0.0.0" ? "localhost" : hostname}:${port}/manage?token=${authToken}`);
@@ -57,12 +92,13 @@ export function startServer(root: string, port: number, host: string): void {
 
       // ── Auth middleware for /api/* and /admin ──
       if (url.pathname.startsWith("/api/") || url.pathname === "/manage" || url.pathname === "/activity" || url.pathname === "/provenance") {
-        const authHeader = req.headers.get("Authorization");
-        const queryToken = url.searchParams.get("token");
-        const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-        if (bearerToken !== authToken && queryToken !== authToken) {
+        if (!isAuthenticated(req, url)) {
           return Response.json({ error: "Unauthorized" }, { status: 401 });
         }
+        // If user supplied token via ?token=…, set a cookie so subsequent
+        // requests don't need it. Continue handling the request below.
+        // (We set the Set-Cookie header on the eventual response in branches
+        // that build their own Response; for /manage we wrap below.)
       }
 
       // ── API endpoints ──
@@ -288,6 +324,8 @@ export function startServer(root: string, port: number, host: string): void {
         const configData = loadConfig(root);
 
         const { renderAdmin } = await import("./build/templates");
+        const headers: Record<string, string> = { "Content-Type": "text/html" };
+        if (url.searchParams.get("token") === authToken) headers["Set-Cookie"] = authCookieHeader();
         return new Response(renderAdmin({
           wikiName: configData.project.name,
           sources,
@@ -296,7 +334,7 @@ export function startServer(root: string, port: number, host: string): void {
           personas: configData.personas || [],
           activePersona: configData.active_persona || "",
           authToken,
-        }), { headers: { "Content-Type": "text/html" } });
+        }), { headers });
       }
 
       if (url.pathname === "/api/ask" && req.method === "POST") {
@@ -685,15 +723,17 @@ export function startServer(root: string, port: number, host: string): void {
         const cspValue = "default-src 'self'; script-src 'self' 'unsafe-inline' cdn.jsdelivr.net d3js.org static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' cdn.jsdelivr.net fonts.googleapis.com; font-src fonts.gstatic.com *.gstatic.com; img-src * data:; connect-src 'self' cloudflareinsights.com";
         if (isHtml) {
           const queryToken = url.searchParams.get("token");
-          const authHeader = req.headers.get("Authorization");
-          const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-          const isAuthed = bearerToken === authToken || queryToken === authToken;
+          const isAuthed = isAuthenticated(req, url);
           if (isAuthed) {
             let html = await staticFile.text();
             if (!html.includes('kiwi-auth')) {
               html = html.replace('</head>', `<meta name="kiwi-auth" content="${authToken}"></head>`);
             }
-            return new Response(html, { headers: { "Content-Type": "text/html", "Content-Security-Policy": cspValue } });
+            const headers: Record<string, string> = { "Content-Type": "text/html", "Content-Security-Policy": cspValue };
+            // If token came in via query, persist it as a cookie so the user
+            // doesn't need to re-paste ?token=… on every navigation.
+            if (queryToken === authToken) headers["Set-Cookie"] = authCookieHeader();
+            return new Response(html, { headers });
           }
         }
         if (isHtml) {
