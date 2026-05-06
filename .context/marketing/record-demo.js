@@ -3,12 +3,17 @@
  * Playwright script to record kiwimu v1.1 demo GIF.
  *
  * Usage:
+ *   bun add -d playwright && bunx playwright install chromium
  *   node .context/marketing/record-demo.js
  *
  * Prerequisites:
  *   - Playwright installed (npx playwright install chromium)
- *   - kiwimu dev server NOT running (script starts its own)
+ *   - port 8001 free (script starts its own server here)
  *   - ffmpeg available for GIF conversion
+ *
+ * Note: this is a fallback automated recorder. The launch path is
+ * CleanShot X for real-time 30fps capture; Playwright at fps=2
+ * produces a slideshow-style GIF, useful for previews not viral SNS.
  *
  * Output:
  *   .context/marketing/frames/  — individual PNG frames
@@ -25,6 +30,7 @@ const OUT_DIR = join(import.meta.dir, 'frames');
 const GIF_OUT = join(import.meta.dir, 'demo.gif');
 const PORT = 8001; // Avoid conflict with OrbStack on 8000
 const BASE = `http://localhost:${PORT}`;
+const WORKSPACE = '/tmp/kiwimu-record-workspace';
 
 // --- Mock API responses ---
 
@@ -96,29 +102,28 @@ async function main() {
     fs.unlinkSync(join(OUT_DIR, f));
   }
 
-  // Start kiwimu dev server
-  console.log('🚀 Starting kiwimu dev server...');
-  const { spawn } = await import('child_process');
-  const server = spawn('bun', ['run', 'src/index.ts', 'init', '--demo'], {
-    cwd: ROOT,
-    stdio: 'pipe',
-    env: { ...process.env, NODE_ENV: 'development', KIWI_PORT: String(PORT) }
+  // Bootstrap a clean demo workspace (init --demo creates kiwi.toml + sample data)
+  console.log('🛠  Bootstrapping demo workspace at', WORKSPACE);
+  mkdirSync(WORKSPACE, { recursive: true });
+  execSync(`bun run ${join(ROOT, 'src/index.ts')} init --demo`, {
+    cwd: WORKSPACE,
+    stdio: 'inherit'
   });
 
-  // Wait for server to be ready
+  // Start kiwimu serve from the workspace
+  console.log('🚀 Starting kiwimu serve on port', PORT);
+  const { spawn } = await import('child_process');
+  const server = spawn('bun', ['run', join(ROOT, 'src/index.ts'), 'serve', '--port', String(PORT)], {
+    cwd: WORKSPACE,
+    stdio: 'pipe',
+    env: { ...process.env, NODE_ENV: 'development' }
+  });
+
+  // Wait for server to be ready (matches the "Kiwi Mu 서버 시작" banner)
   let serverReady = false;
-  server.stdout.on('data', (data) => {
-    const text = data.toString();
-    if (text.includes('준비되었습니다') || text.includes('localhost:8000')) {
-      serverReady = true;
-    }
-  });
-  server.stderr.on('data', (data) => {
-    const text = data.toString();
-    if (text.includes('준비되었습니다') || text.includes('localhost:8000')) {
-      serverReady = true;
-    }
-  });
+  const readinessMarker = (text) => text.includes('Kiwi Mu') || text.includes(`localhost:${PORT}`);
+  server.stdout.on('data', (data) => { if (readinessMarker(data.toString())) serverReady = true; });
+  server.stderr.on('data', (data) => { if (readinessMarker(data.toString())) serverReady = true; });
 
   // Wait up to 30s for server
   for (let i = 0; i < 60; i++) {
@@ -279,16 +284,17 @@ async function main() {
   // Convert frames to GIF using ffmpeg
   console.log('\n🎬 Converting to GIF...');
   try {
-    // Create palette for better quality
+    // Frames are named like 0000_page-loaded.png — glob picks them up in order.
+    // Palette pass produces a much smaller, smoother GIF.
     execSync(
-      `ffmpeg -y -framerate 2 -i ${OUT_DIR}/%04d_.png -vf "fps=2,scale=1280:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer" ${GIF_OUT}`,
+      `ffmpeg -y -framerate 2 -pattern_type glob -i '${OUT_DIR}/*.png' -vf "fps=2,scale=1280:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer" ${GIF_OUT}`,
       { stdio: 'inherit' }
     );
     console.log(`\n🎉 GIF saved to: ${GIF_OUT}`);
   } catch (e) {
     console.error('⚠️  ffmpeg GIF conversion failed. Frames are in:', OUT_DIR);
     console.error('   Manual conversion:');
-    console.error(`   ffmpeg -framerate 2 -i ${OUT_DIR}/%04d_.png -vf "fps=2,scale=1280:-1:flags=lanczos" ${GIF_OUT}`);
+    console.error(`   ffmpeg -framerate 2 -pattern_type glob -i '${OUT_DIR}/*.png' -vf "fps=2,scale=1280:-1:flags=lanczos" ${GIF_OUT}`);
   }
 }
 
