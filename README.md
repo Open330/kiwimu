@@ -13,7 +13,27 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://typescriptlang.org)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
+<br>
+
+<img src=".context/marketing/demo.gif" alt="kiwimu v1.1 데모: 본문 드래그 → 질문 → 위키 페이지로 저장" width="720">
+
+<br>
+
+> **v1.1 — 위키는 만드는 게 아니라 자라는 거였다.**
+> 본문 드래그 → 팝오버 질문 → AI 답변 → 한 번 클릭으로 정식 위키 페이지로 승격. ([상세 글](https://jiun.dev/posts/kiwimu-v1-1))
+
 </div>
+
+---
+
+## What's new in v1.1
+
+- 🔖 **출처 추적 (Provenance Tracking)** — 모든 AI 생성 문장에 인라인 인용 자동 부착, 출처 커버리지 행렬 제공
+- 🧱 **스키마 레이어** — `kiwi.toml`의 5줄로 카테고리·용어·페이지 템플릿을 정의하면 LLM이 그 안에서만 작동
+- 💬 **질문 → 위키 승격** — 본문 드래그 → 질문 → "위키에 저장" 한 번이면 정식 페이지. 중복 자동 감지
+- 📑 **콘텐츠 카탈로그** — 자동 카테고리 분류 + 출처 커버리지 한눈 보기
+- 📈 **활동 로그** — 페이지 생성·질문·프로모트·스키마 변경이 시간선으로 누적
+- 👁️ **링크 미리보기 (Peek Panel)** — `/wiki/*` 링크에 호버하면 본문 미리보기 패널이 슬라이드인
 
 ---
 
