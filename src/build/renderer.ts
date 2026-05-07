@@ -157,8 +157,13 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
     cpSync(assetsDir, staticDir, { recursive: true });
   }
 
-  // Copy logo (check multiple possible locations)
+  // Copy logo (check multiple possible locations).
+  // Order: shipped-with-kiwimu (works for both git clone and npm install), then
+  // wiki-project-local overrides, then Docker path, then the assetsDir copy
+  // already produced above (so Bun.file lookups stay consistent).
+  const kiwimuAssets = join(dirname(import.meta.path), "..", "..", "assets", "logos", "logo_2_minimalist_icon_transparent.png");
   const logoCandidates = [
+    kiwimuAssets,
     join(projectRoot, "..", "assets", "logos", "logo_2_minimalist_icon_transparent.png"),
     join(projectRoot, "assets", "logos", "logo_2_minimalist_icon_transparent.png"),
     "/app/assets/logos/logo_2_minimalist_icon_transparent.png", // Docker path

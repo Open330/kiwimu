@@ -732,7 +732,7 @@ export function startServer(root: string, port: number, host: string): void {
 
       if (await staticFile.exists()) {
         const isHtml = pathname.endsWith(".html");
-        const cspValue = "default-src 'self'; script-src 'self' 'unsafe-inline' cdn.jsdelivr.net d3js.org static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' cdn.jsdelivr.net fonts.googleapis.com; font-src fonts.gstatic.com *.gstatic.com; img-src * data:; connect-src 'self' cloudflareinsights.com";
+        const cspValue = "default-src 'self'; script-src 'self' 'unsafe-inline' cdn.jsdelivr.net d3js.org static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src https://fonts.gstatic.com https://*.gstatic.com data:; img-src * data:; connect-src 'self' cloudflareinsights.com";
         if (isHtml) {
           const queryToken = url.searchParams.get("token");
           const isAuthed = isAuthenticated(req, url);
