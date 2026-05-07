@@ -1,6 +1,9 @@
 /* Notion-style peek panel: right-side slide-in for /wiki/* links.
    All rules are scoped under .peek-* to avoid leaking into the page. */
 
+/* z-index: stays above topbar (100) and sidebar (200), below qa-popover (1000)
+   and edit-modal (1001) so popovers/modals triggered inside the panel surface
+   correctly above it. */
 .peek-backdrop {
   position: fixed;
   inset: 0;
@@ -8,7 +11,7 @@
   opacity: 0;
   pointer-events: none;
   transition: opacity 200ms ease;
-  z-index: 9000;
+  z-index: 500;
 }
 .peek-backdrop.is-open {
   opacity: 1;
@@ -27,13 +30,48 @@
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
   transform: translateX(100%);
   transition: transform 250ms ease;
-  z-index: 9001;
+  z-index: 501;
   display: flex;
   flex-direction: column;
   outline: none;
 }
 .peek-panel.is-open {
   transform: translateX(0);
+}
+
+/* Resize handle on the left edge — invisible 8px hit area with a visible
+   1px line on hover/active. Disabled on mobile (panel is full-screen). */
+.peek-resize-handle {
+  position: absolute;
+  top: 0;
+  left: -4px;
+  width: 8px;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: 1;
+  touch-action: none;
+}
+.peek-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 3px;
+  width: 2px;
+  height: 100%;
+  background: transparent;
+  transition: background 150ms ease;
+}
+.peek-resize-handle:hover::after,
+body.peek-resizing .peek-resize-handle::after {
+  background: var(--link, #0275d8);
+}
+/* Suspend transition + select while dragging so resize feels immediate. */
+body.peek-resizing {
+  cursor: ew-resize;
+  user-select: none;
+}
+body.peek-resizing .peek-panel {
+  transition: none;
 }
 
 .peek-header {
@@ -96,6 +134,14 @@
   padding: 18px 22px 32px;
   -webkit-overflow-scrolling: touch;
 }
+/* Article inside the panel uses the same .page-body styles as full pages,
+   but drops the top margin on the first heading so it hugs the header. */
+.peek-content .peek-article {
+  margin: 0;
+}
+.peek-content .page-body > :first-child {
+  margin-top: 0;
+}
 
 .peek-loading,
 .peek-error {
@@ -129,8 +175,11 @@
 
 @media (max-width: 768px) {
   .peek-panel {
-    width: 100vw;
+    width: 100vw !important;
     border-left: none;
+  }
+  .peek-resize-handle {
+    display: none;
   }
 }
 

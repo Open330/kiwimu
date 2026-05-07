@@ -12,6 +12,9 @@
 
   const WIKI_LINK_RE = /^\/wiki\/([^/?#]+)\.html(?:[?#].*)?$/;
   const STACK_LIMIT = 5;
+  const WIDTH_KEY = 'kiwi-peek-width';
+  const WIDTH_MIN = 320;
+  const WIDTH_MAX_VW = 0.95;
 
   // Auth: read token from <meta name="kiwi-auth"> (matches dynamic-qa.js).
   function authHeaders() {
@@ -30,6 +33,61 @@
   let abortCtrl = null;
   let pushedHistoryState = false; // did we push the current ?peek state?
 
+  // --- Resize --------------------------------------------------------------
+  function clampWidth(w) {
+    const max = Math.min(window.innerWidth * WIDTH_MAX_VW, 1400);
+    return Math.max(WIDTH_MIN, Math.min(max, w));
+  }
+  function loadSavedWidth() {
+    try {
+      const v = parseInt(localStorage.getItem(WIDTH_KEY) || '', 10);
+      return v > 0 ? clampWidth(v) : null;
+    } catch { return null; }
+  }
+  function saveWidth(w) {
+    try { localStorage.setItem(WIDTH_KEY, String(Math.round(w))); } catch { /* no-op */ }
+  }
+  function applySavedWidth() {
+    // Skip on mobile — CSS forces full-screen there.
+    if (window.matchMedia('(max-width: 768px)').matches) return;
+    const w = loadSavedWidth();
+    if (w) panel.style.width = w + 'px';
+  }
+  function attachResizeHandle(handle) {
+    let dragging = false;
+    let startX = 0;
+    let startW = 0;
+    handle.addEventListener('pointerdown', (e) => {
+      if (window.matchMedia('(max-width: 768px)').matches) return;
+      dragging = true;
+      startX = e.clientX;
+      startW = panel.getBoundingClientRect().width;
+      handle.setPointerCapture(e.pointerId);
+      document.body.classList.add('peek-resizing');
+      e.preventDefault();
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      // Panel is anchored to the right edge — moving handle left grows width.
+      const w = clampWidth(startW + (startX - e.clientX));
+      panel.style.width = w + 'px';
+    });
+    function stop(e) {
+      if (!dragging) return;
+      dragging = false;
+      try { handle.releasePointerCapture(e.pointerId); } catch { /* no-op */ }
+      document.body.classList.remove('peek-resizing');
+      saveWidth(panel.getBoundingClientRect().width);
+    }
+    handle.addEventListener('pointerup', stop);
+    handle.addEventListener('pointercancel', stop);
+    handle.addEventListener('dblclick', () => {
+      // Reset to default on double-click.
+      panel.style.width = '';
+      try { localStorage.removeItem(WIDTH_KEY); } catch { /* no-op */ }
+    });
+  }
+
   // --- DOM construction ----------------------------------------------------
   function build() {
     titleId = 'peek-title-' + Math.random().toString(36).slice(2, 9);
@@ -46,6 +104,14 @@
     panel.setAttribute('aria-labelledby', titleId);
     panel.setAttribute('tabindex', '-1');
     panel.hidden = true;
+
+    const resizeHandle = document.createElement('div');
+    resizeHandle.className = 'peek-resize-handle';
+    resizeHandle.setAttribute('role', 'separator');
+    resizeHandle.setAttribute('aria-orientation', 'vertical');
+    resizeHandle.title = '드래그하여 너비 조절 · 더블클릭으로 초기화';
+    attachResizeHandle(resizeHandle);
+    panel.appendChild(resizeHandle);
 
     const headerEl = document.createElement('header');
     headerEl.className = 'peek-header';
@@ -143,6 +209,7 @@
 
     if (!isOpen) {
       lastFocused = document.activeElement;
+      applySavedWidth();
       panel.hidden = false;
       backdrop.classList.add('is-open');
       // Force layout so the transform transition runs.
@@ -258,7 +325,12 @@
         // Defensive fallback if server hasn't enabled ?format=html yet.
         html = '<pre>' + escapeHtml(data.content) + '</pre>';
       }
-      contentEl.innerHTML = html || '';
+      // Wrap in .page-body so existing article styles + dynamic-qa selection
+      // gating work inside the peek panel without duplicating logic.
+      contentEl.innerHTML =
+        '<article class="wiki-page peek-article"><div class="page-body">' +
+        (html || '') +
+        '</div></article>';
       contentEl.scrollTop = 0;
 
       // Re-run mermaid if the host page exposes the helper.
