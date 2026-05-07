@@ -162,10 +162,21 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
     join(projectRoot, "..", "assets", "logos", "logo_2_minimalist_icon_transparent.png"),
     join(projectRoot, "assets", "logos", "logo_2_minimalist_icon_transparent.png"),
     "/app/assets/logos/logo_2_minimalist_icon_transparent.png", // Docker path
+    join(staticDir, "logo.png"), // already copied via assetsDir → use it as the source
   ];
   const logoFile = logoCandidates.find(p => existsSync(p)) || null;
-  if (logoFile) {
+  if (logoFile && logoFile !== join(staticDir, "logo.png")) {
     cpSync(logoFile, join(staticDir, "logo.png"));
+  }
+
+  // Browsers fetch /favicon.ico from the site root regardless of HTML markup,
+  // so we mirror it from the bundled static assets if present.
+  const faviconSrc = join(staticDir, "favicon.ico");
+  if (existsSync(faviconSrc)) {
+    cpSync(faviconSrc, join(outputDir, "favicon.ico"));
+  } else if (logoFile) {
+    // Fall back to the logo as a favicon so /favicon.ico never 404s.
+    cpSync(logoFile, join(outputDir, "favicon.ico"));
   }
 
   const pages = store.listPages();
