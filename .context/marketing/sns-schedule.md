@@ -53,12 +53,14 @@
 >
 > 그 자연스러운 행동이 위키를 키우는 동력이 됩니다. 문서를 처음부터 "쓰는" 사람은 적지만, 읽다가 막히는 사람은 모두입니다. 그 막히는 순간을 페이지로 변환해주는 것이 v1.1의 목표였습니다.
 >
-> 옆에 함께 들어간 다섯 가지:
+> 옆에 함께 들어간 일곱 가지:
 > · 모든 AI 문장에 인라인 인용 자동 부착 — 신뢰 가능한 위키
 > · kiwi.toml 5줄 스키마로 LLM 톤·카테고리 강제
 > · 카탈로그 페이지 — 100개 페이지에서 길 잃지 않기
 > · 활동 로그 — 위키가 실제로 쓰이고 있는지 시간선으로 확인
 > · 링크 미리보기 패널 — 페이지 이동 없이 확인
+> · 트랙 그룹핑 — 사이드바·인덱스를 학습 경로별로 자동 묶음
+> · 인증 토큰 영속화 — 한 번 로그인하면 재시작해도 유지
 >
 > 셀프호스팅, MIT, 텔레메트리 없음. 30초 데모:
 > `bunx @open330/kiwimu init --demo`
@@ -107,7 +109,7 @@
 **본문:**
 > Hi HN, I'm jiun, the author of kiwimu — a self-hosted CLI that turns documents (PDF, DOCX, URL, Markdown) into a hyperlinked learning wiki using LLMs.
 >
-> v1.0 (released a month ago) proved the basic loop: drop in a textbook, get a navigable wiki + auto-generated quizzes. v1.1 changes the philosophy from "make a wiki" to "let the wiki grow as you read it." Five things shipped:
+> v1.0 (released a month ago) proved the basic loop: drop in a textbook, get a navigable wiki + auto-generated quizzes. v1.1 changes the philosophy from "make a wiki" to "let the wiki grow as you read it." Seven things shipped:
 >
 > 1. **Inline citations on every AI-generated sentence.** Each sentence ends with a `[^src:slug]` pointer to the source page. There's also a coverage matrix that surfaces pages where the AI made claims with no source backing — the biggest legitimacy hole for AI-generated wikis.
 >
@@ -117,7 +119,11 @@
 >
 > 4. **Content catalog + activity log.** Auto-categorized index page so you don't lose your way at 100+ pages, and a timeline of every page creation, question, promotion, and schema change.
 >
-> 5. **Peek panel.** Hover any internal `/wiki/*` link → a side panel slides in with the linked page's body. Same idea as Wikipedia's hover preview but for your own wiki.
+> 5. **Peek panel.** Click any internal `/wiki/*` link → a resizable side panel slides in with the linked page's body, fully interactive (drag-Q&A, inline edit, diagrams all work inside). Wikipedia-style hover preview but for your own wiki, on steroids.
+>
+> 6. **Config-driven track grouping.** Define learning tracks in `kiwi.toml` and the sidebar + index auto-group pages by track. The structure of the wiki itself becomes the table of contents.
+>
+> 7. **Persisted auth tokens.** v1.0 reissued a fresh token on every restart, which broke any browser session. v1.1 caches it on disk and accepts it via cookie, so authentication survives restarts. `KIWI_AUTH_TOKEN` env var works too if you want to pin it for CI.
 >
 > Stack: Bun + TypeScript, SQLite (FTS5 + embeddings), zero runtime deps for the static site. MIT, no telemetry, optional 4 LLM providers (Gemini free tier works fine).
 >
@@ -184,7 +190,9 @@
 > - Schema layer (`kiwi.toml`) — define categories/templates/tone in 5 lines, LLM follows them
 > - Inline citations on all AI-generated content with a coverage matrix
 > - Activity log so you can see how the wiki is actually being used
-> - Hover preview panel on internal links
+> - Resizable peek panel on internal links (page body, edit, drag-Q&A all inside)
+> - Track grouping — sidebar/index auto-grouped by learning track defined in config
+> - Persisted auth: log in once, your session survives `kiwimu serve` restarts
 >
 > LLM provider is your choice: Gemini (free), OpenAI, Anthropic, Azure OpenAI. Pick one and drop the key into the config.
 >
