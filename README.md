@@ -15,7 +15,7 @@
 
 <br>
 
-<img src=".context/marketing/demo.gif" alt="kiwimu v1.1 데모: 본문 드래그 → 질문 → 위키 페이지로 저장" width="720">
+<img src="https://github.com/Open330/kiwimu/raw/main/.context/marketing/demo.gif" alt="kiwimu v1.1 데모: 본문 드래그 → 질문 → 위키 페이지로 저장" width="720">
 
 <br>
 
