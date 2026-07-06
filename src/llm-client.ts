@@ -8,6 +8,28 @@ export interface UsageStats {
   totalTokens: number;
 }
 
+// ── Pricing (per 1M tokens, approximate) ──
+export const PRICING: Record<string, { input: number; output: number }> = {
+  "gemini": { input: 0.075, output: 0.30 },
+  "azure-openai": { input: 0.10, output: 0.40 },
+  "openai": { input: 2.50, output: 10.00 },
+  "anthropic": { input: 3.00, output: 15.00 },
+};
+
+/** Estimate USD cost for a given provider and token counts. */
+export function estimateCostUsd(provider: string, promptTokens: number, completionTokens: number): number {
+  const p = PRICING[provider] || PRICING["gemini"];
+  return (promptTokens / 1_000_000) * p.input + (completionTokens / 1_000_000) * p.output;
+}
+
+/** Providers with multimodal (image) input support used for figure captioning. */
+const VISION_PROVIDERS = new Set(["gemini", "anthropic", "openai"]);
+
+/** Whether a provider supports vision/image input (for figure captioning). */
+export function supportsVision(provider: string): boolean {
+  return VISION_PROVIDERS.has(provider);
+}
+
 // ── Provider implementations ──
 
 async function geminiComplete(config: LLMConfig, system: string, userMessage: string, maxTokens: number): Promise<{ text: string; usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } }> {
@@ -222,15 +244,124 @@ export class LLMClient {
   }
 
   getEstimatedCost(): number {
-    // Pricing per 1M tokens (approximate)
-    const pricing: Record<string, { input: number; output: number }> = {
-      "gemini": { input: 0.075, output: 0.30 },
-      "azure-openai": { input: 0.10, output: 0.40 },
-      "openai": { input: 2.50, output: 10.00 },
-      "anthropic": { input: 3.00, output: 15.00 },
+    return estimateCostUsd(this.config.provider, this.usage.promptTokens, this.usage.completionTokens);
+  }
+
+  /** Whether the configured provider supports image/vision input. */
+  supportsVision(): boolean {
+    return supportsVision(this.config.provider);
+  }
+
+  /**
+   * Describe/caption an image via the provider's multimodal API.
+   * Returns null if the provider does not support vision (graceful skip).
+   * Throws on API errors so callers can decide whether to continue.
+   */
+  async describeImage(imageBase64: string, mimeType: string, prompt: string, maxTokens = 512): Promise<string | null> {
+    if (!this.supportsVision()) return null;
+
+    let result: ProviderResult;
+    switch (this.config.provider) {
+      case "gemini":
+        result = await this.geminiVision(imageBase64, mimeType, prompt, maxTokens);
+        break;
+      case "anthropic":
+        result = await this.anthropicVision(imageBase64, mimeType, prompt, maxTokens);
+        break;
+      case "openai":
+        result = await this.openaiVision(imageBase64, mimeType, prompt, maxTokens);
+        break;
+      default:
+        return null;
+    }
+
+    if (result.usage) {
+      this.usage.totalCalls++;
+      this.usage.promptTokens += result.usage.prompt_tokens || 0;
+      this.usage.completionTokens += result.usage.completion_tokens || 0;
+      this.usage.totalTokens += result.usage.total_tokens || 0;
+    }
+    return result.text;
+  }
+
+  private async geminiVision(imageBase64: string, mimeType: string, prompt: string, maxTokens: number): Promise<ProviderResult> {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.config.model}:generateContent`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": this.config.api_key },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data: imageBase64 } }] }],
+        generationConfig: { maxOutputTokens: maxTokens, temperature: 0.3 },
+      }),
+    });
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error(`Gemini vision error (${resp.status}): ${err.slice(0, 200)}`);
+    }
+    const data = await resp.json() as Record<string, unknown>;
+    const candidates = data.candidates as Array<{ content: { parts: Array<{ text: string }> } }> | undefined;
+    const usage = data.usageMetadata as { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number } | undefined;
+    return {
+      text: candidates?.[0]?.content?.parts?.[0]?.text || "",
+      usage: usage ? {
+        prompt_tokens: usage.promptTokenCount || 0,
+        completion_tokens: usage.candidatesTokenCount || 0,
+        total_tokens: usage.totalTokenCount || 0,
+      } : undefined,
     };
-    const p = pricing[this.config.provider] || pricing["gemini"];
-    return (this.usage.promptTokens / 1_000_000) * p.input + (this.usage.completionTokens / 1_000_000) * p.output;
+  }
+
+  private async anthropicVision(imageBase64: string, mimeType: string, prompt: string, maxTokens: number): Promise<ProviderResult> {
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    if (!this._anthropicClient) {
+      this._anthropicClient = new Anthropic({ apiKey: this.config.api_key });
+    }
+    const resp = await this._anthropicClient.messages.create({
+      model: this.config.model || "claude-sonnet-4-6",
+      max_tokens: maxTokens,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: mimeType as any, data: imageBase64 } },
+          { type: "text", text: prompt },
+        ],
+      }],
+    });
+    const content = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+    return {
+      text: content,
+      usage: resp.usage ? {
+        prompt_tokens: resp.usage.input_tokens || 0,
+        completion_tokens: resp.usage.output_tokens || 0,
+        total_tokens: (resp.usage.input_tokens || 0) + (resp.usage.output_tokens || 0),
+      } : undefined,
+    };
+  }
+
+  private async openaiVision(imageBase64: string, mimeType: string, prompt: string, maxTokens: number): Promise<ProviderResult> {
+    const { default: OpenAI } = await import("openai");
+    if (!this._openaiClient) {
+      this._openaiClient = new OpenAI({ apiKey: this.config.api_key });
+    }
+    const resp = await this._openaiClient.chat.completions.create({
+      model: this.config.model || "gpt-5.4",
+      max_tokens: maxTokens,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+        ] as any,
+      }],
+    });
+    return {
+      text: resp.choices[0]?.message?.content || "",
+      usage: resp.usage ? {
+        prompt_tokens: resp.usage.prompt_tokens || 0,
+        completion_tokens: resp.usage.completion_tokens || 0,
+        total_tokens: resp.usage.total_tokens || 0,
+      } : undefined,
+    };
   }
 
   printUsageSummary(): void {

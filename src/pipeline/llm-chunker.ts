@@ -260,7 +260,8 @@ export async function llmChunkDocument(
   persona: Persona | null = null,
   llmClient: LLMClient,
   onProgress?: (status: string) => void,
-  schema?: WikiSchema
+  schema?: WikiSchema,
+  incremental: boolean = false
 ): Promise<{ sourceCount: number; conceptCount: number }> {
   const chat = (system: string, user: string, maxTokens?: number) =>
     llmClient.chatComplete(system, user, maxTokens);
@@ -292,15 +293,33 @@ export async function llmChunkDocument(
     console.log(`\x1b[32m⏭ Phase 1 건너뜀 (이미 완료) — 📖 ${sourceCount}개 원본 페이지\x1b[0m`);
     onProgress?.(`Phase 1 건너뜀 (${sourceCount}개 페이지 이미 존재)`);
   } else {
-    console.log(`\x1b[34m⏳ Phase 1: 원본 구조 추출 중... (${chunks.length}개 청크)\x1b[0m`);
-    onProgress?.(`Phase 1: 원본 구조 추출 중... (${chunks.length}개 청크)`);
-
     const phase1Start = performance.now();
-    let completedCount = 0;
     const structureSystem = getStructureSystem(persona);
 
-    const chunkResults = await parallelMap(chunks, 3, async (chunk, i) => {
-      console.log(`  Phase 1: 처리 중 [${i + 1}/${chunks.length}] ${chunk.chapterHint}...`);
+    // Per-chunk resumability: skip chunks already committed in a prior run.
+    const lastChunk = store.getLastCompletedBatch(sourceId, 'phase1_chunk'); // -1 if none
+    const existingPages = store.getSourcePages(sourceId);
+    let orderCounter = existingPages.length;
+    sourcePageSummaries = existingPages.map(p =>
+      `- ${p.title} [slug: ${p.slug}]: ${p.content.slice(0, 150).replace(/\n/g, " ")}`
+    );
+
+    const remaining = chunks
+      .map((chunk, ci) => ({ chunk, ci }))
+      .filter(({ ci }) => ci > lastChunk);
+
+    if (lastChunk >= 0) {
+      console.log(`\x1b[34m⏳ Phase 1: 원본 구조 추출 재개 (청크 ${lastChunk + 2}/${chunks.length}부터)...\x1b[0m`);
+      onProgress?.(`Phase 1: 청크 ${lastChunk + 2}/${chunks.length}부터 재개`);
+    } else {
+      console.log(`\x1b[34m⏳ Phase 1: 원본 구조 추출 중... (${chunks.length}개 청크)\x1b[0m`);
+      onProgress?.(`Phase 1: 원본 구조 추출 중... (${chunks.length}개 청크)`);
+    }
+
+    let completedCount = lastChunk + 1;
+    // Extract in parallel (LLM calls), but keep results in original chunk order.
+    const chunkResults = await parallelMap(remaining, 3, async ({ chunk, ci }) => {
+      console.log(`  Phase 1: 처리 중 [${ci + 1}/${chunks.length}] ${chunk.chapterHint}...`);
 
       const prompt = STRUCTURE_PROMPT
         .replace("{sourceTitle}", sourceTitle)
@@ -313,28 +332,22 @@ export async function llmChunkDocument(
           raw = await chat(structureSystem, prompt, 16384);
           if (!raw || raw.trim().length < 10) {
             console.log(`    \x1b[31m✗ 재시도도 빈 응답\x1b[0m`);
-            completedCount++;
-            return [] as StructurePage[];
+            return { ci, sections: [] as StructurePage[] };
           }
         }
         const sections = parseJSON<StructurePage[]>(raw).filter(s => s.title && s.content && s.content.length > 30);
-        completedCount++;
-        console.log(`    → ${sections.length}개 섹션 (완료 ${completedCount}/${chunks.length})`);
-        onProgress?.(`Phase 1: ${completedCount}/${chunks.length} 청크 완료`);
-        return sections;
+        console.log(`    → ${sections.length}개 섹션`);
+        return { ci, sections };
       } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e);
         console.log(`    \x1b[31m✗ 실패: ${message}\x1b[0m`);
-        completedCount++;
-        return [] as StructurePage[];
+        return { ci, sections: [] as StructurePage[] };
       }
     });
 
-    // Store results sequentially (SQLite writes must be sequential)
-    let orderCounter = 0;
-    sourcePageSummaries = [];
-
-    for (const sections of chunkResults) {
+    // Store results sequentially in chunk order, checkpointing per chunk so a
+    // crash resumes from the last fully-committed chunk.
+    for (const { ci, sections } of chunkResults) {
       for (const section of sections) {
         const slug = slugify(section.title);
         if (!slug) continue;
@@ -346,9 +359,11 @@ export async function llmChunkDocument(
           const page = store.addPage(slug, section.title, section.content, sourceId, slug, "source", orderCounter++);
           store.addActivityLog('page_created', `Created page: ${section.title}`, 'page', page.id);
           sourcePageSummaries.push(`- ${section.title} [slug: ${slug}]: ${section.content.slice(0, 150).replace(/\n/g, " ")}`);
-
         }
       }
+      store.setCheckpoint(sourceId, 'phase1_chunk', ci);
+      completedCount++;
+      onProgress?.(`Phase 1: ${completedCount}/${chunks.length} 청크 완료`);
     }
 
     sourceCount = orderCounter;

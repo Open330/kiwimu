@@ -8,6 +8,7 @@ export interface Source {
   title: string;
   raw_content: string;
   fetched_at: string;
+  content_hash?: string | null;
 }
 
 export interface Page {
@@ -104,6 +105,16 @@ export interface SourceCoverage {
   sourceTitle: string;
   citationCount: number;
   pageCount: number;
+}
+
+export interface Figure {
+  id: number;
+  source_id: number;
+  page_id: number | null;
+  image_path: string;   // public/served path, e.g. "/static/figures/src12-fig1.png"
+  caption: string | null;
+  page_number: number | null;
+  created_at: string;
 }
 
 const SCHEMA = `
@@ -229,6 +240,17 @@ CREATE TABLE IF NOT EXISTS citations (
 );
 CREATE INDEX IF NOT EXISTS idx_citations_page ON citations(page_id);
 CREATE INDEX IF NOT EXISTS idx_citations_source ON citations(source_id);
+CREATE TABLE IF NOT EXISTS figures (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+  page_id INTEGER REFERENCES pages(id) ON DELETE SET NULL,
+  image_path TEXT NOT NULL,
+  caption TEXT,
+  page_number INTEGER,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_figures_source ON figures(source_id);
+CREATE INDEX IF NOT EXISTS idx_figures_page ON figures(page_id);
 `;
 
 const FTS_SCHEMA = `
@@ -269,6 +291,8 @@ export class Store {
     try { this.db.exec("ALTER TABLE pages ADD COLUMN user_question TEXT DEFAULT NULL"); } catch {}
     try { this.db.exec("ALTER TABLE pages ADD COLUMN parent_page_id INTEGER DEFAULT NULL"); } catch {}
     try { this.db.exec("ALTER TABLE pages ADD COLUMN category TEXT DEFAULT NULL"); } catch {}
+    // Incremental re-ingest: hash of extracted text to detect unchanged sources
+    try { this.db.exec("ALTER TABLE sources ADD COLUMN content_hash TEXT DEFAULT NULL"); } catch {}
     // SM-2 spaced repetition columns
     try { this.db.exec("ALTER TABLE quizzes ADD COLUMN ease_factor REAL NOT NULL DEFAULT 2.5"); } catch {}
     try { this.db.exec("ALTER TABLE quizzes ADD COLUMN interval INTEGER NOT NULL DEFAULT 0"); } catch {}
@@ -321,6 +345,22 @@ export class Store {
 
   listSourcesMeta(): SourceMeta[] {
     return this.db.prepare("SELECT id, uri, type, title, fetched_at FROM sources ORDER BY id DESC").all() as SourceMeta[];
+  }
+
+  /** Content hash of the last successful ingest for a URI, or null if never/legacy. */
+  getSourceHash(uri: string): string | null {
+    const row = this.db.prepare("SELECT content_hash FROM sources WHERE uri = ?").get(uri) as { content_hash: string | null } | undefined;
+    return row?.content_hash ?? null;
+  }
+
+  /** Record the content hash after a successful ingest (enables incremental skip). */
+  setSourceHash(sourceId: number, hash: string): void {
+    this.db.prepare("UPDATE sources SET content_hash = ? WHERE id = ?").run(hash, sourceId);
+  }
+
+  /** Number of pages produced from a given source. */
+  countPagesBySource(sourceId: number): number {
+    return (this.db.prepare("SELECT COUNT(*) as count FROM pages WHERE source_id = ?").get(sourceId) as any).count;
   }
 
   // --- Pages ---
@@ -392,6 +432,8 @@ export class Store {
     this.db.prepare(
       "DELETE FROM citations WHERE page_id IN (SELECT id FROM pages WHERE source_id = ?) OR source_id = ?"
     ).run(sourceId, sourceId);
+    // Delete figures extracted from this source
+    try { this.db.prepare("DELETE FROM figures WHERE source_id = ?").run(sourceId); } catch {}
     this.db.prepare("DELETE FROM pages WHERE source_id = ?").run(sourceId);
   }
 
@@ -400,6 +442,7 @@ export class Store {
     this.db.exec("DELETE FROM quizzes");
     this.db.exec("DELETE FROM links");
     this.db.exec("DELETE FROM citations");
+    try { this.db.exec("DELETE FROM figures"); } catch {}
     this.db.exec("DELETE FROM pages");
   }
 
@@ -1050,5 +1093,30 @@ export class Store {
       slug: string;
       title: string;
     }>;
+  }
+
+  // --- Figures ---
+
+  addFigure(sourceId: number, imagePath: string, pageId?: number | null, caption?: string | null, pageNumber?: number | null): number {
+    this.db.prepare(
+      "INSERT INTO figures (source_id, page_id, image_path, caption, page_number) VALUES (?, ?, ?, ?, ?)"
+    ).run(sourceId, pageId ?? null, imagePath, caption ?? null, pageNumber ?? null);
+    return (this.db.prepare("SELECT last_insert_rowid() as id").get() as any).id;
+  }
+
+  listFiguresBySource(sourceId: number): Figure[] {
+    return this.db.prepare("SELECT * FROM figures WHERE source_id = ? ORDER BY page_number, id").all(sourceId) as Figure[];
+  }
+
+  listFiguresByPage(pageId: number): Figure[] {
+    return this.db.prepare("SELECT * FROM figures WHERE page_id = ? ORDER BY id").all(pageId) as Figure[];
+  }
+
+  deleteFiguresBySource(sourceId: number): void {
+    this.db.prepare("DELETE FROM figures WHERE source_id = ?").run(sourceId);
+  }
+
+  countFigures(): number {
+    return (this.db.prepare("SELECT COUNT(*) as c FROM figures").get() as any).c;
   }
 }
