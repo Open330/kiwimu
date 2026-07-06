@@ -2,18 +2,26 @@ import type { Store } from "../store";
 import type { LLMConfig } from "../config";
 
 // Cosine similarity between two vectors
-function cosineSimilarity(a: Float32Array, b: Float32Array): number {
+export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
   let dot = 0, normA = 0, normB = 0;
-  for (let i = 0; i < a.length; i++) {
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) {
     dot += a[i] * b[i];
     normA += a[i] * a[i];
     normB += b[i] * b[i];
   }
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+// Which providers expose an embeddings endpoint. Others must gracefully
+// degrade to keyword search.
+export function embeddingSupported(provider: string): boolean {
+  return provider === "gemini" || provider === "azure-openai" || provider === "openai";
 }
 
 // Get embedding — auto-detect provider
-async function getEmbedding(text: string, config: LLMConfig): Promise<Float32Array> {
+export async function getEmbedding(text: string, config: LLMConfig): Promise<Float32Array> {
   const input = text.slice(0, 8000);
 
   if (config.provider === "gemini") {

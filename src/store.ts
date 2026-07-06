@@ -33,6 +33,25 @@ export interface SourceMeta {
   fetched_at: string;
 }
 
+export interface PageChunk {
+  id: number;
+  page_id: number;
+  chunk_index: number;
+  content: string;
+  content_hash: string;
+}
+
+export interface ChunkEmbeddingRow {
+  chunkId: number;
+  pageId: number;
+  chunkIndex: number;
+  slug: string;
+  title: string;
+  content: string;
+  pageType: string;
+  embedding: Float32Array;
+}
+
 export interface Link {
   from_page_id: number;
   to_page_id: number;
@@ -172,6 +191,19 @@ CREATE TABLE IF NOT EXISTS page_embeddings (
   updated_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS page_chunks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  page_id INTEGER NOT NULL,
+  chunk_index INTEGER NOT NULL,
+  content TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  embedding BLOB,
+  model TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(page_id, chunk_index),
+  FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_page_chunks_page ON page_chunks(page_id);
 CREATE TABLE IF NOT EXISTS activity_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   action TEXT NOT NULL,
@@ -773,6 +805,82 @@ export class Store {
       }
     }
     return null;
+  }
+
+  // --- RAG chunks (chunk-level vector store for ask-the-wiki) ---
+
+  /** Current content hash stored for a page's chunks, or null if never chunked. */
+  getChunkContentHash(pageId: number): string | null {
+    const row = this.db.prepare(
+      "SELECT content_hash FROM page_chunks WHERE page_id = ? LIMIT 1"
+    ).get(pageId) as { content_hash: string } | undefined;
+    return row?.content_hash ?? null;
+  }
+
+  /** Replace all chunks for a page. Embeddings are cleared (must be regenerated). */
+  replaceChunks(pageId: number, chunks: string[], contentHash: string): number[] {
+    const tx = this.db.transaction(() => {
+      this.db.prepare("DELETE FROM page_chunks WHERE page_id = ?").run(pageId);
+      const insert = this.db.prepare(
+        "INSERT INTO page_chunks (page_id, chunk_index, content, content_hash) VALUES (?, ?, ?, ?)"
+      );
+      const ids: number[] = [];
+      for (let i = 0; i < chunks.length; i++) {
+        insert.run(pageId, i, chunks[i], contentHash);
+        ids.push((this.db.prepare("SELECT last_insert_rowid() as id").get() as any).id);
+      }
+      return ids;
+    });
+    return tx();
+  }
+
+  /** Delete chunks for pages that no longer exist (safety; FK cascade usually handles it). */
+  deleteOrphanChunks(): void {
+    this.db.exec("DELETE FROM page_chunks WHERE page_id NOT IN (SELECT id FROM pages)");
+  }
+
+  saveChunkEmbedding(chunkId: number, embedding: Float32Array, model: string): void {
+    const buffer = Buffer.from(embedding.buffer);
+    this.db.prepare("UPDATE page_chunks SET embedding = ?, model = ? WHERE id = ?")
+      .run(buffer, model, chunkId);
+  }
+
+  /** Chunks that still need an embedding generated. */
+  getChunksWithoutEmbedding(): Array<{ id: number; page_id: number; content: string; title: string }> {
+    return this.db.prepare(`
+      SELECT c.id, c.page_id, c.content, p.title
+      FROM page_chunks c JOIN pages p ON p.id = c.page_id
+      WHERE c.embedding IS NULL
+      ORDER BY c.id
+    `).all() as any[];
+  }
+
+  /** All chunk embeddings joined with page metadata, for retrieval ranking. */
+  getAllChunkEmbeddings(): ChunkEmbeddingRow[] {
+    const rows = this.db.prepare(`
+      SELECT c.id, c.page_id, c.chunk_index, c.content, c.embedding,
+             p.slug, p.title, p.page_type
+      FROM page_chunks c JOIN pages p ON p.id = c.page_id
+      WHERE c.embedding IS NOT NULL
+    `).all() as any[];
+    return rows.map(r => ({
+      chunkId: r.id,
+      pageId: r.page_id,
+      chunkIndex: r.chunk_index,
+      slug: r.slug,
+      title: r.title,
+      content: r.content,
+      pageType: r.page_type,
+      embedding: new Float32Array(r.embedding.buffer, r.embedding.byteOffset, r.embedding.byteLength / 4),
+    }));
+  }
+
+  countChunks(): number {
+    return (this.db.prepare("SELECT COUNT(*) as c FROM page_chunks").get() as any).c;
+  }
+
+  countChunkEmbeddings(): number {
+    return (this.db.prepare("SELECT COUNT(*) as c FROM page_chunks WHERE embedding IS NOT NULL").get() as any).c;
   }
 
   getSourcePages(sourceId: number): Page[] {
