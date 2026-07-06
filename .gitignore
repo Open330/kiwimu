@@ -9,5 +9,6 @@ bun.lock
 certs/
 .claude/worktrees/
 .context/reviews/
+.context/impl/
 .context/marketing/frames/
 docker-compose.override.yml

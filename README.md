@@ -26,6 +26,15 @@
 
 ---
 
+## What's new in v1.2
+
+- 🤖 **위키 전체 질의 (Ask-the-Wiki / RAG)** — 페이지를 청크 단위로 임베딩해 시맨틱 검색 + 위키 전체 대상 채팅. 관련 근거를 찾아 인용과 함께 답변 (`kiwimu ask`, serve 모드 `/api/ask-wiki`, `kiwimu index`로 증분 인덱싱)
+- 🖼️ **그림 추출 (Figure Extraction)** — PDF의 다이어그램·그림을 자동 추출해 위키 페이지에 임베드, 멀티모달 LLM이 캡션 생성 (vision 미지원/도구 미설치 시 자동 건너뜀)
+- ♻️ **증분 재인제스트 (Incremental Re-ingest)** — 내용이 바뀐 문서만 다시 처리. 변경 없으면 LLM 호출 없이 즉시 스킵 (`--force`로 강제)
+- 💵 **비용 미리보기** — `add` 실행 시 예상 토큰·비용을 먼저 보여주고 확인 (`--yes`로 스킵)
+
+---
+
 ## What's new in v1.1
 
 - 🔖 **출처 추적 (Provenance Tracking)** — 모든 AI 생성 문장에 인라인 인용 자동 부착, 출처 커버리지 행렬 제공
@@ -244,8 +253,10 @@ bunx @open330/kiwimu deploy --target vercel
 |------|------|
 | `kiwimu init [name]` | 새 위키 프로젝트 생성 (interactive CLI) |
 | `kiwimu init --demo` | 샘플 데이터로 즉시 체험 (API key 불필요) |
-| `kiwimu add <source>` | URL 또는 파일 추가 (PDF, DOCX, PPTX, DOC, PPT, KEY, RTF, MD) |
+| `kiwimu add <source>` | URL 또는 파일 추가 (PDF, DOCX, PPTX, DOC, PPT, KEY, RTF, MD). `--yes`로 비용 확인 스킵, `--force`로 강제 재인제스트 |
 | `kiwimu add <directory>` | 디렉토리 내 모든 .md 파일 일괄 인제스트 |
+| `kiwimu ask <question>` | 위키 전체에 질문 (RAG, 인용 포함) |
+| `kiwimu index` | ask-the-wiki용 시맨틱 인덱스 증분 갱신 |
 | `kiwimu build` | 정적 위키 사이트 빌드 |
 | `kiwimu serve [-p port]` | 웹 서버 실행 (문서 추가/관리 가능) |
 | `kiwimu quiz [-n count]` | 터미널에서 학습 퀴즈 풀기 |
