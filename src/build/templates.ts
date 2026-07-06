@@ -158,6 +158,7 @@ function base(opts: {
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="/static/peek-panel.css">
+    <link rel="stylesheet" href="/static/ask-wiki.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]})"></script>
@@ -220,6 +221,7 @@ function base(opts: {
     <script src="/static/dynamic-qa.js"></script>
     <script src="/static/edit-page.js"></script>
     <script src="/static/peek-panel.js"></script>
+    <script src="/static/ask-wiki.js"></script>
     <script>
         // Mobile hamburger menu
         (function() {

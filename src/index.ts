@@ -280,10 +280,78 @@ program
         if (embConfig.api_key && embConfig.provider !== "demo") {
           const { generateMissingEmbeddings } = await import("./services/embedding");
           await generateMissingEmbeddings(store, embConfig, (msg) => console.log(msg));
+          // RAG chunk-level index (incremental — only new/changed pages)
+          const { indexWiki } = await import("./services/rag");
+          await indexWiki(store, embConfig, { onProgress: (msg) => console.log(msg) });
         }
       } catch (e: unknown) {
         console.log(`  ⚠ 임베딩 생성 건너뜀: ${e instanceof Error ? e.message : String(e)}`);
       }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error(`\x1b[31m❌ ${message}\x1b[0m`);
+      process.exit(1);
+    } finally {
+      store.close();
+    }
+  });
+
+// --- index (RAG) ---
+program
+  .command("index")
+  .description("ask-the-wiki용 시맨틱 인덱스를 증분 갱신합니다")
+  .action(async () => {
+    const root = findProjectRoot();
+    const config = loadConfig(root);
+    const store = new Store(join(root, DB_FILE));
+    try {
+      const embConfig = config.embedding
+        ? { ...config.llm, provider: config.embedding.provider, api_key: config.embedding.api_key }
+        : config.llm;
+      if (!embConfig.api_key || embConfig.provider === "demo") {
+        console.log("\x1b[33m임베딩 API 키가 없어 인덱싱을 건너뜁니다 (키워드 검색은 계속 동작합니다).\x1b[0m");
+        return;
+      }
+      const { indexWiki } = await import("./services/rag");
+      console.log("\x1b[34m🔎 RAG 인덱스 갱신 중...\x1b[0m");
+      const result = await indexWiki(store, embConfig, { onProgress: (msg) => console.log(msg) });
+      console.log(`\x1b[32m✅ 완료: ${result.pagesChunked} 페이지 재청킹, ${result.chunksEmbedded} 임베딩, ${result.skipped} 변경없음\x1b[0m`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error(`\x1b[31m❌ ${message}\x1b[0m`);
+      process.exit(1);
+    } finally {
+      store.close();
+    }
+  });
+
+// --- ask (RAG, terminal) ---
+program
+  .command("ask <question>")
+  .description("위키 전체에 질문합니다 (RAG)")
+  .action(async (question: string) => {
+    const root = findProjectRoot();
+    const config = loadConfig(root);
+    const store = new Store(join(root, DB_FILE));
+    try {
+      const embConfig = config.embedding
+        ? { ...config.llm, provider: config.embedding.provider, api_key: config.embedding.api_key }
+        : config.llm;
+      let llm = null;
+      if (config.llm.api_key && config.llm.provider !== "demo") {
+        const { LLMClient } = await import("./llm-client");
+        llm = new LLMClient(config.llm);
+      }
+      const { askWiki } = await import("./services/rag");
+      const result = await askWiki(store, question, embConfig, llm);
+      console.log(`\n${result.answer}\n`);
+      if (result.citations.length) {
+        console.log("\x1b[2m출처:\x1b[0m");
+        for (const c of result.citations) {
+          console.log(`  [${c.n}] ${c.title} (${c.slug})`);
+        }
+      }
+      console.log(`\n\x1b[2m(${result.method}${result.generated ? "" : ", no-LLM"})\x1b[0m`);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       console.error(`\x1b[31m❌ ${message}\x1b[0m`);
