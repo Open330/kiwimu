@@ -543,6 +543,46 @@ export function startServer(root: string, port: number, host: string): void {
         return Response.json({ results, method: 'fts' });
       }
 
+      // ── ask-the-wiki: RAG chat over the whole wiki ──
+      if (url.pathname === "/api/ask-wiki" && req.method === "POST") {
+        const clientIp = req.headers.get("x-forwarded-for") || "local";
+        const now = Date.now();
+        const timestamps = askRateLimit.get(clientIp) || [];
+        const recent = timestamps.filter(t => now - t < ASK_RATE_WINDOW);
+        if (recent.length >= ASK_RATE_LIMIT) {
+          return Response.json({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요." }, { status: 429 });
+        }
+        recent.push(now);
+        askRateLimit.set(clientIp, recent);
+
+        try {
+          const body = await req.json() as { question?: string };
+          const question = (body.question || "").trim();
+          if (!question) return Response.json({ error: "question이 필요합니다" }, { status: 400 });
+          if (question.length > 2000) return Response.json({ error: "question은 2000자 이하여야 합니다" }, { status: 400 });
+
+          const currentConfig = loadConfig(root);
+          const embConfig = currentConfig.embedding
+            ? { ...currentConfig.llm, provider: currentConfig.embedding.provider, api_key: currentConfig.embedding.api_key }
+            : currentConfig.llm;
+
+          // Build an LLM client only if a real provider is configured.
+          let llm: import("./services/rag").ChatLike | null = null;
+          if (currentConfig.llm.api_key && currentConfig.llm.provider !== "demo") {
+            const { LLMClient } = await import("./llm-client");
+            llm = new LLMClient(currentConfig.llm);
+          }
+
+          const { askWiki } = await import("./services/rag");
+          const result = await askWiki(store, question, embConfig, llm);
+          store.addActivityLog("ask_wiki", `Q: ${question.slice(0, 80)}`, "query", undefined, { method: result.method });
+          return Response.json(result);
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          return Response.json({ error: message }, { status: 500 });
+        }
+      }
+
       if (url.pathname === "/api/lint" && req.method === "GET") {
         try {
           const { lintWiki } = await import("./services/lint");
