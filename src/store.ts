@@ -8,6 +8,7 @@ export interface Source {
   title: string;
   raw_content: string;
   fetched_at: string;
+  content_hash?: string | null;
 }
 
 export interface Page {
@@ -290,6 +291,8 @@ export class Store {
     try { this.db.exec("ALTER TABLE pages ADD COLUMN user_question TEXT DEFAULT NULL"); } catch {}
     try { this.db.exec("ALTER TABLE pages ADD COLUMN parent_page_id INTEGER DEFAULT NULL"); } catch {}
     try { this.db.exec("ALTER TABLE pages ADD COLUMN category TEXT DEFAULT NULL"); } catch {}
+    // Incremental re-ingest: hash of extracted text to detect unchanged sources
+    try { this.db.exec("ALTER TABLE sources ADD COLUMN content_hash TEXT DEFAULT NULL"); } catch {}
     // SM-2 spaced repetition columns
     try { this.db.exec("ALTER TABLE quizzes ADD COLUMN ease_factor REAL NOT NULL DEFAULT 2.5"); } catch {}
     try { this.db.exec("ALTER TABLE quizzes ADD COLUMN interval INTEGER NOT NULL DEFAULT 0"); } catch {}
@@ -342,6 +345,22 @@ export class Store {
 
   listSourcesMeta(): SourceMeta[] {
     return this.db.prepare("SELECT id, uri, type, title, fetched_at FROM sources ORDER BY id DESC").all() as SourceMeta[];
+  }
+
+  /** Content hash of the last successful ingest for a URI, or null if never/legacy. */
+  getSourceHash(uri: string): string | null {
+    const row = this.db.prepare("SELECT content_hash FROM sources WHERE uri = ?").get(uri) as { content_hash: string | null } | undefined;
+    return row?.content_hash ?? null;
+  }
+
+  /** Record the content hash after a successful ingest (enables incremental skip). */
+  setSourceHash(sourceId: number, hash: string): void {
+    this.db.prepare("UPDATE sources SET content_hash = ? WHERE id = ?").run(hash, sourceId);
+  }
+
+  /** Number of pages produced from a given source. */
+  countPagesBySource(sourceId: number): number {
+    return (this.db.prepare("SELECT COUNT(*) as count FROM pages WHERE source_id = ?").get(sourceId) as any).count;
   }
 
   // --- Pages ---

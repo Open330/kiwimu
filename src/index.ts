@@ -125,11 +125,24 @@ program
 program
   .command("add <source>")
   .description("URL, 파일, 또는 디렉토리를 추가합니다 (PDF, DOCX, PPTX, DOC, PPT, KEY, RTF, MD)")
-  .action(async (source: string) => {
+  .option("-y, --yes", "비용 미리보기 확인 없이 바로 진행")
+  .option("-f, --force", "내용이 변경되지 않아도 강제로 재인제스트")
+  .action(async (source: string, options: { yes?: boolean; force?: boolean }) => {
     const root = findProjectRoot();
     const config = loadConfig(root);
     const persona = getActivePersona(config);
     const store = new Store(join(root, DB_FILE));
+
+    // Cost-preview confirmation hook (skipped with --yes). Returns false to abort.
+    const onCostEstimate = options.yes ? undefined : async (est: import("./pipeline/cost-estimator").IngestEstimate): Promise<boolean> => {
+      console.log(`\x1b[34m📊 예상 비용: ~${est.totalTokens.toLocaleString()} 토큰 (${est.chunks}청크), ~$${est.estimatedCostUsd.toFixed(4)}\x1b[0m`);
+      const { confirm, isCancel } = await import("@clack/prompts");
+      const ok = await confirm({ message: "인제스트를 진행할까요?" });
+      if (isCancel(ok)) return false;
+      return ok === true;
+    };
+    const ingestOpts = { force: options.force, onCostEstimate };
+
     try {
       const schema = config.schema;
       const isUrl = source.startsWith("http://") || source.startsWith("https://");
@@ -139,9 +152,15 @@ program
         validateUrl(source);
         console.log(`\x1b[34m📥 URL 가져오는 중: ${source}\x1b[0m`);
         const { ingestUrl } = await import("./services/ingest");
-        const result = await ingestUrl(root, store, source, config.llm, persona, (s) => console.log(`  ${s}`), schema);
-        console.log(`\x1b[32m✅ 📖 ${result.sourceCount}개 원본 + 📝 ${result.conceptCount}개 개념 문서 생성\x1b[0m`);
-        console.log(`\x1b[34m📊 LLM: ${result.usage.totalCalls}회 호출, ~$${result.usage.estimatedCostUsd.toFixed(4)}\x1b[0m`);
+        const result = await ingestUrl(root, store, source, config.llm, persona, (s) => console.log(`  ${s}`), schema, ingestOpts);
+        if (result.unchanged) {
+          console.log(`\x1b[33m⏭️  변경 없음 — 재인제스트를 건너뛰었습니다 (--force로 강제)\x1b[0m`);
+        } else if (result.cancelled) {
+          console.log(`\x1b[33m✋ 취소되었습니다\x1b[0m`);
+        } else {
+          console.log(`\x1b[32m✅ 📖 ${result.sourceCount}개 원본 + 📝 ${result.conceptCount}개 개념 문서 생성\x1b[0m`);
+          console.log(`\x1b[34m📊 LLM: ${result.usage.totalCalls}회 호출, ~$${result.usage.estimatedCostUsd.toFixed(4)}\x1b[0m`);
+        }
       } else {
         const { resolve, basename } = await import("path");
         const absPath = resolve(source);
@@ -168,10 +187,16 @@ program
 
           console.log(`📂 ${mdFiles.length}개 마크다운 파일 발견`);
           const { ingestFile } = await import("./services/ingest");
+          // Batch directory ingest auto-proceeds (no per-file cost prompt), still honors --force.
+          const batchOpts = { force: options.force };
           for (const mdFile of mdFiles) {
             console.log(`\x1b[34m📥 파일 처리 중: ${basename(mdFile)}\x1b[0m`);
-            const result = await ingestFile(root, store, mdFile, basename(mdFile), config.llm, persona, (s) => console.log(`  ${s}`), schema);
-            console.log(`\x1b[32m✅ 📖 ${result.sourceCount}개 원본 + 📝 ${result.conceptCount}개 개념\x1b[0m`);
+            const result = await ingestFile(root, store, mdFile, basename(mdFile), config.llm, persona, (s) => console.log(`  ${s}`), schema, batchOpts);
+            if (result.unchanged) {
+              console.log(`\x1b[33m⏭️  ${basename(mdFile)} 변경 없음 — 건너뜀\x1b[0m`);
+            } else {
+              console.log(`\x1b[32m✅ 📖 ${result.sourceCount}개 원본 + 📝 ${result.conceptCount}개 개념\x1b[0m`);
+            }
           }
         } else {
           const file = Bun.file(absPath);
@@ -187,9 +212,18 @@ program
           }
           console.log(`\x1b[34m📥 파일 처리 중: ${source}\x1b[0m`);
           const { ingestFile } = await import("./services/ingest");
-          const result = await ingestFile(root, store, absPath, source, config.llm, persona, (s) => console.log(`  ${s}`), schema);
-          console.log(`\x1b[32m✅ 📖 ${result.sourceCount}개 원본 + 📝 ${result.conceptCount}개 개념 문서 생성\x1b[0m`);
-          console.log(`\x1b[34m📊 LLM: ${result.usage.totalCalls}회 호출, ~$${result.usage.estimatedCostUsd.toFixed(4)}\x1b[0m`);
+          const result = await ingestFile(root, store, absPath, source, config.llm, persona, (s) => console.log(`  ${s}`), schema, ingestOpts);
+          if (result.unchanged) {
+            console.log(`\x1b[33m⏭️  변경 없음 — 재인제스트를 건너뛰었습니다 (--force로 강제)\x1b[0m`);
+          } else if (result.cancelled) {
+            console.log(`\x1b[33m✋ 취소되었습니다\x1b[0m`);
+          } else {
+            console.log(`\x1b[32m✅ 📖 ${result.sourceCount}개 원본 + 📝 ${result.conceptCount}개 개념 문서 생성\x1b[0m`);
+            console.log(`\x1b[34m📊 LLM: ${result.usage.totalCalls}회 호출, ~$${result.usage.estimatedCostUsd.toFixed(4)}\x1b[0m`);
+            if (result.figures && result.figures.figureCount > 0) {
+              console.log(`\x1b[34m🖼️  그림 ${result.figures.figureCount}개 추출 (${result.figures.captionedCount}개 캡션)\x1b[0m`);
+            }
+          }
         }
       }
     } catch (e: unknown) {

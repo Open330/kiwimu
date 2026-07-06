@@ -157,6 +157,12 @@ export async function buildSite(store: Store, config: KiwiConfig, projectRoot: s
     cpSync(assetsDir, staticDir, { recursive: true });
   }
 
+  // Copy extracted figures (persisted outside _site) into the built site.
+  const figuresSrc = join(projectRoot, "figures");
+  if (existsSync(figuresSrc)) {
+    cpSync(figuresSrc, join(staticDir, "figures"), { recursive: true });
+  }
+
   // Copy logo (check multiple possible locations).
   // Order: shipped-with-kiwimu (works for both git clone and npm install), then
   // wiki-project-local overrides, then Docker path, then the assetsDir copy
