@@ -7,6 +7,7 @@ import { Store } from "./store";
 import type { KiwiConfig } from "./config";
 import type { ContentIndex } from "./services/index-generator";
 import { renderActivityPage } from "./build/templates";
+import { isPrivateIp } from "./net";
 
 export function startServer(root: string, port: number, host: string): void {
   const config = loadConfig(root);
@@ -54,15 +55,35 @@ export function startServer(root: string, port: number, host: string): void {
     const part = raw.split(";").map(s => s.trim()).find(s => s.startsWith(name + "="));
     return part ? decodeURIComponent(part.slice(name.length + 1)) : null;
   }
+  // Constant-time comparison so the token can't be recovered via a timing oracle.
+  function safeEqual(candidate: string | null | undefined, expected: string): boolean {
+    if (!candidate) return false;
+    const a = Buffer.from(candidate);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  }
   function isAuthenticated(req: Request, url: URL): boolean {
     const queryToken = url.searchParams.get("token");
     const authHeader = req.headers.get("Authorization");
     const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
     const cookieToken = readCookie(req, AUTH_COOKIE_NAME);
-    return queryToken === authToken || bearerToken === authToken || cookieToken === authToken;
+    return safeEqual(queryToken, authToken) || safeEqual(bearerToken, authToken) || safeEqual(cookieToken, authToken);
   }
   function authCookieHeader(): string {
     return `${AUTH_COOKIE_NAME}=${encodeURIComponent(authToken)}; Path=/; Max-Age=${AUTH_COOKIE_MAX_AGE}; SameSite=Lax; HttpOnly`;
+  }
+
+  // Rate-limit key: trust the socket address when the client connects
+  // directly; only fall back to x-forwarded-for (first hop) when the socket
+  // is a local/private proxy (cloudflared, traefik). A public client can't
+  // spoof its way into fresh buckets by rotating the header.
+  function rateLimitKey(req: Request, server: { requestIP(req: Request): { address: string } | null }): string {
+    const socketIp = server.requestIP(req)?.address || "";
+    if (socketIp && !isPrivateIp(socketIp)) return socketIp;
+    const xff = req.headers.get("x-forwarded-for");
+    if (xff) return xff.split(",")[0]!.trim();
+    return socketIp || "local";
   }
 
   console.log(`\x1b[32m🥝 Kiwi Mu 서버 시작!\x1b[0m`);
@@ -87,18 +108,31 @@ export function startServer(root: string, port: number, host: string): void {
     port,
     hostname,
     ...(tlsConfig ? { tls: { cert: Bun.file(tlsConfig.cert), key: Bun.file(tlsConfig.key) } } : {}),
-    async fetch(req) {
+    async fetch(req, server) {
       const url = new URL(req.url);
+
+      // ── ?token= in a browser page load leaks via Referer (CDN requests) and
+      // browser history: validate it, move it into the auth cookie, and
+      // redirect to the same URL with the token stripped. /api/ routes are
+      // exempt so scripted GETs (e.g. curl, dynamic-qa.js search) keep working.
+      const pageQueryToken = url.searchParams.get("token");
+      if (pageQueryToken !== null && req.method === "GET" && !url.pathname.startsWith("/api/")) {
+        if (!safeEqual(pageQueryToken, authToken)) {
+          return Response.json({ error: "Unauthorized" }, { status: 401 });
+        }
+        url.searchParams.delete("token");
+        const qs = url.searchParams.toString();
+        return new Response(null, {
+          status: 302,
+          headers: { Location: url.pathname + (qs ? `?${qs}` : ""), "Set-Cookie": authCookieHeader() },
+        });
+      }
 
       // ── Auth middleware for /api/* and /admin ──
       if (url.pathname.startsWith("/api/") || url.pathname === "/manage" || url.pathname === "/activity" || url.pathname === "/provenance") {
         if (!isAuthenticated(req, url)) {
           return Response.json({ error: "Unauthorized" }, { status: 401 });
         }
-        // If user supplied token via ?token=…, set a cookie so subsequent
-        // requests don't need it. Continue handling the request below.
-        // (We set the Set-Cookie header on the eventual response in branches
-        // that build their own Response; for /manage we wrap below.)
       }
 
       // ── API endpoints ──
@@ -174,7 +208,7 @@ export function startServer(root: string, port: number, host: string): void {
 
         try {
           const { validateUrl } = await import("./ingest/web");
-          validateUrl(body.source);
+          await validateUrl(body.source);
         } catch (e: unknown) {
           const message = e instanceof Error ? e.message : String(e);
           return Response.json({ error: message }, { status: 400 });
@@ -325,7 +359,6 @@ export function startServer(root: string, port: number, host: string): void {
 
         const { renderAdmin } = await import("./build/templates");
         const headers: Record<string, string> = { "Content-Type": "text/html" };
-        if (url.searchParams.get("token") === authToken) headers["Set-Cookie"] = authCookieHeader();
         return new Response(renderAdmin({
           wikiName: configData.project.name,
           sources,
@@ -338,7 +371,7 @@ export function startServer(root: string, port: number, host: string): void {
       }
 
       if (url.pathname === "/api/ask" && req.method === "POST") {
-        const clientIp = req.headers.get("x-forwarded-for") || "local";
+        const clientIp = rateLimitKey(req, server);
         const now = Date.now();
         const timestamps = askRateLimit.get(clientIp) || [];
         const recent = timestamps.filter(t => now - t < ASK_RATE_WINDOW);
@@ -545,7 +578,7 @@ export function startServer(root: string, port: number, host: string): void {
 
       // ── ask-the-wiki: RAG chat over the whole wiki ──
       if (url.pathname === "/api/ask-wiki" && req.method === "POST") {
-        const clientIp = req.headers.get("x-forwarded-for") || "local";
+        const clientIp = rateLimitKey(req, server);
         const now = Date.now();
         const timestamps = askRateLimit.get(clientIp) || [];
         const recent = timestamps.filter(t => now - t < ASK_RATE_WINDOW);
@@ -774,7 +807,6 @@ export function startServer(root: string, port: number, host: string): void {
         const isHtml = pathname.endsWith(".html");
         const cspValue = "default-src 'self'; script-src 'self' 'unsafe-inline' cdn.jsdelivr.net d3js.org static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src https://fonts.gstatic.com https://*.gstatic.com data:; img-src * data:; connect-src 'self' cloudflareinsights.com";
         if (isHtml) {
-          const queryToken = url.searchParams.get("token");
           const isAuthed = isAuthenticated(req, url);
           if (isAuthed) {
             let html = await staticFile.text();
@@ -782,9 +814,6 @@ export function startServer(root: string, port: number, host: string): void {
               html = html.replace('</head>', `<meta name="kiwi-auth" content="${authToken}"></head>`);
             }
             const headers: Record<string, string> = { "Content-Type": "text/html", "Content-Security-Policy": cspValue };
-            // If token came in via query, persist it as a cookie so the user
-            // doesn't need to re-paste ?token=… on every navigation.
-            if (queryToken === authToken) headers["Set-Cookie"] = authCookieHeader();
             return new Response(html, { headers });
           }
         }

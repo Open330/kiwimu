@@ -1,3 +1,4 @@
+import { importAnthropic, importOpenAI } from "./optional-deps";
 import type { LLMConfig } from "./config";
 
 // Token usage tracking
@@ -116,7 +117,7 @@ export class LLMClient {
     }
 
     if (!this._azureClient) {
-      const { AzureOpenAI } = await import("openai");
+      const { AzureOpenAI } = await importOpenAI();
       this._azureClient = new AzureOpenAI({ endpoint, apiKey, deployment: model, apiVersion: "2024-12-01-preview" });
     }
 
@@ -140,7 +141,7 @@ export class LLMClient {
   }
 
   private async openaiComplete(system: string, userMessage: string, maxTokens: number): Promise<ProviderResult> {
-    const { default: OpenAI } = await import("openai");
+    const { default: OpenAI } = await importOpenAI();
     if (!this._openaiClient) {
       this._openaiClient = new OpenAI({ apiKey: this.config.api_key });
     }
@@ -163,7 +164,7 @@ export class LLMClient {
   }
 
   private async anthropicComplete(system: string, userMessage: string, maxTokens: number): Promise<ProviderResult> {
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    const { default: Anthropic } = await importAnthropic();
     if (!this._anthropicClient) {
       this._anthropicClient = new Anthropic({ apiKey: this.config.api_key });
     }
@@ -312,7 +313,7 @@ export class LLMClient {
   }
 
   private async anthropicVision(imageBase64: string, mimeType: string, prompt: string, maxTokens: number): Promise<ProviderResult> {
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    const { default: Anthropic } = await importAnthropic();
     if (!this._anthropicClient) {
       this._anthropicClient = new Anthropic({ apiKey: this.config.api_key });
     }
@@ -339,7 +340,7 @@ export class LLMClient {
   }
 
   private async openaiVision(imageBase64: string, mimeType: string, prompt: string, maxTokens: number): Promise<ProviderResult> {
-    const { default: OpenAI } = await import("openai");
+    const { default: OpenAI } = await importOpenAI();
     if (!this._openaiClient) {
       this._openaiClient = new OpenAI({ apiKey: this.config.api_key });
     }

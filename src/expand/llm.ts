@@ -1,3 +1,4 @@
+import { importAnthropic, importOpenAI } from "../optional-deps";
 import type { Page } from "../store";
 import type { Persona } from "../config";
 
@@ -28,7 +29,7 @@ export async function expandWithApi(page: Page, context: Page[], provider: strin
   const prompt = buildPrompt(page, context);
 
   if (provider === "anthropic") {
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    const { default: Anthropic } = await importAnthropic();
     const client = new Anthropic();
     const resp = await client.messages.create({
       model: model || "claude-sonnet-4-6",
@@ -39,7 +40,7 @@ export async function expandWithApi(page: Page, context: Page[], provider: strin
   }
 
   if (provider === "openai") {
-    const { default: OpenAI } = await import("openai");
+    const { default: OpenAI } = await importOpenAI();
     const client = new OpenAI();
     const resp = await client.chat.completions.create({
       model: model || "gpt-5.4",

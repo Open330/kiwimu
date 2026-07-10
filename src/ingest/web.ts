@@ -1,11 +1,18 @@
 import * as cheerio from "cheerio";
 import { URL } from "url";
+import { lookup } from "dns/promises";
+import { isPrivateIp } from "../net";
+
+const BLOCKED_MSG = "내부 네트워크 주소는 허용되지 않습니다";
 
 /**
  * Validate a URL to prevent SSRF attacks.
- * Blocks private/internal IP ranges and non-http(s) schemes.
+ * Blocks non-http(s) schemes, private/internal IP literals (the WHATWG URL
+ * parser already normalizes decimal/hex/octal IPv4 forms like
+ * `http://2130706433` to dotted-quad), internal hostnames, and — for named
+ * hosts — DNS answers that resolve into private ranges.
  */
-export function validateUrl(urlStr: string): void {
+export async function validateUrl(urlStr: string): Promise<void> {
   let parsed: URL;
   try {
     parsed = new URL(urlStr);
@@ -19,31 +26,38 @@ export function validateUrl(urlStr: string): void {
 
   const hostname = parsed.hostname;
 
-  // Block IP-based hostnames in private ranges
-  // IPv4 pattern
-  const ipv4Match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (ipv4Match) {
-    const [, a, b, c, d] = ipv4Match.map(Number);
-    if (
-      a === 127 ||                              // 127.0.0.0/8
-      a === 10 ||                               // 10.0.0.0/8
-      (a === 172 && b >= 16 && b <= 31) ||      // 172.16.0.0/12
-      (a === 192 && b === 168) ||               // 192.168.0.0/16
-      (a === 169 && b === 254) ||               // 169.254.0.0/16
-      (a === 0 && b === 0 && c === 0 && d === 0) // 0.0.0.0
-    ) {
-      throw new Error("내부 네트워크 주소는 허용되지 않습니다");
-    }
+  if (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname.endsWith(".local") ||
+    hostname.endsWith(".internal")
+  ) {
+    throw new Error(BLOCKED_MSG);
   }
 
-  // Block common private hostnames
-  if (hostname === "localhost" || hostname === "[::1]" || hostname.endsWith(".local")) {
-    throw new Error("내부 네트워크 주소는 허용되지 않습니다");
+  if (isPrivateIp(hostname)) {
+    throw new Error(BLOCKED_MSG);
+  }
+
+  // Named host: resolve and check every DNS answer so a hostname pointing
+  // at an internal IP can't slip through. Unresolvable hosts are left for
+  // fetch() to fail on naturally.
+  const isIpLiteral = /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || hostname.startsWith("[");
+  if (!isIpLiteral) {
+    let addrs: { address: string }[];
+    try {
+      addrs = await lookup(hostname, { all: true });
+    } catch {
+      return;
+    }
+    if (addrs.some((a) => isPrivateIp(a.address))) {
+      throw new Error(BLOCKED_MSG);
+    }
   }
 }
 
 export async function fetchPage(url: string): Promise<{ title: string; html: string }> {
-  validateUrl(url);
+  await validateUrl(url);
 
   let currentUrl = url;
   const maxRedirects = 5;
@@ -59,7 +73,7 @@ export async function fetchPage(url: string): Promise<{ title: string; html: str
       if (!location) throw new Error(`Redirect without location header from ${currentUrl}`);
       // Resolve relative redirect URLs
       const redirectUrl = new URL(location, currentUrl).href;
-      validateUrl(redirectUrl); // Re-validate redirect target to prevent SSRF bypass
+      await validateUrl(redirectUrl); // Re-validate redirect target to prevent SSRF bypass
       currentUrl = redirectUrl;
       continue;
     }

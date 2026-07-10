@@ -2,13 +2,14 @@
 
 import { Command } from "commander";
 import { join } from "path";
+import pkg from "../package.json";
 import { CONFIG_FILE, DB_FILE, SUPPORTED_EXTENSIONS, defaultConfig, findProjectRoot, getActivePersona, loadConfig, saveConfig } from "./config";
 import { Store } from "./store";
 
 const program = new Command()
   .name("kiwimu")
   .description("🥝 Kiwi Mu — 나만의 학습 위키를 만드세요")
-  .version("0.8.0");
+  .version(pkg.version);
 
 // --- init ---
 program
@@ -149,7 +150,7 @@ program
 
       if (isUrl) {
         const { validateUrl } = await import("./ingest/web");
-        validateUrl(source);
+        await validateUrl(source);
         console.log(`\x1b[34m📥 URL 가져오는 중: ${source}\x1b[0m`);
         const { ingestUrl } = await import("./services/ingest");
         const result = await ingestUrl(root, store, source, config.llm, persona, (s) => console.log(`  ${s}`), schema, ingestOpts);
