@@ -100,7 +100,7 @@ export function defaultConfig(name: string): KiwiConfig {
   return {
     project: { name, created: new Date().toISOString().slice(0, 10) },
     build: { output_dir: SITE_DIR },
-    llm: { provider: "gemini", model: "gemini-3.1-flash-lite-preview", api_key: "", endpoint: "" },
+    llm: { provider: "gemini", model: "gemini-3.6-flash", api_key: "", endpoint: "" },
     deploy: { target: "gh-pages" },
     personas: builtins.length > 0 ? builtins : [getDefaultPersona()],
     active_persona: builtins[0]?.name || "default",
@@ -121,7 +121,7 @@ export function loadConfig(root: string): KiwiConfig {
   const raw = parse(content) as Partial<KiwiConfig> & Record<string, unknown>;
   // Migrate old config format
   if (!raw.llm) {
-    raw.llm = { provider: "gemini", model: "gemini-3.1-flash-lite-preview", api_key: "", endpoint: "" };
+    raw.llm = { provider: "gemini", model: "gemini-3.6-flash", api_key: "", endpoint: "" };
   }
   // Migrate: add default persona if missing
   if (!raw.personas || !raw.personas.length) {
