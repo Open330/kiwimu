@@ -24,6 +24,7 @@
   right: 0;
   bottom: 0;
   width: min(720px, max(480px, 40vw));
+  max-width: 95vw;
   background: var(--bg, #fff);
   color: var(--text, #1a1a1a);
   border-left: 1px solid var(--border, #dcdcdc);
@@ -35,8 +36,25 @@
   flex-direction: column;
   outline: none;
 }
+.peek-panel.peek-width-320 { width: 320px; }
+.peek-panel.peek-width-400 { width: 400px; }
+.peek-panel.peek-width-480 { width: 480px; }
+.peek-panel.peek-width-560 { width: 560px; }
+.peek-panel.peek-width-640 { width: 640px; }
+.peek-panel.peek-width-720 { width: 720px; }
+.peek-panel.peek-width-800 { width: 800px; }
+.peek-panel.peek-width-960 { width: 960px; }
+.peek-panel.peek-width-1120 { width: 1120px; }
+.peek-panel.peek-width-1280 { width: 1280px; }
+.peek-panel.peek-width-1400 { width: 1400px; }
+body.peek-panel-open { overflow: hidden; }
 .peek-panel.is-open {
   transform: translateX(0);
+}
+.peek-panel:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -4px;
+  box-shadow: inset 0 0 0 5px var(--focus-ring, #005fcc);
 }
 
 /* Resize handle on the left edge — invisible 8px hit area with a visible
@@ -44,8 +62,8 @@
 .peek-resize-handle {
   position: absolute;
   top: 0;
-  left: -4px;
-  width: 8px;
+  left: -12px;
+  width: 24px;
   height: 100%;
   cursor: ew-resize;
   z-index: 1;
@@ -55,7 +73,7 @@
   content: "";
   position: absolute;
   top: 0;
-  left: 3px;
+  left: 11px;
   width: 2px;
   height: 100%;
   background: transparent;
@@ -64,6 +82,11 @@
 .peek-resize-handle:hover::after,
 body.peek-resizing .peek-resize-handle::after {
   background: var(--namu-green, #00a495);
+}
+.peek-resize-handle:focus-visible::after {
+  background: Highlight;
+  width: 4px;
+  left: 10px;
 }
 /* Suspend transition + select while dragging so resize feels immediate. */
 body.peek-resizing {
@@ -136,7 +159,7 @@ body.peek-resizing .peek-panel {
 .peek-content {
   flex: 1 1 auto;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
   padding: 20px 28px 40px;
   background: var(--bg, #fff);
   -webkit-overflow-scrolling: touch;

@@ -1,11 +1,26 @@
 import { parse, stringify } from "smol-toml";
-import { existsSync, readFileSync, readdirSync } from "fs";
+import { randomUUID } from "node:crypto";
+import {
+  closeSync,
+  existsSync,
+  fsyncSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "fs";
 import { join, dirname } from "path";
 
 export const CONFIG_FILE = "kiwi.toml";
 export const DB_FILE = "kiwi.db";
 export const SITE_DIR = "_site";
 export const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'pptx', 'doc', 'ppt', 'key', 'rtf', 'md'];
+export const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
+// Keep the retired identifier assembled so it cannot accidentally reappear in
+// user-facing defaults or documentation while exact legacy configs still load.
+const RETIRED_GEMINI_DEFAULT = ["gemini-3.1-flash-lite", "preview"].join("-");
 
 export interface LLMConfig {
   provider: string; // "gemini" | "azure-openai" | "openai" | "anthropic"
@@ -56,7 +71,13 @@ export interface SourceCategory {
 
 export interface KiwiConfig {
   project: { name: string; created: string };
-  build: { output_dir: string };
+  build: {
+    output_dir: string;
+    /** Absolute site URL (origin + optional base path) for sitemap/canonical/OG tags. */
+    site_url?: string;
+    /** `<html lang>` value for generated pages. Defaults to "ko". */
+    lang?: string;
+  };
   llm: LLMConfig;
   embedding?: EmbeddingConfig; // separate config for embeddings (optional, falls back to llm)
   qa?: QAConfig; // Q&A feedback loop settings
@@ -100,7 +121,7 @@ export function defaultConfig(name: string): KiwiConfig {
   return {
     project: { name, created: new Date().toISOString().slice(0, 10) },
     build: { output_dir: SITE_DIR },
-    llm: { provider: "gemini", model: "gemini-3.1-flash-lite-preview", api_key: "", endpoint: "" },
+    llm: { provider: "gemini", model: DEFAULT_GEMINI_MODEL, api_key: "", endpoint: "" },
     deploy: { target: "gh-pages" },
     personas: builtins.length > 0 ? builtins : [getDefaultPersona()],
     active_persona: builtins[0]?.name || "default",
@@ -113,7 +134,51 @@ export function getActivePersona(config: KiwiConfig): Persona | null {
 }
 
 export function saveConfig(root: string, config: KiwiConfig): void {
-  Bun.write(join(root, CONFIG_FILE), stringify(config));
+  const target = join(root, CONFIG_FILE);
+  const temporary = join(root, `.${CONFIG_FILE}.${process.pid}.${randomUUID()}.tmp`);
+  const serialized = stringify(config);
+  let descriptor: number | null = null;
+  let directoryDescriptor: number | null = null;
+
+  try {
+    descriptor = openSync(temporary, "wx", 0o600);
+    writeFileSync(descriptor, serialized, "utf8");
+    fsyncSync(descriptor);
+    closeSync(descriptor);
+    descriptor = null;
+    renameSync(temporary, target);
+    directoryDescriptor = openSync(dirname(target), "r");
+    fsyncSync(directoryDescriptor);
+    closeSync(directoryDescriptor);
+    directoryDescriptor = null;
+  } catch (error) {
+    const cleanupErrors: unknown[] = [];
+    if (descriptor !== null) {
+      try {
+        closeSync(descriptor);
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
+    }
+    if (directoryDescriptor !== null) {
+      try {
+        closeSync(directoryDescriptor);
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
+    }
+    try {
+      unlinkSync(temporary);
+    } catch (cleanupError) {
+      if (!(cleanupError instanceof Error && "code" in cleanupError && cleanupError.code === "ENOENT")) {
+        cleanupErrors.push(cleanupError);
+      }
+    }
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError([error, ...cleanupErrors], `Failed to save ${CONFIG_FILE} and clean up its temporary file`);
+    }
+    throw error;
+  }
 }
 
 export function loadConfig(root: string): KiwiConfig {
@@ -121,7 +186,11 @@ export function loadConfig(root: string): KiwiConfig {
   const raw = parse(content) as Partial<KiwiConfig> & Record<string, unknown>;
   // Migrate old config format
   if (!raw.llm) {
-    raw.llm = { provider: "gemini", model: "gemini-3.1-flash-lite-preview", api_key: "", endpoint: "" };
+    raw.llm = { provider: "gemini", model: DEFAULT_GEMINI_MODEL, api_key: "", endpoint: "" };
+  } else if (raw.llm.provider === "gemini" && raw.llm.model === RETIRED_GEMINI_DEFAULT) {
+    // The preview endpoint was shut down. Migrate only Kiwi Mu's exact retired
+    // default; user-selected model identifiers remain untouched.
+    raw.llm.model = DEFAULT_GEMINI_MODEL;
   }
   // Migrate: add default persona if missing
   if (!raw.personas || !raw.personas.length) {

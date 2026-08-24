@@ -1,8 +1,7 @@
 (function() {
   'use strict';
 
-  const authToken = document.querySelector('meta[name="kiwi-auth"]')?.content;
-  if (!authToken) return; // Static build — feature disabled
+  if (!document.querySelector('meta[name="kiwi-live"]')) return; // Static build — feature disabled
 
   const pageSlug = document.querySelector('[data-page-slug]')?.dataset.pageSlug;
   const pageId = document.querySelector('[data-page-id]')?.dataset.pageId;
@@ -11,29 +10,35 @@
   // Create popover element
   const popover = document.createElement('div');
   popover.className = 'qa-popover';
+  popover.setAttribute('role', 'dialog');
+  popover.setAttribute('aria-label', '선택한 내용으로 개념 페이지 만들기');
+  popover.setAttribute('aria-hidden', 'true');
+  popover.tabIndex = -1;
+  popover.hidden = true;
   popover.innerHTML = `
     <div class="qa-popover-header">
       <span>📝 새 개념 페이지 생성</span>
-      <button class="qa-popover-close" aria-label="닫기">&times;</button>
+      <button type="button" class="qa-popover-close" aria-label="개념 페이지 생성 창 닫기">&times;</button>
     </div>
     <div class="qa-popover-selected"></div>
-    <div class="qa-popover-related" style="display:none">
+    <div class="qa-popover-related" role="status" aria-live="polite" hidden>
       <div class="qa-related-label">📚 관련 문서</div>
       <div class="qa-related-list"></div>
     </div>
     <div class="qa-popover-body">
       <div class="qa-body-row">
-        <input type="text" class="qa-popover-input" placeholder="질문 입력 (선택사항)..." />
+        <label class="visually-hidden" for="qa-question-input">추가 질문 (선택사항)</label>
+        <input type="text" id="qa-question-input" class="qa-popover-input" placeholder="질문 입력 (선택사항)…" />
       </div>
       <div class="qa-body-row">
-        <button class="qa-popover-btn qa-generate-btn">✨ 개념 페이지 생성</button>
+        <button type="button" class="qa-popover-btn qa-generate-btn">✨ 개념 페이지 생성</button>
       </div>
     </div>
-    <div class="qa-popover-loading" style="display:none">
+    <div class="qa-popover-loading" role="status" aria-live="polite" hidden>
       <span class="qa-spinner"></span> 생성 중...
     </div>
-    <div class="qa-popover-result" style="display:none"></div>
-    <div class="qa-popover-error" style="display:none"></div>
+    <div class="qa-popover-result" role="status" aria-live="polite" hidden></div>
+    <div class="qa-popover-error" role="alert" hidden></div>
   `;
   document.body.appendChild(popover);
 
@@ -47,6 +52,9 @@
   let isGenerating = false;
   let highlightMark = null;
   let popoverTimer = null;
+  let previousFocus = null;
+  let relatedController = null;
+  let sessionGeneration = 0;
 
   popover.querySelector('.qa-popover-close').addEventListener('click', hidePopover);
 
@@ -80,18 +88,29 @@
     }
   }
 
-  function showPopover(text, rect, range) {
+  function showPopover(text, _rect, range) {
+    if (popover.hidden) {
+      const active = document.activeElement;
+      previousFocus = active && active !== document.body
+        ? active
+        : document.getElementById('main-content');
+    }
+    const generation = ++sessionGeneration;
+    relatedController?.abort();
+    relatedController = new AbortController();
     selectedText = text;
-    loading.style.display = 'none';
-    result.style.display = 'none';
-    errorDiv.style.display = 'none';
-    popover.querySelector('.qa-popover-body').style.display = 'flex';
-    popover.querySelector('.qa-popover-header').style.display = 'flex';
+    isGenerating = false;
+    generateBtn.disabled = false;
+    loading.hidden = true;
+    result.hidden = true;
+    errorDiv.hidden = true;
+    popover.querySelector('.qa-popover-body').hidden = false;
+    popover.querySelector('.qa-popover-header').hidden = false;
 
     // Show selected text preview (truncated)
     const preview = text.length > 100 ? text.slice(0, 100) + '...' : text;
     selectedDiv.textContent = `"${preview}"`;
-    selectedDiv.style.display = 'block';
+    selectedDiv.hidden = false;
 
     // Highlight selected text in the document
     highlightSelection(range);
@@ -99,12 +118,16 @@
     // Fetch related pages
     const relatedDiv = popover.querySelector('.qa-popover-related');
     const relatedList = popover.querySelector('.qa-related-list');
-    relatedDiv.style.display = 'none';
+    relatedDiv.hidden = true;
     relatedList.innerHTML = '';
 
-    fetch(`/api/search?q=${encodeURIComponent(text.slice(0, 100))}&token=${authToken}`)
+    fetch(`/api/search?q=${encodeURIComponent(text.slice(0, 100))}`, {
+      credentials: 'same-origin',
+      signal: relatedController.signal,
+    })
       .then(r => r.json())
       .then(data => {
+        if (generation !== sessionGeneration) return;
         if (data.results && data.results.length > 0) {
           relatedList.innerHTML = data.results.map(r => {
             const icon = r.origin === 'user' ? '💬' : r.page_type === 'source' ? '📖' : '📝';
@@ -115,26 +138,37 @@
               <span class="qa-related-preview">${esc(preview)}</span>
             </a>`;
           }).join('');
-          relatedDiv.style.display = 'block';
+          relatedDiv.hidden = false;
         }
       })
-      .catch(() => {}); // Silently fail
+      .catch(error => {
+        if (error?.name !== 'AbortError') relatedDiv.hidden = true;
+      });
 
-    // Position below selection
-    const top = rect.bottom + window.scrollY + 8;
-    const left = Math.max(8, Math.min(rect.left + window.scrollX, window.innerWidth - 320));
-    popover.style.top = top + 'px';
-    popover.style.left = left + 'px';
-    popover.style.display = 'block';
+    popover.hidden = false;
+    popover.setAttribute('aria-hidden', 'false');
+    setTimeout(() => questionInput.focus(), 0);
   }
 
   function hidePopover() {
-    popover.style.display = 'none';
+    if (popover.hidden) return;
+    sessionGeneration++;
+    relatedController?.abort();
+    relatedController = null;
+    popover.hidden = true;
+    popover.setAttribute('aria-hidden', 'true');
     selectedText = '';
-    selectedDiv.style.display = 'none';
+    selectedDiv.hidden = true;
     removeHighlight();
     clearTimeout(popoverTimer);
     popoverTimer = null;
+    isGenerating = false;
+    generateBtn.disabled = false;
+    const restoreTarget = previousFocus;
+    previousFocus = null;
+    if (restoreTarget && restoreTarget.isConnected && typeof restoreTarget.focus === 'function') {
+      requestAnimationFrame(() => restoreTarget.focus({ preventScroll: true }));
+    }
   }
 
   function esc(s) {
@@ -146,19 +180,22 @@
   async function generateConcept() {
     if (isGenerating || !selectedText) return;
 
+    const generation = sessionGeneration;
     isGenerating = true;
-    popover.querySelector('.qa-popover-body').style.display = 'none';
-    loading.style.display = 'flex';
-    errorDiv.style.display = 'none';
+    generateBtn.disabled = true;
+    popover.querySelector('.qa-popover-body').hidden = true;
+    loading.hidden = false;
+    errorDiv.hidden = true;
+    popover.focus({ preventScroll: true });
 
     try {
       // Start background generation
       const resp = await fetch('/api/ask', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + authToken
+          'Content-Type': 'application/json'
         },
+        credentials: 'same-origin',
         body: JSON.stringify({
           selected_text: selectedText,
           question: questionInput.value.trim() || undefined,
@@ -168,36 +205,36 @@
       });
 
       const data = await resp.json();
+      if (generation !== sessionGeneration) return;
 
       if (data.task_id) {
         // Background task started — poll for completion
-        pollForResult(data.task_id);
+        pollForResult(data.task_id, generation);
       } else if (data.ok) {
         // Synchronous result (fallback)
-        showResult(data);
+        showResult(data, generation);
       } else {
-        showError(data.error || '오류가 발생했습니다');
+        showError(data.error || '오류가 발생했습니다', generation);
       }
     } catch (e) {
-      showError('서버 연결에 실패했습니다');
+      showError('서버 연결에 실패했습니다', generation);
     }
   }
 
-  async function pollForResult(taskId) {
+  async function pollForResult(taskId, generation) {
     const maxAttempts = 60; // 60 * 2s = 2 min max
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise(r => setTimeout(r, 2000));
+      if (generation !== sessionGeneration) return;
       try {
-        const resp = await fetch(`/api/ask/status?task_id=${taskId}`, {
-          headers: { 'Authorization': 'Bearer ' + authToken }
-        });
+        const resp = await fetch(`/api/ask/status?task_id=${taskId}`, { credentials: 'same-origin' });
         const data = await resp.json();
 
         if (data.status === 'completed') {
-          showResult(data.result);
+          showResult(data.result, generation);
           return;
         } else if (data.status === 'error') {
-          showError(data.error || '생성 중 오류가 발생했습니다');
+          showError(data.error || '생성 중 오류가 발생했습니다', generation);
           return;
         }
         // status === 'processing' — continue polling
@@ -208,12 +245,14 @@
         // Network error during poll — keep trying
       }
     }
-    showError('생성 시간이 초과되었습니다. 나중에 다시 시도해주세요.');
+    showError('생성 시간이 초과되었습니다. 나중에 다시 시도해주세요.', generation);
   }
 
-  function showResult(data) {
-    loading.style.display = 'none';
+  function showResult(data, generation) {
+    if (generation !== sessionGeneration) return;
+    loading.hidden = true;
     isGenerating = false;
+    generateBtn.disabled = false;
 
     let html = `<a href="${data.url}" class="qa-result-link">📝 ${esc(data.title)}</a><span class="qa-result-hint">새 개념 페이지가 생성되었습니다</span>`;
 
@@ -222,14 +261,19 @@
       html += `<button class="qa-promote-btn" title="퀴즈와 위키 링크가 포함된 영구 페이지로 저장합니다">💾 위키에 저장</button>`;
     }
 
+    result.hidden = false;
     result.innerHTML = html;
-    result.style.display = 'block';
+    try {
+      if (typeof window.kiwiRenderMath === 'function') window.kiwiRenderMath(result);
+      if (typeof window.kiwiRenderMermaid === 'function') window.kiwiRenderMermaid(result);
+    } catch { /* Rich rendering must not hide an otherwise valid answer. */ }
 
     // Attach promote handler
     const promoteBtn = result.querySelector('.qa-promote-btn');
     if (promoteBtn) {
       promoteBtn.addEventListener('click', () => promoteToWiki(data));
     }
+    result.querySelector('a, button')?.focus({ preventScroll: true });
 
     // Replace highlight with a link to the new page
     if (highlightMark && highlightMark.parentNode) {
@@ -254,9 +298,9 @@
       const resp = await fetch('/api/promote', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + authToken
+          'Content-Type': 'application/json'
         },
+        credentials: 'same-origin',
         body: JSON.stringify({
           question: data.question || '',
           answer: data.content || '',
@@ -306,6 +350,8 @@
 
     const toast = document.createElement('div');
     toast.className = 'kiwi-toast ' + (kind === 'error' ? 'error' : 'success');
+    toast.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+    toast.setAttribute('aria-live', kind === 'error' ? 'assertive' : 'polite');
     const icon = kind === 'error' ? '⚠️' : '✅';
     let inner = `<span class="kiwi-toast-icon">${icon}</span><span class="kiwi-toast-text">${esc(msg)}</span>`;
     if (link && link.href) {
@@ -340,13 +386,16 @@
     }
   }
 
-  function showError(msg) {
-    loading.style.display = 'none';
+  function showError(msg, generation = sessionGeneration) {
+    if (generation !== sessionGeneration) return;
+    loading.hidden = true;
     isGenerating = false;
+    generateBtn.disabled = false;
+    errorDiv.hidden = false;
     errorDiv.textContent = msg;
-    errorDiv.style.display = 'block';
     // Show retry button
-    popover.querySelector('.qa-popover-body').style.display = 'flex';
+    popover.querySelector('.qa-popover-body').hidden = false;
+    questionInput.focus({ preventScroll: true });
   }
 
   // Event: text selection with 500ms delay
@@ -359,7 +408,7 @@
     const text = selection?.toString().trim();
 
     if (!text || text.length < 3) {
-      if (!popover.contains(e.target) && result.style.display !== 'block') {
+      if (!popover.contains(e.target) && result.hidden) {
         setTimeout(() => {
           if (!popover.contains(document.activeElement)) hidePopover();
         }, 200);
@@ -413,7 +462,7 @@
 
   // Event: Escape key
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') hidePopover();
+    if (e.key === 'Escape' && !popover.hidden) hidePopover();
   });
 
   // Prevent popover clicks from dismissing

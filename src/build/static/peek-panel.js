@@ -1,8 +1,9 @@
 /*
  * peek-panel.js — Notion-style side-panel preview for /wiki/* links.
- * Intercepts plain-clicks, fetches /api/page/{slug}?format=html, renders in a
- * slide-in panel with a navigation stack (cap 5), URL state (?peek=<slug>),
- * focus trap, ESC-to-close. Idempotent via window.__kiwiPeekInit.
+ * Intercepts plain-clicks, fetches the generated /wiki/{slug}.html document,
+ * and renders its page body in a slide-in panel. Reading the static document
+ * keeps previews working on GitHub Pages and for unauthenticated visitors as
+ * well as on the live server.
  */
 (function () {
   'use strict';
@@ -15,21 +16,15 @@
   const WIDTH_KEY = 'kiwi-peek-width';
   const WIDTH_MIN = 320;
   const WIDTH_MAX_VW = 0.95;
-
-  // Auth: read token from <meta name="kiwi-auth"> (matches dynamic-qa.js).
-  function authHeaders() {
-    const t = document.querySelector('meta[name="kiwi-auth"]')?.content || '';
-    return t ? { Authorization: 'Bearer ' + t } : {};
-  }
+  const WIDTH_STEPS = [320, 400, 480, 560, 640, 720, 800, 960, 1120, 1280, 1400];
 
   // --- State ---------------------------------------------------------------
-  let panel, backdrop, titleEl, contentEl, backBtn, expandBtn;
+  let panel, backdrop, titleEl, contentEl, statusEl, resizeHandle, backBtn, expandBtn;
   let titleId;
   const stack = [];               // previous slugs for "back"
   let currentSlug = null;
   let isOpen = false;
   let lastFocused = null;
-  let savedBodyOverflow = '';
   let abortCtrl = null;
   let pushedHistoryState = false; // did we push the current ?peek state?
 
@@ -47,11 +42,27 @@
   function saveWidth(w) {
     try { localStorage.setItem(WIDTH_KEY, String(Math.round(w))); } catch { /* no-op */ }
   }
+  function widthStep(w) {
+    return WIDTH_STEPS.reduce((nearest, candidate) =>
+      Math.abs(candidate - w) < Math.abs(nearest - w) ? candidate : nearest
+    , WIDTH_STEPS[0]);
+  }
+  function applyWidth(w) {
+    WIDTH_STEPS.forEach((step) => panel.classList.remove('peek-width-' + step));
+    if (!w) {
+      resizeHandle?.removeAttribute('aria-valuenow');
+      return null;
+    }
+    const step = widthStep(clampWidth(w));
+    panel.classList.add('peek-width-' + step);
+    resizeHandle?.setAttribute('aria-valuenow', String(step));
+    return step;
+  }
   function applySavedWidth() {
     // Skip on mobile — CSS forces full-screen there.
     if (window.matchMedia('(max-width: 768px)').matches) return;
     const w = loadSavedWidth();
-    if (w) panel.style.width = w + 'px';
+    if (w) applyWidth(w);
   }
   function attachResizeHandle(handle) {
     let dragging = false;
@@ -70,7 +81,7 @@
       if (!dragging) return;
       // Panel is anchored to the right edge — moving handle left grows width.
       const w = clampWidth(startW + (startX - e.clientX));
-      panel.style.width = w + 'px';
+      applyWidth(w);
     });
     function stop(e) {
       if (!dragging) return;
@@ -83,8 +94,21 @@
     handle.addEventListener('pointercancel', stop);
     handle.addEventListener('dblclick', () => {
       // Reset to default on double-click.
-      panel.style.width = '';
+      applyWidth(null);
       try { localStorage.removeItem(WIDTH_KEY); } catch { /* no-op */ }
+    });
+    handle.addEventListener('keydown', (event) => {
+      if (window.matchMedia('(max-width: 768px)').matches) return;
+      const current = panel.getBoundingClientRect().width;
+      let next = null;
+      if (event.key === 'ArrowLeft') next = current + 80;
+      else if (event.key === 'ArrowRight') next = current - 80;
+      else if (event.key === 'Home') next = WIDTH_MIN;
+      else if (event.key === 'End') next = Math.min(window.innerWidth * WIDTH_MAX_VW, 1400);
+      if (next === null) return;
+      event.preventDefault();
+      const applied = applyWidth(next);
+      if (applied) saveWidth(applied);
     });
   }
 
@@ -105,10 +129,14 @@
     panel.setAttribute('tabindex', '-1');
     panel.hidden = true;
 
-    const resizeHandle = document.createElement('div');
+    resizeHandle = document.createElement('div');
     resizeHandle.className = 'peek-resize-handle';
     resizeHandle.setAttribute('role', 'separator');
     resizeHandle.setAttribute('aria-orientation', 'vertical');
+    resizeHandle.setAttribute('aria-label', '미리보기 너비 조절');
+    resizeHandle.setAttribute('aria-valuemin', String(WIDTH_MIN));
+    resizeHandle.setAttribute('aria-valuemax', String(Math.min(window.innerWidth * WIDTH_MAX_VW, 1400)));
+    resizeHandle.tabIndex = 0;
     resizeHandle.title = '드래그하여 너비 조절 · 더블클릭으로 초기화';
     attachResizeHandle(resizeHandle);
     panel.appendChild(resizeHandle);
@@ -119,7 +147,7 @@
     backBtn = document.createElement('button');
     backBtn.type = 'button';
     backBtn.className = 'peek-button peek-back';
-    backBtn.setAttribute('aria-label', 'Back');
+    backBtn.setAttribute('aria-label', '이전 미리보기');
     backBtn.textContent = '←';
     backBtn.hidden = true;
     backBtn.addEventListener('click', goBack);
@@ -127,7 +155,7 @@
     titleEl = document.createElement('h2');
     titleEl.className = 'peek-title';
     titleEl.id = titleId;
-    titleEl.textContent = '';
+    titleEl.textContent = '문서 미리보기';
 
     const actions = document.createElement('div');
     actions.className = 'peek-actions';
@@ -135,8 +163,8 @@
     expandBtn = document.createElement('button');
     expandBtn.type = 'button';
     expandBtn.className = 'peek-button peek-expand';
-    expandBtn.setAttribute('aria-label', 'Open full page');
-    expandBtn.title = 'Open full page';
+    expandBtn.setAttribute('aria-label', '전체 문서 열기');
+    expandBtn.title = '전체 문서 열기';
     expandBtn.textContent = '↗';
     expandBtn.addEventListener('click', () => {
       if (currentSlug) {
@@ -148,8 +176,8 @@
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.className = 'peek-button peek-close';
-    closeBtn.setAttribute('aria-label', 'Close');
-    closeBtn.title = 'Close';
+    closeBtn.setAttribute('aria-label', '미리보기 닫기');
+    closeBtn.title = '미리보기 닫기';
     closeBtn.textContent = '×';
     closeBtn.addEventListener('click', () => close());
 
@@ -158,20 +186,23 @@
 
     contentEl = document.createElement('div');
     contentEl.className = 'peek-content';
+    statusEl = document.createElement('p');
+    statusEl.className = 'visually-hidden';
+    statusEl.setAttribute('role', 'status');
+    statusEl.setAttribute('aria-live', 'polite');
+    statusEl.setAttribute('aria-atomic', 'true');
 
-    panel.append(headerEl, contentEl);
+    panel.append(headerEl, statusEl, contentEl);
 
     document.body.append(backdrop, panel);
   }
 
   // --- Open / close lifecycle ---------------------------------------------
   function lockBodyScroll() {
-    savedBodyOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    document.body.classList.add('peek-panel-open');
   }
   function unlockBodyScroll() {
-    document.body.style.overflow = savedBodyOverflow;
-    savedBodyOverflow = '';
+    document.body.classList.remove('peek-panel-open');
   }
 
   function setUrlPeek(slug) {
@@ -211,6 +242,9 @@
       lastFocused = document.activeElement;
       applySavedWidth();
       panel.hidden = false;
+      if (!resizeHandle.hasAttribute('aria-valuenow')) {
+        resizeHandle.setAttribute('aria-valuenow', String(Math.round(panel.getBoundingClientRect().width)));
+      }
       backdrop.classList.add('is-open');
       // Force layout so the transform transition runs.
       // eslint-disable-next-line no-unused-expressions
@@ -282,17 +316,22 @@
   }
 
   function showLoading() {
-    titleEl.textContent = 'Loading…';
+    titleEl.textContent = '불러오는 중…';
+    contentEl.setAttribute('aria-busy', 'true');
+    statusEl.textContent = '문서 미리보기를 불러오는 중입니다.';
     contentEl.innerHTML =
-      '<div class="peek-loading"><span class="peek-spinner"></span>Loading…</div>';
+      '<div class="peek-loading"><span class="peek-spinner"></span>불러오는 중…</div>';
   }
 
   function showError(slug, msg) {
-    titleEl.textContent = 'Error';
-    const safeMsg = escapeHtml(msg || 'Failed to load page.');
+    titleEl.textContent = '미리보기 오류';
+    contentEl.setAttribute('aria-busy', 'false');
+    const message = msg || '문서를 불러오지 못했습니다.';
+    statusEl.textContent = message;
+    const safeMsg = escapeHtml(message);
     contentEl.innerHTML =
       '<div class="peek-error">' + safeMsg +
-      '<div><button type="button" class="peek-button" data-peek-retry>Retry</button></div>' +
+      '<div><button type="button" class="peek-button" data-peek-retry>다시 시도</button></div>' +
       '</div>';
     const retry = contentEl.querySelector('[data-peek-retry]');
     if (retry) retry.addEventListener('click', () => fetchAndRender(slug));
@@ -306,42 +345,51 @@
     showLoading();
 
     try {
-      const resp = await fetch(
-        '/api/page/' + encodeURIComponent(slug) + '?format=html',
-        { headers: authHeaders(), signal: ctrl.signal, credentials: 'same-origin' }
-      );
+      const resp = await fetch('/wiki/' + encodeURIComponent(slug) + '.html', {
+        signal: ctrl.signal,
+        credentials: 'same-origin'
+      });
       if (!resp.ok) {
-        const detail = resp.status === 404 ? 'Page not found.' : 'Server error (' + resp.status + ').';
+        const detail = resp.status === 404 ? '문서를 찾을 수 없습니다.' : '서버 오류가 발생했습니다 (' + resp.status + ').';
         showError(slug, detail);
         return;
       }
-      const data = await resp.json();
+      const documentHtml = await resp.text();
       if (ctrl.signal.aborted) return;
 
-      titleEl.textContent = data.title || slug;
-
-      let html = data.html;
-      if (!html && typeof data.content === 'string') {
-        // Defensive fallback if server hasn't enabled ?format=html yet.
-        html = '<pre>' + escapeHtml(data.content) + '</pre>';
+      const parsed = new DOMParser().parseFromString(documentHtml, 'text/html');
+      const pageBody = parsed.querySelector('.page-body');
+      if (!pageBody) {
+        showError(slug, '이 문서는 미리보기를 제공하지 않습니다.');
+        return;
       }
+      const pageHeading = parsed.querySelector('.wiki-page h1, main h1, h1');
+      titleEl.textContent = pageHeading && pageHeading.textContent
+        ? pageHeading.textContent.trim()
+        : (parsed.title || slug);
+
       // Wrap in .page-body so existing article styles + dynamic-qa selection
       // gating work inside the peek panel without duplicating logic.
       contentEl.innerHTML =
         '<article class="wiki-page peek-article"><div class="page-body">' +
-        (html || '') +
+        pageBody.innerHTML +
         '</div></article>';
       contentEl.scrollTop = 0;
+      contentEl.setAttribute('aria-busy', 'false');
+      statusEl.textContent = titleEl.textContent + ' 미리보기를 불러왔습니다.';
 
-      // Re-run mermaid if the host page exposes the helper.
+      // Re-run local rich-content renderers for dynamically inserted markup.
       try {
+        if (typeof window.kiwiRenderMath === 'function') {
+          window.kiwiRenderMath(contentEl);
+        }
         if (typeof window.kiwiRenderMermaid === 'function') {
           window.kiwiRenderMermaid(contentEl);
         }
       } catch { /* don't crash on mermaid errors */ }
     } catch (err) {
       if (err && err.name === 'AbortError') return;
-      showError(slug, 'Network error. Check your connection and try again.');
+      showError(slug, '네트워크 오류가 발생했습니다. 연결을 확인하고 다시 시도해 주세요.');
     }
   }
 

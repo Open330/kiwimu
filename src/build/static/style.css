@@ -6,8 +6,8 @@
     --bg-hover: #eaeaea;
     --text: #1a1a1a;
     --text-muted: #6b6b6b;
-    --link: #0275d8; /* NamuWiki blue link */
-    --link-hover: #0050a0; /* Darker blue for hover */
+    --link: #005ea8;
+    --link-hover: #00457c;
     --border: #dcdcdc;
     --accent: #00a495; /* NamuWiki green */
     --accent-dark: #008c7e;
@@ -15,8 +15,17 @@
     --namu-green: #00a495;
     --namu-green-dark: #007a6e;
     --namu-heading-bg: #00a495;
+    --accent-text: #006b62;
+    --control-bg: #006b62;
+    --focus-ring: #005fcc;
+    --graph-bg: #fbfcfd;
+    --graph-link: #9aa4ad;
+    --warning-bg: #fff8e1;
+    --warning-border: #b36b00;
+    --shadow-sm: 0 1px 3px rgba(20, 35, 45, 0.12);
+    --shadow-md: 0 8px 28px rgba(20, 35, 45, 0.16);
     --sidebar-width: 250px;
-    --topbar-height: 44px;
+    --topbar-height: 52px;
     /* --radius variable removed as all corners are sharp */
 }
 
@@ -24,7 +33,13 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-    box-shadow: none; /* Enforce no shadows */
+}
+
+[hidden] { display: none !important; }
+
+html {
+    scroll-behavior: smooth;
+    scroll-padding-top: calc(var(--topbar-height) + 16px);
 }
 
 /* Targeted border-radius reset for kiwimu elements only */
@@ -37,12 +52,55 @@
 }
 
 body {
-    font-family: "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
     color: var(--text);
     background: var(--bg);
     line-height: 1.65; /* Updated line-height */
     font-size: 15px;
+    overflow-wrap: anywhere;
 }
+
+button, input, textarea, select { font: inherit; }
+button { color: inherit; }
+
+:focus-visible {
+    /* Two-tone indicator remains visible on both white and colored controls. */
+    outline: 2px solid #ffffff;
+    outline-offset: 2px;
+    box-shadow: 0 0 0 5px var(--focus-ring);
+}
+
+.visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+
+/* Management controls only exist on an authenticated live server. Static
+   deployments and public readers should never be sent to a guaranteed 401. */
+.live-only { display: none !important; }
+html:has(meta[name="kiwi-live"]) .live-only { display: inline-flex !important; }
+html:has(meta[name="kiwi-live"]) section.live-only { display: block !important; }
+
+.skip-link {
+    position: fixed;
+    left: 12px;
+    top: 8px;
+    z-index: 10001;
+    padding: 10px 14px;
+    background: var(--bg);
+    color: var(--text);
+    border: 2px solid var(--focus-ring);
+    transform: translateY(-160%);
+    transition: transform .15s ease;
+}
+.skip-link:focus { transform: translateY(0); }
 
 a {
     color: var(--link);
@@ -54,6 +112,12 @@ a:hover {
     text-decoration: underline;
 }
 
+/* Links embedded in prose must not rely on color alone. */
+p a {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
 /* Topbar - namuwiki style */
 .topbar {
     position: fixed;
@@ -61,13 +125,13 @@ a:hover {
     left: 0;
     right: 0;
     height: var(--topbar-height);
-    background: var(--namu-green);
+    background: var(--namu-green-dark);
     display: flex;
     align-items: center;
     padding: 0 16px;
     z-index: 100;
     gap: 12px;
-    /* box-shadow: none; -> Handled by global reset */
+    box-shadow: var(--shadow-sm);
 }
 
 .topbar-brand {
@@ -104,9 +168,9 @@ a:hover {
     border: none;
     /* border-radius: 3px; -> Handled by global reset */
     font-size: 14px;
-    outline: none;
     background: rgba(255,255,255,0.9);
     transition: background 0.2s;
+    min-height: 36px;
 }
 
 .topbar-search input:focus {
@@ -124,9 +188,10 @@ a:hover {
     border: 1px solid var(--border);
     /* border-radius: var(--radius); -> Handled by global reset */
     /* box-shadow: none; -> Handled by global reset */
-    max-height: 300px;
+    max-height: min(300px, calc(100dvh - var(--topbar-height) - 8px));
     overflow-y: auto;
     z-index: 200;
+    box-shadow: var(--shadow-md);
 }
 
 .search-dropdown.active {
@@ -138,6 +203,7 @@ a:hover {
     padding: 8px 12px;
     color: var(--text);
     border-bottom: 1px solid var(--bg-alt);
+    min-height: 48px;
 }
 
 .search-dropdown a:hover {
@@ -147,6 +213,15 @@ a:hover {
 
 .search-dropdown a.selected {
     background: var(--accent-light);
+    color: var(--accent-text);
+}
+
+.search-preview {
+    display: block;
+    margin-top: 2px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 400;
 }
 
 .search-dropdown .search-highlight {
@@ -168,6 +243,9 @@ a:hover {
     color: #ffffff;
     white-space: nowrap;
     transition: background 0.15s;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
 }
 
 .btn-graph:hover {
@@ -219,6 +297,9 @@ a:hover {
     text-overflow: ellipsis;
     white-space: nowrap;
     border-bottom: 1px solid #efefef;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
 }
 
 .page-list li a:hover {
@@ -228,7 +309,7 @@ a:hover {
 
 .page-list li a.active {
     background: var(--accent-light);
-    color: var(--namu-green-dark);
+    color: var(--accent-text);
     font-weight: 600;
     border-right: 3px solid var(--namu-green);
 }
@@ -241,6 +322,10 @@ a:hover {
     max-width: 960px;
     min-width: 0;
 }
+
+.page-body h2,
+.page-body h3,
+.page-body h4 { scroll-margin-top: calc(var(--topbar-height) + 16px); }
 
 /* Wiki page - namuwiki style headings */
 .page-header h1 {
@@ -261,7 +346,7 @@ a:hover {
     font-weight: 700;
     margin: 28px 0 10px;
     padding: 4px 10px;
-    background: var(--namu-green);
+    background: var(--control-bg);
     color: #ffffff;
     /* border-radius: 2px; -> Handled by global reset */
 }
@@ -357,7 +442,7 @@ a:hover {
 .page-body th {
     background: var(--accent-light);
     font-weight: 600;
-    color: var(--namu-green-dark);
+    color: var(--accent-text);
 }
 
 /* Bold emphasis - namuwiki loves bold */
@@ -379,7 +464,7 @@ a:hover {
     font-weight: 700;
     cursor: pointer;
     font-size: 14px;
-    color: var(--namu-green-dark);
+    color: var(--accent-text);
 }
 
 .toc-box .toc {
@@ -466,7 +551,7 @@ a:hover {
 
 .backlinks h3 {
     font-size: 14px;
-    color: var(--namu-green-dark);
+    color: var(--accent-text);
     font-weight: 700;
     margin-bottom: 8px;
 }
@@ -485,11 +570,11 @@ a:hover {
     border: 1px solid var(--namu-green);
     /* border-radius: 3px; -> Handled by global reset */
     font-size: 13px;
-    color: var(--namu-green-dark);
+    color: var(--accent-text);
 }
 
 .backlinks li a:hover {
-    background: var(--namu-green);
+    background: var(--control-bg);
     color: #ffffff;
     text-decoration: none;
 }
@@ -510,7 +595,7 @@ a:hover {
 .hero h1 {
     font-size: 32px;
     border: none;
-    color: var(--namu-green-dark);
+    color: var(--accent-text);
 }
 
 .hero-sub {
@@ -528,7 +613,7 @@ a:hover {
     font-size: 17px;
     margin-bottom: 12px;
     padding: 4px 10px;
-    background: var(--namu-green);
+    background: var(--control-bg);
     color: #ffffff;
     /* border-radius: 2px; -> Handled by global reset */
 }
@@ -585,12 +670,12 @@ a:hover {
     border: 1px solid var(--namu-green);
     /* border-radius: var(--radius); -> Handled by global reset */
     font-size: 14px;
-    color: var(--namu-green-dark);
+    color: var(--accent-text);
     font-weight: 600;
 }
 
 .quick-link:hover {
-    background: var(--namu-green);
+    background: var(--control-bg);
     color: #ffffff;
     text-decoration: none;
 }
@@ -603,7 +688,7 @@ a:hover {
 .graph-page h1 {
     border: none;
     margin-bottom: 8px;
-    color: var(--namu-green-dark);
+    color: var(--accent-text);
 }
 
 .graph-desc {
@@ -617,13 +702,53 @@ a:hover {
     height: calc(100vh - 200px);
     border: 1px solid var(--border);
     /* border-radius: var(--radius); -> Handled by global reset */
-    background: #fafafa;
+    background: var(--graph-bg);
+    position: relative;
+    overflow: hidden;
 }
 
 #graph-container svg {
     width: 100%;
     height: 100%;
+    -webkit-tap-highlight-color: transparent;
 }
+
+.graph-desc {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 6px 16px;
+}
+
+.graph-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.graph-toolbar button {
+    min-width: 40px;
+    min-height: 40px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    font-weight: 600;
+}
+.graph-toolbar button:hover { background: var(--bg-hover); }
+.graph-state {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 32px;
+    color: var(--text-muted);
+}
+#graph-container svg + .graph-state:empty,
+#graph-container .graph-state:empty { display: none; }
+#graph-container.has-error { border-color: #c62828; }
 
 /* Permalink */
 .headerlink {
@@ -639,6 +764,8 @@ h3:hover .headerlink,
 h4:hover .headerlink {
     opacity: 1;
 }
+
+.headerlink:focus-visible { opacity: 1; }
 
 h3 .headerlink {
     color: var(--text-muted);
@@ -691,6 +818,7 @@ h4 .headerlink {
     cursor: pointer;
     border-bottom: 2px solid transparent;
     transition: all 0.15s;
+    min-height: 44px;
 }
 
 .sidebar-tab:hover {
@@ -699,8 +827,14 @@ h4 .headerlink {
 }
 
 .sidebar-tab.active {
-    color: var(--namu-green);
-    border-bottom-color: var(--namu-green);
+    color: var(--accent-text);
+    border-bottom-color: var(--accent-text);
+}
+
+.kiwimu-badge a {
+    color: var(--accent-text);
+    text-decoration: underline;
+    text-underline-offset: 2px;
 }
 
 .sidebar-panel {
@@ -710,6 +844,9 @@ h4 .headerlink {
 .sidebar-panel.active {
     display: block;
 }
+
+.sidebar-panel[hidden] { display: none; }
+.sidebar-empty { padding: 24px 14px; color: var(--text-muted); font-size: 13px; text-align: center; }
 
 /* Backlink groups */
 .backlink-group {
@@ -799,7 +936,7 @@ h4 .headerlink {
 }
 
 .add-tab.active {
-    background: var(--namu-green);
+    background: var(--control-bg);
     color: white;
     border-color: var(--namu-green);
 }
@@ -857,7 +994,6 @@ h4 .headerlink {
     border: 1px solid var(--border);
     /* border-radius: var(--radius); -> Handled by global reset */
     font-size: 14px;
-    outline: none;
     transition: border-color 0.2s;
 }
 
@@ -868,7 +1004,7 @@ h4 .headerlink {
 
 .add-form button {
     padding: 8px 18px;
-    background: var(--namu-green);
+    background: var(--control-bg);
     color: white;
     border: none;
     /* border-radius: var(--radius); -> Handled by global reset */
@@ -902,7 +1038,7 @@ h4 .headerlink {
 
 .add-status.success {
     background: var(--accent-light);
-    color: var(--namu-green-dark);
+    color: var(--accent-text);
     border: 1px solid var(--namu-green);
 }
 
@@ -942,7 +1078,7 @@ h4 .headerlink {
 }
 
 .stat-card.accent .stat-value {
-    color: var(--namu-green-dark);
+    color: var(--accent-text);
 }
 
 .stat-label {
@@ -983,6 +1119,10 @@ h4 .headerlink {
     font-size: 22px;
     cursor: pointer;
     padding: 0 8px;
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
 }
 
 /* Sidebar overlay */
@@ -1012,6 +1152,8 @@ h4 .headerlink {
         font-size: 13px;
         color: var(--text);
         border-bottom: 1px solid #efefef;
+        min-height: 44px;
+        align-items: center;
     }
     .sidebar-mobile-nav a:hover {
         background: var(--bg-hover);
@@ -1030,11 +1172,16 @@ h4 .headerlink {
         bottom: 0;
         width: 260px;
         z-index: 99;
-        transition: left 0.25s ease;
+        visibility: hidden;
+        transition: left 0.25s ease, visibility 0s linear 0.25s;
         background: var(--bg);
         display: block !important;
     }
-    .sidebar.open { left: 0; }
+    .sidebar.open {
+        left: 0;
+        visibility: visible;
+        transition-delay: 0s;
+    }
 
     .sidebar-overlay {
         display: none;
@@ -1088,7 +1235,8 @@ h4 .headerlink {
         flex: 1 1 calc(50% - 5px);
         text-align: center;
         font-size: 13px;
-        padding: 8px 12px;
+        padding: 11px 12px;
+        min-height: 44px;
     }
 
     /* Page cards grid — single column on very small screens */
@@ -1113,17 +1261,19 @@ h4 .headerlink {
     .qa-popover {
         width: calc(100vw - 20px);
         max-width: 300px;
-        left: 10px !important;
-        right: 10px !important;
+        left: 10px;
+        right: 10px;
+        bottom: 10px;
     }
 
     /* Edit modal */
     .edit-modal-inner {
         width: 95%;
-        max-height: 90vh;
+        max-height: calc(100dvh - 16px);
     }
     .edit-textarea {
-        min-height: 250px;
+        min-height: 0;
+        height: min(250px, 45dvh);
         font-size: 12px;
     }
 
@@ -1133,7 +1283,8 @@ h4 .headerlink {
     }
     .backlinks li a {
         font-size: 12px;
-        padding: 2px 8px;
+        padding: 8px 10px;
+        min-height: 40px;
     }
 
     /* Add form */
@@ -1153,6 +1304,11 @@ h4 .headerlink {
     .index-section h2 {
         font-size: 15px;
     }
+
+    .page-list li a { min-height: 44px; }
+    #graph-container { height: calc(100dvh - 230px); min-height: 420px; }
+    .graph-toolbar { justify-content: center; }
+    .kiwimu-badge { margin-left: 0 !important; }
 }
 
 /* Extra small screens */
@@ -1178,20 +1334,40 @@ h4 .headerlink {
     }
 }
 
+@media (max-width: 480px) {
+    .topbar { padding-inline: 6px; gap: 6px; }
+    .topbar-brand { font-size: 0; gap: 0; }
+    .topbar-logo { width: 28px; height: 28px; }
+    .topbar-search input { font-size: 16px; }
+}
+
 /* Dynamic Q&A Popover */
 .qa-popover {
-    display: none;
-    position: absolute;
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
     z-index: 1000;
     width: 300px;
     background: var(--bg);
     border: 1px solid var(--namu-green);
     padding: 0;
     font-size: 13px;
+    max-height: calc(100dvh - 32px);
+    overflow-y: auto;
+}
+
+@media (max-width: 768px) {
+    .qa-popover {
+        right: 10px;
+        bottom: 10px;
+        left: 10px;
+        width: auto;
+        max-width: none;
+    }
 }
 
 .qa-popover-header {
-    background: var(--namu-green);
+    background: var(--control-bg);
     color: white;
     padding: 8px 12px;
     font-weight: 600;
@@ -1245,8 +1421,10 @@ a.redlink:hover {
     color: white;
     font-size: 18px;
     cursor: pointer;
-    padding: 0 4px;
+    padding: 4px;
     line-height: 1;
+    min-width: 44px;
+    min-height: 44px;
 }
 
 .qa-popover-body {
@@ -1266,7 +1444,6 @@ a.redlink:hover {
     padding: 6px 10px;
     border: 1px solid var(--border);
     font-size: 13px;
-    outline: none;
     background: var(--bg);
     color: var(--text);
 }
@@ -1277,7 +1454,7 @@ a.redlink:hover {
 
 .qa-popover-btn {
     padding: 6px 14px;
-    background: var(--namu-green);
+    background: var(--control-bg);
     color: white;
     border: none;
     cursor: pointer;
@@ -1319,7 +1496,7 @@ a.redlink:hover {
 
 .qa-result-link {
     display: block;
-    color: var(--namu-green);
+    color: var(--accent-text);
     text-decoration: none;
     font-weight: 600;
     margin-bottom: 4px;
@@ -1342,14 +1519,14 @@ a.redlink:hover {
     border: 1px solid var(--namu-green);
     border-radius: 6px;
     background: transparent;
-    color: var(--namu-green);
+    color: var(--accent-text);
     font-size: 12px;
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
 }
 
 .qa-promote-btn:hover:not(:disabled) {
-    background: var(--namu-green);
+    background: var(--control-bg);
     color: #fff;
 }
 
@@ -1362,7 +1539,7 @@ a.redlink:hover {
     margin-top: 6px;
     padding: 6px 0;
     font-size: 12px;
-    color: var(--namu-green);
+    color: var(--accent-text);
     display: flex;
     gap: 8px;
     align-items: center;
@@ -1370,7 +1547,7 @@ a.redlink:hover {
 }
 
 .qa-promote-success a {
-    color: var(--namu-green);
+    color: var(--accent-text);
     text-decoration: underline;
     font-weight: 500;
 }
@@ -1422,7 +1599,7 @@ a.redlink:hover {
 
 .qa-related-title {
     font-weight: 600;
-    color: var(--namu-green);
+    color: var(--accent-text);
 }
 
 .qa-related-preview {
@@ -1439,7 +1616,7 @@ a.redlink:hover {
     top: 80px;
     left: 50%;
     transform: translateX(-50%) translateY(-200%);
-    background: var(--namu-green, #2e7d32);
+    background: var(--control-bg, #006b62);
     color: #fff;
     padding: 14px 24px;
     border-radius: 12px;
@@ -1527,10 +1704,14 @@ a.redlink:hover {
     border: none;
     cursor: pointer;
     font-size: 16px;
-    padding: 2px 6px;
+    padding: 4px 8px;
     opacity: 0.5;
     transition: opacity 0.2s;
-    display: none; /* Hidden by default; JS shows it when auth token present */
+    display: inline-flex;
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
 }
 .edit-btn:hover { opacity: 1; }
 
@@ -1542,12 +1723,17 @@ a.redlink:hover {
     align-items: center;
     justify-content: center;
     z-index: 1001;
+    padding: 8px;
 }
+.edit-modal[hidden] { display: none; }
+body.modal-open { overflow: hidden; }
 .edit-modal-inner {
     background: var(--bg);
     width: 90%;
     max-width: 800px;
-    max-height: 80vh;
+    max-height: calc(100dvh - 16px);
+    min-height: 0;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     border: 1px solid var(--border);
@@ -1557,16 +1743,19 @@ a.redlink:hover {
     justify-content: space-between;
     align-items: center;
     padding: 12px 16px;
-    background: var(--namu-green);
+    background: var(--control-bg);
     color: white;
     font-weight: 600;
 }
+.edit-modal-header h2 { margin: 0; font-size: 16px; }
 .edit-modal-close {
     background: none;
     border: none;
     color: white;
     font-size: 20px;
     cursor: pointer;
+    min-width: 44px;
+    min-height: 44px;
 }
 .edit-textarea {
     flex: 1;
@@ -1575,7 +1764,9 @@ a.redlink:hover {
     font-family: 'JetBrains Mono', 'D2Coding', monospace;
     font-size: 13px;
     resize: none;
-    min-height: 400px;
+    min-height: 0;
+    height: min(400px, 55dvh);
+    overflow: auto;
     background: var(--bg);
     color: var(--text);
 }
@@ -1586,21 +1777,27 @@ a.redlink:hover {
     padding: 12px 16px;
     border-top: 1px solid var(--border);
 }
+.edit-status { min-height: 1.5em; margin: 8px 16px 0; color: var(--text-muted); font-size: 13px; }
+.edit-status[data-kind="error"] { color: #c62828; }
+.edit-status[data-kind="success"] { color: var(--accent-text); }
 .edit-cancel {
     padding: 6px 16px;
     background: var(--bg-alt);
     border: 1px solid var(--border);
     cursor: pointer;
     color: var(--text);
+    min-height: 40px;
 }
 .edit-save {
     padding: 6px 16px;
-    background: var(--namu-green);
+    background: var(--control-bg);
     color: white;
     border: none;
     cursor: pointer;
     font-weight: 600;
+    min-height: 40px;
 }
+.edit-save:disabled { opacity: .65; cursor: wait; }
 
 /* Dark mode */
 @media (prefers-color-scheme: dark) {
@@ -1615,6 +1812,10 @@ a.redlink:hover {
         --accent-light: #1a3a3a;
         --namu-green: #00b4a6;
         --namu-green-dark: #008c7e;
+        --accent-text: #69ddd0;
+        --control-bg: #005a52;
+        --link: #8ac7ff;
+        --link-hover: #b8dcff;
     }
 
     .topbar { background: #004d40; }
@@ -1642,7 +1843,7 @@ a.redlink:hover {
 
     /* External refs */
     .external-refs { background: var(--bg-alt); border-color: var(--border); }
-    .external-refs a { color: var(--namu-green); }
+    .external-refs a { color: var(--link); }
 
     /* Backlinks */
     .backlinks { border-top-color: var(--border); }
@@ -1674,11 +1875,11 @@ a.redlink:hover {
     .edit-modal-header { background: #004d40; }
     .edit-textarea { background: var(--bg-alt); color: var(--text); }
     .edit-cancel { background: var(--bg-alt); color: var(--text); border-color: var(--border); }
-    .edit-save { background: var(--namu-green); }
+    .edit-save { background: var(--control-bg); }
 
     /* Footer badge */
     .kiwimu-badge { border-top-color: var(--border); }
-    .kiwimu-badge a { color: var(--namu-green); }
+    .kiwimu-badge a { color: var(--accent-text); }
 
     /* Catalog page dark mode */
     .catalog-category { border-color: var(--border); }
@@ -1707,7 +1908,6 @@ a.redlink:hover {
     border: 1px solid var(--border);
     background: var(--bg-alt);
     color: var(--text);
-    outline: none;
     transition: border-color 0.2s;
 }
 .catalog-filter input:focus { border-color: var(--namu-green); }
@@ -1768,7 +1968,7 @@ a.redlink:hover {
 
 /* ── Citations ── */
 .citation-ref { font-size: 0.75em; vertical-align: super; line-height: 1; }
-.citation-ref a { color: var(--namu-green, #2e7d32); text-decoration: none; font-weight: 600; }
+.citation-ref a { color: var(--accent-text, #006b62); text-decoration: none; font-weight: 600; }
 .citation-ref a:hover { text-decoration: underline; }
 
 .citations-section {
@@ -1798,7 +1998,7 @@ a.redlink:hover {
 .citation-item:last-child { border-bottom: none; }
 .citation-num {
     font-weight: 600;
-    color: var(--namu-green, #2e7d32);
+    color: var(--accent-text, #006b62);
     margin-right: 4px;
 }
 .citation-excerpt {
@@ -1856,4 +2056,107 @@ a.redlink:hover {
   font-size: 11px;
   color: var(--text-muted, #8b949e);
   margin-left: 4px;
+}
+
+/* Release polish: consistent targets, responsive tables and motion safety. */
+.page-card,
+.quick-link,
+.catalog-item,
+.toc-box .toc li a { min-height: 40px; }
+.catalog-item { padding-block: 10px; }
+.catalog-filter-status { margin-top: 6px; color: var(--text-muted); font-size: 12px; }
+.admin-table-wrap:focus-visible,
+.provenance-table-wrap:focus-visible { outline-offset: 2px; }
+.kiwimu-badge {
+    margin-left: var(--sidebar-width);
+    margin-top: 32px;
+    padding: 16px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 12px;
+    text-align: center;
+}
+.toc-level-3 { margin-left: 16px; }
+.toc-level-4 { margin-left: 32px; }
+
+@media (hover: hover) {
+    .page-card:hover { box-shadow: var(--shadow-sm); }
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --focus-ring: #ffd166;
+        --graph-bg: #121827;
+        --graph-link: #687386;
+        --warning-bg: #342b12;
+        --warning-border: #c78b2b;
+        --shadow-sm: 0 1px 3px rgba(0, 0, 0, .35);
+        --shadow-md: 0 10px 30px rgba(0, 0, 0, .45);
+    }
+    .topbar-search input { background: rgba(255, 255, 255, .94); color: #171717; }
+    .provenance-page-link { background: var(--bg-alt); color: #63d6c9; }
+    .provenance-warning { background: var(--warning-bg); border-color: var(--warning-border); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+    }
+    .quiz-card-inner.flipped { transform: none !important; }
+    .quiz-card-front[aria-hidden="true"] { display: none; }
+    .quiz-card-back[aria-hidden="false"] { position: static; transform: none; }
+}
+
+@media (forced-colors: active) {
+    :focus-visible { outline: 3px solid Highlight; box-shadow: none; }
+    .search-dropdown a.selected { outline: 2px solid Highlight; outline-offset: -2px; }
+    .legend-dot, .provenance-bar { border: 1px solid CanvasText; }
+}
+
+.mermaid-image {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin-inline: auto;
+}
+
+.graph-node {
+    cursor: pointer;
+    touch-action: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.kiwi-math-display {
+    display: block;
+    max-width: 100%;
+    margin-block: 1rem;
+    padding-block: .25rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    text-align: center;
+}
+
+.kiwi-math,
+.kiwi-math math {
+    font-family: "STIX Two Math", "Cambria Math", math, serif;
+    line-height: normal;
+}
+
+/* Mermaid needs a real layout viewport while rendering. Keep its opaque-origin
+   sandbox fully off-screen without `display:none`, which would collapse text
+   measurements and produce malformed diagrams. */
+.mermaid-render-frame {
+    position: fixed;
+    top: 0;
+    left: -10000px;
+    width: 1024px;
+    height: 768px;
+    border: 0;
+    opacity: 0;
+    pointer-events: none;
 }

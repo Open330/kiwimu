@@ -1,11 +1,10 @@
-// ask-the-wiki: RAG chat widget. Only active in serve mode when authenticated
-// (an authed page carries <meta name="kiwi-auth">). On a static deploy there is
+// ask-the-wiki: RAG chat widget. Only active in authenticated serve mode
+// (an authed page carries a non-secret <meta name="kiwi-live"> marker). On a static deploy there is
 // no server/LLM, so the widget stays hidden.
 (function () {
   document.addEventListener("DOMContentLoaded", function () {
-    var meta = document.querySelector('meta[name="kiwi-auth"]');
+    var meta = document.querySelector('meta[name="kiwi-live"]');
     if (!meta) return; // no auth context → no ask-the-wiki
-    var token = meta.getAttribute("content") || "";
 
     function esc(text) {
       var d = document.createElement("div");
@@ -18,20 +17,25 @@
     btn.className = "askwiki-fab";
     btn.type = "button";
     btn.setAttribute("aria-label", "위키에 질문하기");
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("aria-controls", "askwiki-panel");
     btn.textContent = "🥝 위키에 질문";
 
     var panel = document.createElement("div");
     panel.className = "askwiki-panel";
+    panel.id = "askwiki-panel";
     panel.setAttribute("role", "dialog");
     panel.setAttribute("aria-label", "위키 Q&A");
+    panel.setAttribute("aria-hidden", "true");
     panel.innerHTML =
       '<div class="askwiki-header">' +
       '<span>🥝 위키에 질문하기</span>' +
       '<button class="askwiki-close" type="button" aria-label="닫기">×</button>' +
       "</div>" +
-      '<div class="askwiki-log" id="askwiki-log"></div>' +
+      '<div class="askwiki-log" id="askwiki-log" role="log" aria-live="polite" aria-relevant="additions"></div>' +
       '<form class="askwiki-form" id="askwiki-form">' +
-      '<input type="text" id="askwiki-input" placeholder="위키 전체에 대해 물어보세요..." autocomplete="off" maxlength="2000">' +
+      '<label class="visually-hidden" for="askwiki-input">위키에 할 질문</label>' +
+      '<input type="text" id="askwiki-input" placeholder="위키 전체에 대해 물어보세요…" autocomplete="off" maxlength="2000">' +
       '<button type="submit" id="askwiki-send">전송</button>' +
       "</form>";
 
@@ -45,14 +49,27 @@
 
     function open() {
       panel.classList.add("open");
+      panel.setAttribute("aria-hidden", "false");
+      btn.setAttribute("aria-expanded", "true");
       setTimeout(function () { input.focus(); }, 50);
     }
-    function close() { panel.classList.remove("open"); }
+    function close() {
+      panel.classList.remove("open");
+      panel.setAttribute("aria-hidden", "true");
+      btn.setAttribute("aria-expanded", "false");
+      btn.focus();
+    }
 
     btn.addEventListener("click", function () {
       panel.classList.contains("open") ? close() : open();
     });
     panel.querySelector(".askwiki-close").addEventListener("click", close);
+    panel.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+      }
+    });
 
     function appendMsg(role, htmlContent) {
       var div = document.createElement("div");
@@ -97,11 +114,13 @@
       input.value = "";
       input.disabled = true;
       sendBtn.disabled = true;
+      panel.setAttribute("aria-busy", "true");
       var thinking = appendMsg("bot", '<span class="askwiki-thinking">생각 중…</span>');
 
       fetch("/api/ask-wiki", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({ question: q }),
       })
         .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
@@ -118,6 +137,7 @@
         .finally(function () {
           input.disabled = false;
           sendBtn.disabled = false;
+          panel.removeAttribute("aria-busy");
           input.focus();
           log.scrollTop = log.scrollHeight;
         });
