@@ -1,11 +1,64 @@
-import { readFileSync } from "fs";
+import {
+  assertExtractedTextWithinLimit,
+  IngestResourceLimitError,
+  inspectZipArchive,
+  readSourceFileWithinLimit,
+  type ZipEntryMetadata,
+} from "./limits";
+import { awaitWithAbort, throwIfAborted } from "../abort";
 
-export async function extractTextFromPptx(filePath: string): Promise<{ title: string; text: string }> {
+export const MAX_PPTX_SLIDES = 500;
+export const MAX_PPTX_SLIDE_XML_BYTES = 4 * 1024 * 1024;
+export const MAX_PPTX_TOTAL_SLIDE_XML_BYTES = 32 * 1024 * 1024;
+
+interface PptxSlideLimits {
+  maxSlides: number;
+  maxSlideXmlBytes: number;
+  maxTotalSlideXmlBytes: number;
+}
+
+export function assertPptxSlideLimits(
+  slideEntries: ZipEntryMetadata[],
+  limits: PptxSlideLimits = {
+    maxSlides: MAX_PPTX_SLIDES,
+    maxSlideXmlBytes: MAX_PPTX_SLIDE_XML_BYTES,
+    maxTotalSlideXmlBytes: MAX_PPTX_TOTAL_SLIDE_XML_BYTES,
+  },
+): void {
+  if (slideEntries.length > limits.maxSlides) {
+    throw new IngestResourceLimitError(
+      `PPTX exceeds the ${limits.maxSlides}-slide limit (${slideEntries.length} slides)`,
+    );
+  }
+  let declaredSlideBytes = 0;
+  for (const entry of slideEntries) {
+    if (entry.uncompressedBytes > limits.maxSlideXmlBytes) {
+      throw new IngestResourceLimitError(
+        `PPTX slide ${entry.name} exceeds the ${limits.maxSlideXmlBytes}-byte XML limit (${entry.uncompressedBytes} bytes)`,
+      );
+    }
+    declaredSlideBytes += entry.uncompressedBytes;
+  }
+  if (declaredSlideBytes > limits.maxTotalSlideXmlBytes) {
+    throw new IngestResourceLimitError(
+      `PPTX slide XML exceeds the ${limits.maxTotalSlideXmlBytes}-byte aggregate limit (${declaredSlideBytes} bytes)`,
+    );
+  }
+}
+
+export async function extractTextFromPptx(
+  filePath: string,
+  signal?: AbortSignal,
+): Promise<{ title: string; text: string }> {
   // PPTX is a ZIP containing XML files
   const JSZip = (await import("jszip")).default;
 
-  const buffer = readFileSync(filePath);
-  const zip = await JSZip.loadAsync(buffer);
+  const buffer = await readSourceFileWithinLimit(filePath, undefined, signal);
+  throwIfAborted(signal);
+  const archive = inspectZipArchive(buffer);
+  const slideEntries = archive.entries.filter(({ name }) => /^ppt\/slides\/slide\d+\.xml$/.test(name));
+  assertPptxSlideLimits(slideEntries);
+  const zip = await awaitWithAbort(JSZip.loadAsync(buffer), signal);
 
   const slides: string[] = [];
 
@@ -19,7 +72,13 @@ export async function extractTextFromPptx(filePath: string): Promise<{ title: st
     });
 
   for (const slidePath of slideFiles) {
-    const xml = await zip.files[slidePath].async("text");
+    throwIfAborted(signal);
+    const xml = await awaitWithAbort(zip.files[slidePath]!.async("text"), signal);
+    if (Buffer.byteLength(xml, "utf8") > MAX_PPTX_SLIDE_XML_BYTES) {
+      throw new IngestResourceLimitError(
+        `PPTX slide ${slidePath} exceeds the ${MAX_PPTX_SLIDE_XML_BYTES}-byte XML limit after extraction`,
+      );
+    }
     // Extract text from <a:t> tags
     const texts: string[] = [];
     const regex = /<a:t>([^<]*)<\/a:t>/g;
@@ -31,8 +90,12 @@ export async function extractTextFromPptx(filePath: string): Promise<{ title: st
       slides.push(texts.join(" "));
     }
   }
+  throwIfAborted(signal);
 
   const title = filePath.split("/").pop()?.replace(/\.pptx?$/i, "") || "Untitled";
-  const text = slides.map((s, i) => `Slide ${i + 1}:\n${s}`).join("\n\n");
+  const text = assertExtractedTextWithinLimit(
+    slides.map((s, i) => `Slide ${i + 1}:\n${s}`).join("\n\n"),
+    "PPTX text",
+  );
   return { title, text };
 }

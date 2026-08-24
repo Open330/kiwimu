@@ -1,16 +1,25 @@
 import { createHash } from "crypto";
 import { join } from "path";
-import { existsSync, cpSync } from "fs";
 import { Store } from "../store";
 import { type LLMConfig, type Persona, type WikiSchema } from "../config";
 import { LLMClient, type UsageStats } from "../llm-client";
 import { estimateIngest, type IngestEstimate } from "../pipeline/cost-estimator";
+import {
+  cleanupIngestStaging,
+  createIngestGenerationFingerprint,
+  ingestFigurePrefix,
+  openIngestStaging,
+  prepareIngestFigureStaging,
+  publishStagedFigures,
+} from "./ingest-staging";
+import type { IngestSourceDraft, Source } from "../store";
+import { throwIfAborted } from "../abort";
 
 export interface IngestResult {
   sourceCount: number;
   conceptCount: number;
   linkCount: number;
-  usage: UsageStats & { estimatedCostUsd: number };
+  usage: UsageStats & { estimatedCostUsd: number | null };
   /** Skipped because the source content was unchanged since the last ingest. */
   unchanged?: boolean;
   /** Aborted by the cost-estimate confirmation hook. */
@@ -29,6 +38,35 @@ export interface IngestOptions {
   onCostEstimate?: (est: IngestEstimate) => boolean | Promise<boolean>;
   /** Extract figures from PDFs (default true). */
   extractFigures?: boolean;
+  /** Cooperatively cancels network, model, parser and subprocess work. */
+  signal?: AbortSignal;
+  /** Render and publish a complete candidate site with the final generation. */
+  publishGeneration?: (generation: IngestGenerationPublication) => Source | Promise<Source>;
+}
+
+export interface IngestGenerationPublication {
+  stagingStore: Store;
+  stagingSourceId: number;
+  draft: IngestSourceDraft;
+  contentHash: string;
+  /** Private directory containing this generation's not-yet-live figures. */
+  stagedFigureDirectory?: string;
+  publishFiles?: () => void;
+}
+
+async function publishGeneration(
+  liveStore: Store,
+  generation: IngestGenerationPublication,
+  publisher: IngestOptions["publishGeneration"],
+): Promise<Source> {
+  if (publisher) return publisher(generation);
+  return liveStore.publishIngestGeneration(
+    generation.stagingStore,
+    generation.stagingSourceId,
+    generation.draft,
+    generation.contentHash,
+    generation.publishFiles,
+  );
 }
 
 function hashText(text: string): string {
@@ -55,21 +93,22 @@ function shouldSkipUnchanged(
   return prevHash === contentHash && store.countPagesBySource(existing.id) > 0;
 }
 
-/** Copy persisted figures into the built site's static dir so they survive rebuilds. */
-function mirrorFiguresToSite(root: string): void {
-  try {
-    const figuresDir = join(root, "figures");
-    const siteStatic = join(root, "_site", "static");
-    if (existsSync(figuresDir) && existsSync(siteStatic)) {
-      cpSync(figuresDir, join(siteStatic, "figures"), { recursive: true });
-    }
-  } catch {
-    // best-effort mirror for serve mode; the build step re-copies regardless
+/**
+ * Decide whether an interrupted ingest can resume for this exact input.
+ * Checkpoints from another content generation (including legacy unbound rows)
+ * are discarded together with their partial source-owned output.
+ */
+export function prepareIngestAttempt(store: Store, sourceId: number, contentHash: string): boolean {
+  const hasCheckpoints = store.hasCheckpoints(sourceId);
+  const canResume = hasCheckpoints && store.checkpointsMatchInput(sourceId, contentHash);
+  if (!canResume) {
+    store.resetIngestGeneration(sourceId);
   }
+  return canResume;
 }
 
-function makeClient(llmConfig: LLMConfig, onProgress?: (status: string) => void): LLMClient {
-  const client = new LLMClient(llmConfig);
+function makeClient(llmConfig: LLMConfig, onProgress?: (status: string) => void, signal?: AbortSignal): LLMClient {
+  const client = new LLMClient(llmConfig, { signal });
   client.resetUsageStats();
   client.onRetry = (attempt, max, delayMs) => {
     const delaySec = Math.round(delayMs / 1000);
@@ -89,13 +128,15 @@ export async function ingestUrl(
   schema?: WikiSchema,
   opts?: IngestOptions
 ): Promise<IngestResult> {
-  const client = makeClient(llmConfig, onProgress);
+  const client = makeClient(llmConfig, onProgress, opts?.signal);
 
   const { fetchPage } = await import("../ingest/web");
   const { llmChunkDocument, htmlToRawText } = await import("../pipeline/llm-chunker");
 
   onProgress?.("⏳ URL 가져오는 중...");
-  const { title, html } = await fetchPage(url);
+  throwIfAborted(opts?.signal);
+  const { title, html } = await fetchPage(url, { signal: opts?.signal });
+  throwIfAborted(opts?.signal);
   const rawText = await htmlToRawText(html);
 
   if (!rawText || rawText.trim().length < 50) {
@@ -112,7 +153,7 @@ export async function ingestUrl(
 
   // ── Cost preview / confirmation before spending LLM calls ──
   if (opts?.onCostEstimate) {
-    const est = estimateIngest(rawText, llmConfig.provider);
+    const est = estimateIngest(rawText, llmConfig.provider, llmConfig.model);
     const proceed = await opts.onCostEstimate(est);
     if (!proceed) {
       onProgress?.("사용자가 취소함");
@@ -120,26 +161,62 @@ export async function ingestUrl(
     }
   }
 
-  const source = store.addSource(url, "web", title, html);
-
-  // Only delete existing pages if NOT resuming (no checkpoints = fresh ingest)
-  if (!store.hasCheckpoints(source.id)) {
-    store.deletePagesBySource(source.id);
+  const draft: IngestSourceDraft = { uri: url, type: "web", title, rawContent: html };
+  const generationFingerprint = createIngestGenerationFingerprint(llmConfig, persona, schema, {
+    sourceType: draft.type,
+    title: draft.title,
+    extractFigures: false,
+  });
+  const staging = openIngestStaging(root, store, draft, contentHash, generationFingerprint);
+  let source: Source;
+  let sourceCount: number;
+  let conceptCount: number;
+  let published = false;
+  try {
+    const isResume = prepareIngestAttempt(staging.store, staging.source.id, staging.checkpointHash);
+    onProgress?.(isResume ? "⏳ LLM 분석 재개..." : "⏳ LLM 분석 시작...");
+    ({ sourceCount, conceptCount } = await llmChunkDocument(
+      rawText,
+      title,
+      staging.source.id,
+      staging.store,
+      0,
+      persona,
+      client,
+      onProgress,
+      schema,
+      false,
+      staging.checkpointHash,
+    ));
+    throwIfAborted(opts?.signal);
+    source = await publishGeneration(store, {
+      stagingStore: staging.store,
+      stagingSourceId: staging.source.id,
+      draft,
+      contentHash,
+    }, opts?.publishGeneration);
+    published = true;
+  } finally {
+    staging.store.close();
+    if (published) {
+      try {
+        cleanupIngestStaging(staging);
+      } catch (error) {
+        onProgress?.(`⚠ 완료된 staging 정리 실패: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
   }
-
-  const isResume = store.hasCheckpoints(source.id);
-  onProgress?.(isResume ? "⏳ LLM 분석 재개..." : "⏳ LLM 분석 시작...");
-  const { sourceCount, conceptCount } = await llmChunkDocument(rawText, title, source.id, store, 0, persona, client, onProgress, schema);
-
-  // Pipeline completed successfully — clear checkpoints and record hash for incremental skip
-  store.clearCheckpoints(source.id);
-  store.setSourceHash(source.id, contentHash);
 
   const u = client.getUsageStats();
   const estimatedCostUsd = client.getEstimatedCost();
-  store.addUsageLog(source.id, u.totalCalls, u.promptTokens, u.completionTokens, u.totalTokens, estimatedCostUsd);
-
-  store.addActivityLog('ingest', `Ingested ${title}`, 'source', source.id, { url, sourceCount, conceptCount });
+  // Legacy usage rows store numeric totals. Unknown custom-model prices are
+  // excluded from that USD aggregate while token usage remains fully recorded.
+  tryRecordIngestTelemetry("usage", () => {
+    store.addUsageLog(source.id, u.totalCalls, u.promptTokens, u.completionTokens, u.totalTokens, estimatedCostUsd ?? 0);
+  });
+  tryRecordIngestTelemetry("activity", () => {
+    store.addActivityLog('ingest', `Ingested ${title}`, 'source', source.id, { url, sourceCount, conceptCount });
+  });
 
   return {
     sourceCount,
@@ -160,7 +237,7 @@ export async function ingestFile(
   schema?: WikiSchema,
   opts?: IngestOptions
 ): Promise<IngestResult> {
-  const client = makeClient(llmConfig, onProgress);
+  const client = makeClient(llmConfig, onProgress, opts?.signal);
 
   const { llmChunkDocument } = await import("../pipeline/llm-chunker");
 
@@ -168,30 +245,31 @@ export async function ingestFile(
 
   let title: string;
   let text: string;
+  throwIfAborted(opts?.signal);
 
   switch (ext) {
     case "pdf": {
       const { extractTextFromPdf } = await import("../ingest/pdf");
       onProgress?.("⏳ PDF 텍스트 추출 중...");
-      ({ title, text } = await extractTextFromPdf(filePath));
+      ({ title, text } = await extractTextFromPdf(filePath, opts?.signal));
       break;
     }
     case "docx": {
       const { extractTextFromDocx } = await import("../ingest/docx");
       onProgress?.("⏳ DOCX 텍스트 추출 중...");
-      ({ title, text } = await extractTextFromDocx(filePath));
+      ({ title, text } = await extractTextFromDocx(filePath, opts?.signal));
       break;
     }
     case "pptx": {
       const { extractTextFromPptx } = await import("../ingest/pptx");
       onProgress?.("⏳ PPTX 텍스트 추출 중...");
-      ({ title, text } = await extractTextFromPptx(filePath));
+      ({ title, text } = await extractTextFromPptx(filePath, opts?.signal));
       break;
     }
     case "md": {
       const { extractTextFromMarkdown } = await import("../ingest/markdown");
       onProgress?.("⏳ MD 텍스트 추출 중...");
-      const result = extractTextFromMarkdown(filePath);
+      const result = extractTextFromMarkdown(filePath, opts?.signal);
       title = result.title;
       text = result.text;
       break;
@@ -199,10 +277,11 @@ export async function ingestFile(
     default: {
       const { extractWithTextutil } = await import("../ingest/legacy");
       onProgress?.(`⏳ ${ext.toUpperCase()} 텍스트 추출 중...`);
-      ({ title, text } = await extractWithTextutil(filePath));
+      ({ title, text } = await extractWithTextutil(filePath, undefined, opts?.signal));
       break;
     }
   }
+  throwIfAborted(opts?.signal);
 
   if (!text || text.trim().length < 50) {
     throw new Error("추출된 텍스트가 너무 짧습니다. 파일 내용을 확인해주세요.");
@@ -218,7 +297,7 @@ export async function ingestFile(
 
   // ── Cost preview / confirmation before spending LLM calls ──
   if (opts?.onCostEstimate) {
-    const est = estimateIngest(text, llmConfig.provider);
+    const est = estimateIngest(text, llmConfig.provider, llmConfig.model);
     const proceed = await opts.onCostEstimate(est);
     if (!proceed) {
       onProgress?.("사용자가 취소함");
@@ -226,46 +305,112 @@ export async function ingestFile(
     }
   }
 
-  const source = store.addSource(filePath, ext, title, "(file)");
-
-  // Only delete existing pages if NOT resuming (no checkpoints = fresh ingest)
-  if (!store.hasCheckpoints(source.id)) {
-    store.deletePagesBySource(source.id);
-  }
-
-  const isResume = store.hasCheckpoints(source.id);
-  onProgress?.(isResume ? "⏳ LLM 분석 재개..." : "⏳ LLM 분석 시작...");
-  const { sourceCount, conceptCount } = await llmChunkDocument(text, title, source.id, store, 0, persona, client, onProgress, schema);
-
-  store.clearCheckpoints(source.id);
-
-  // ── Figure extraction (PDF only, runs in incremental path too) ──
+  // The immutable storage path is the source identity; retain the user-facing
+  // filename separately so management/provenance views do not have to infer it
+  // from the UUID directory.
+  const draft: IngestSourceDraft = {
+    uri: filePath,
+    type: ext,
+    title,
+    rawContent: `(file: ${originalName})`,
+  };
+  const generationFingerprint = createIngestGenerationFingerprint(llmConfig, persona, schema, {
+    sourceType: draft.type,
+    title: draft.title,
+    extractFigures: ext === "pdf" && opts?.extractFigures !== false,
+  });
+  const figureModule = ext === "pdf" && opts?.extractFigures !== false
+    ? await import("../pipeline/figures")
+    : null;
+  const liveSource = store.getSource(filePath);
+  const preservedFigureState = liveSource
+    ? figureModule?.captureFigureState(store, liveSource.id)
+    : undefined;
+  const staging = openIngestStaging(root, store, draft, contentHash, generationFingerprint);
+  let source: Source;
+  let sourceCount: number;
+  let conceptCount: number;
   let figures: { figureCount: number; captionedCount: number } | undefined;
-  if (ext === "pdf" && opts?.extractFigures !== false) {
-    try {
-      const { runFigureStage } = await import("../pipeline/figures");
-      figures = await runFigureStage({
-        store,
-        client,
-        sourceId: source.id,
-        ext,
-        filePath,
-        uploadsFiguresDir: join(root, "figures"),
-        onProgress,
-      });
-      mirrorFiguresToSite(root);
-    } catch (e) {
-      onProgress?.(`⚠ 그림 추출 건너뜀: ${e instanceof Error ? e.message : String(e)}`);
+  let stagedFigureDirectory: string | null = null;
+  let published = false;
+  try {
+    const isResume = prepareIngestAttempt(staging.store, staging.source.id, staging.checkpointHash);
+    onProgress?.(isResume ? "⏳ LLM 분석 재개..." : "⏳ LLM 분석 시작...");
+    ({ sourceCount, conceptCount } = await llmChunkDocument(
+      text,
+      title,
+      staging.source.id,
+      staging.store,
+      0,
+      persona,
+      client,
+      onProgress,
+      schema,
+      false,
+      staging.checkpointHash,
+    ));
+    throwIfAborted(opts?.signal);
+
+    // ── Figure extraction (PDF only, staged with this generation) ──
+    if (ext === "pdf" && opts?.extractFigures !== false) {
+      try {
+        stagedFigureDirectory = prepareIngestFigureStaging(staging);
+        figures = await figureModule!.runFigureStage({
+          store: staging.store,
+          client,
+          sourceId: staging.source.id,
+          ext,
+          filePath,
+          uploadsFiguresDir: stagedFigureDirectory,
+          onProgress,
+          preservedState: preservedFigureState,
+          filePrefix: ingestFigurePrefix(staging, contentHash),
+          signal: opts?.signal,
+        });
+      } catch (e) {
+        figureModule!.restoreFigureState(staging.store, staging.source.id, preservedFigureState);
+        throwIfAborted(opts?.signal);
+        if (e instanceof figureModule!.PdfFigureExtractionLimitError) throw e;
+        onProgress?.(`⚠ 그림 추출 건너뜀: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    throwIfAborted(opts?.signal);
+    source = await publishGeneration(store, {
+      stagingStore: staging.store,
+      stagingSourceId: staging.source.id,
+      draft,
+      contentHash,
+      stagedFigureDirectory: stagedFigureDirectory ?? undefined,
+      publishFiles: stagedFigureDirectory
+        ? () => publishStagedFigures(stagedFigureDirectory!, join(root, "figures"))
+        : undefined,
+    }, opts?.publishGeneration);
+    published = true;
+  } finally {
+    staging.store.close();
+    if (published) {
+      try {
+        cleanupIngestStaging(staging);
+      } catch (error) {
+        onProgress?.(`⚠ 완료된 staging 정리 실패: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   }
 
-  store.setSourceHash(source.id, contentHash);
-
   const u = client.getUsageStats();
   const estimatedCostUsd = client.getEstimatedCost();
-  store.addUsageLog(source.id, u.totalCalls, u.promptTokens, u.completionTokens, u.totalTokens, estimatedCostUsd);
-
-  store.addActivityLog('ingest', `Ingested ${originalName}`, 'source', source.id, { filePath, sourceCount, conceptCount });
+  tryRecordIngestTelemetry("usage", () => {
+    store.addUsageLog(source.id, u.totalCalls, u.promptTokens, u.completionTokens, u.totalTokens, estimatedCostUsd ?? 0);
+  });
+  tryRecordIngestTelemetry("activity", () => {
+    store.addActivityLog('ingest', `Ingested ${originalName}`, 'source', source.id, {
+      filePath,
+      originalName,
+      sourceCount,
+      conceptCount,
+    });
+  });
 
   return {
     sourceCount,
@@ -274,4 +419,14 @@ export async function ingestFile(
     usage: { ...u, estimatedCostUsd },
     figures,
   };
+}
+
+function tryRecordIngestTelemetry(kind: "usage" | "activity", record: () => void): void {
+  try {
+    record();
+  } catch {
+    // Content and its complete static site are already committed. Do not turn
+    // successful publication into a failed job, and do not log source details.
+    console.warn(`[kiwimu] Failed to record ingest ${kind} telemetry`);
+  }
 }
