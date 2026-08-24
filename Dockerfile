@@ -1,33 +1,29 @@
-FROM oven/bun:1 AS base
+FROM oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4 AS base
 WORKDIR /app
 
 # Install dependencies
-COPY package.json bun.lockb ./
+COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
 
 # Copy source
-COPY src/ ./src/
-COPY bin/ ./bin/
-COPY personas/ ./personas/
-COPY assets/ ./assets/
+COPY --chown=bun:bun src/ ./src/
+COPY --chown=bun:bun bin/ ./bin/
+COPY --chown=bun:bun personas/ ./personas/
+COPY --chown=bun:bun assets/ ./assets/
 
-# Create data directory for wiki projects
-RUN mkdir -p /data/wiki
-
-# Init demo data (timeout kills the auto-started server after build completes)
-RUN cd /data/wiki && timeout 10 bun run /app/src/index.ts init "Kiwi Mu Demo" --demo 2>/dev/null || true
-
-# Copy logo to static dir (buildSite may not find it during init)
-RUN cp /app/assets/logos/logo_2_minimalist_icon_transparent.png /data/wiki/_site/static/logo.png 2>/dev/null || true
+# Create the persistent project directory for the unprivileged runtime user.
+RUN mkdir -p /data/wiki && chown -R bun:bun /data/wiki
 
 # Expose port
 EXPOSE 8000
 
 # Health check (using bun fetch instead of curl — not available in bun image)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
-  CMD bun -e "fetch('http://localhost:8000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+  CMD bun -e "fetch('http://localhost:8000/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
 WORKDIR /data/wiki
+USER bun
 
-# Run kiwimu serve from wiki project directory
-CMD ["sh", "-c", "if [ ! -f /data/wiki/kiwi.toml ]; then cd /data/wiki && timeout 10 bun run /app/src/index.ts init 'Kiwi Mu Demo' --demo 2>/dev/null || true; fi && cp /app/assets/logos/logo_2_minimalist_icon_transparent.png /data/wiki/_site/static/logo.png 2>/dev/null || true && bun run /app/src/index.ts serve -p 8000 --host 0.0.0.0"]
+# Initialize an empty volume deterministically, repair a missing static build,
+# then replace the shell with the server so container signals are propagated.
+CMD ["sh", "-c", "if [ ! -f kiwi.toml ]; then bun run /app/src/index.ts init 'Kiwi Mu Demo' --demo --no-serve; elif [ ! -f _site/index.html ]; then bun run /app/src/index.ts build; fi && exec bun run /app/src/index.ts serve -p 8000 --host 0.0.0.0"]

@@ -2,9 +2,13 @@ node_modules/
 dist/
 _site/
 kiwi.db
+.kiwimu-runtime.db*
+.kiwimu-ingest-staging/
+.kiwi-token*
+playwright-report/
+test-results/
 kiwi.toml
 *.tgz
-bun.lock
 .env
 certs/
 .claude/worktrees/
@@ -12,3 +16,7 @@ certs/
 .context/impl/
 .context/marketing/frames/
 docker-compose.override.yml
+*.lock/
+*.deploy.lock/
+*.dead.*/
+.rpf.*.tmp

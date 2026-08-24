@@ -1,0 +1,56 @@
+name: Deploy demo wiki
+
+# 공개 데모 위키(API 키 불필요, 양자역학 + 자료구조 샘플)를 GitHub Pages에 배포합니다.
+# 결과 URL: https://open330.github.io/kiwimu/
+#
+# ⚙️ 최초 1회 설정 (리포 Settings → Pages):
+#   Source: "Deploy from a branch" → Branch: gh-pages / (root)
+# 이 워크플로는 gh-pages 브랜치로 퍼블리시하는 기존 `kiwimu deploy`를 그대로 재사용합니다.
+# ⚠️ 이 리포가 이미 gh-pages 브랜치를 다른 용도로 쓰고 있지 않은지 먼저 확인하세요.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'personas/**'
+      - 'assets/**'
+      - '.github/workflows/demo.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write # gh-pages 브랜치 푸시에 필요
+
+concurrency:
+  group: demo-wiki-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy-demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gh-pages 브랜치 히스토리 접근
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+
+      - run: bun install --frozen-lockfile
+
+      - name: Build demo wiki (API 키 불필요)
+        run: |
+          rm -rf .demo-build
+          mkdir -p .demo-build
+          cd .demo-build
+          bun run "$GITHUB_WORKSPACE/src/index.ts" init --demo --no-serve
+
+      - name: Deploy to GitHub Pages (gh-pages branch)
+        run: |
+          cd .demo-build
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          bun run "$GITHUB_WORKSPACE/src/index.ts" deploy --base-path /kiwimu
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,27 +1,39 @@
 services:
   kiwimu:
     build: .
-    container_name: kiwimu
     restart: unless-stopped
+    stop_grace_period: 30s
     ports:
-      - "8443:8000"
-      - "8400:8000"
+      # Plain HTTP debug access for this host only. Cloudflare Tunnel reaches
+      # kiwimu:8000 over the Compose network and does not use this binding.
+      - "127.0.0.1:${KIWIMU_DIRECT_PORT:-8400}:8000"
     volumes:
       - kiwimu-data:/data/wiki
       # TLS: uncomment to enable HTTPS directly (not needed behind Traefik)
       # - ./certs:/certs:ro
     environment:
-      - NODE_ENV=production
+      NODE_ENV: production
+      # Trust forwarded protocol only from a private immediate peer. Keeping
+      # force-HTTPS off preserves direct http://127.0.0.1 access; Cloudflare's
+      # X-Forwarded-Proto=https still produces Secure cookies.
+      KIWI_TRUST_PROXY: "true"
+      KIWIMU_EXTERNAL_HTTPS: "${KIWIMU_EXTERNAL_HTTPS:-false}"
+      KIWIMU_AUTH_TOKEN: "${KIWIMU_AUTH_TOKEN:-}"
+      KIWIMU_UPLOAD_CONCURRENCY: "${KIWIMU_UPLOAD_CONCURRENCY:-1}"
+      KIWIMU_LEASE_TTL_SECONDS: "${KIWIMU_LEASE_TTL_SECONDS:-300}"
+      KIWIMU_TASK_TTL_SECONDS: "${KIWIMU_TASK_TTL_SECONDS:-90}"
+      KIWIMU_SHUTDOWN_DRAIN_SECONDS: "${KIWIMU_SHUTDOWN_DRAIN_SECONDS:-20}"
+      KIWIMU_COORDINATOR_URL: "${KIWIMU_COORDINATOR_URL:-}"
+      KIWIMU_COORDINATOR_NAMESPACE: "${KIWIMU_COORDINATOR_NAMESPACE:-}"
     healthcheck:
-      test: ["CMD", "bun", "-e", "fetch('http://localhost:8000/manage').then(r=>{if(r.status>=500)process.exit(1)}).catch(()=>process.exit(1))"]
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:8000/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
 
   cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: kiwimu-tunnel
+    image: cloudflare/cloudflared:latest@sha256:188bb03589a32affed3cf4d0590565ffe67b78866e6b5582574afab2b705bafe
     restart: unless-stopped
     command: tunnel --no-autoupdate run
     environment:
