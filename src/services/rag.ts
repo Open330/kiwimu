@@ -1,7 +1,9 @@
 import { createHash } from "crypto";
 import type { Store, ChunkEmbeddingRow } from "../store";
 import type { LLMConfig } from "../config";
-import { cosineSimilarity, embeddingSupported, getEmbedding } from "./embedding";
+import { StaleContentFenceError } from "../repositories/content-fence-repository";
+import { cosineSimilarity, embeddingModelIdentity, embeddingSupported, getEmbedding } from "./embedding";
+import { throwIfAborted } from "../abort";
 
 // A function that turns text into an embedding vector. Injected in tests so
 // there are never live embedding API calls.
@@ -120,11 +122,11 @@ export function rankChunks(
 export async function indexWiki(
   store: Store,
   config: LLMConfig,
-  opts: { onProgress?: (msg: string) => void; embedFn?: EmbedFn; model?: string } = {},
+  opts: { onProgress?: (msg: string) => void; embedFn?: EmbedFn; model?: string; signal?: AbortSignal } = {},
 ): Promise<{ pagesChunked: number; chunksEmbedded: number; skipped: number }> {
   const onProgress = opts.onProgress;
-  const model = opts.model ?? "text-embedding-3-small";
-  const embedFn: EmbedFn = opts.embedFn ?? ((text: string) => getEmbedding(text, config));
+  const model = opts.model ?? embeddingModelIdentity(config) ?? `custom:${config.provider}:${config.model}`;
+  const embedFn: EmbedFn = opts.embedFn ?? ((text: string) => getEmbedding(text, config, { signal: opts.signal }));
 
   if (!opts.embedFn && (!embeddingSupported(config.provider) || !config.api_key || config.provider === "demo")) {
     onProgress?.("⚠ 임베딩 미지원 provider — RAG 인덱싱을 건너뜁니다 (키워드 검색으로 대체됨)");
@@ -136,6 +138,7 @@ export async function indexWiki(
   let skipped = 0;
 
   for (const page of pages) {
+    throwIfAborted(opts.signal);
     const text = `${page.title}\n\n${page.content}`;
     const hash = hashContent(text);
     if (store.getChunkContentHash(page.id) === hash) {
@@ -152,16 +155,19 @@ export async function indexWiki(
   store.deleteOrphanChunks();
 
   // Embed any chunk missing an embedding (new or re-chunked).
-  const pending = store.getChunksWithoutEmbedding();
+  const pending = store.getChunksWithoutEmbedding(model);
   if (pending.length) onProgress?.(`⏳ ${pending.length}개 청크 임베딩 생성 중...`);
   let chunksEmbedded = 0;
   for (const chunk of pending) {
+    throwIfAborted(opts.signal);
     try {
       const emb = await embedFn(chunk.content.slice(0, 8000));
       store.saveChunkEmbedding(chunk.id, emb, model);
       chunksEmbedded++;
       if (chunksEmbedded % 20 === 0) onProgress?.(`  ${chunksEmbedded}/${pending.length} 완료`);
     } catch (e) {
+      throwIfAborted(opts.signal);
+      if (e instanceof StaleContentFenceError) throw e;
       onProgress?.(`  ⚠ 청크 임베딩 실패: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
@@ -180,7 +186,9 @@ export async function retrieveChunks(
   k: number = 6,
   embedFn?: EmbedFn,
 ): Promise<RetrievedChunk[]> {
-  const all = store.getAllChunkEmbeddings();
+  const model = embeddingModelIdentity(config);
+  if (!model) return [];
+  const all = store.getAllChunkEmbeddings(model);
   if (!all.length) return [];
   const fn: EmbedFn = embedFn ?? ((text: string) => getEmbedding(text, config));
   const queryEmbedding = await fn(query);

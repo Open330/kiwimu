@@ -23,7 +23,7 @@ describe("generateDynamicPage", () => {
     store = new Store(":memory:");
     store.initSchema();
     const src = store.addSource("file:///t.pdf", "pdf", "T", "raw");
-    const p = store.addPage("physics", "Physics", "Physics overview.", src.id, null, "concept", 0);
+    const p = store.addPage("physics", "Physics", "Physics overview.", src.id, undefined, "concept", 0);
     parent = { id: p.id, slug: p.slug, title: p.title, content: p.content };
   });
 
@@ -57,6 +57,53 @@ describe("generateDynamicPage", () => {
     // Usage log recorded
     const summary = store.getUsageSummary();
     expect(summary.totalCalls).toBeGreaterThanOrEqual(0);
+  });
+
+  test("never strands a page without its link when the fence is replaced after content commit", async () => {
+    const response = JSON.stringify({
+      title: "Atomic answer",
+      content: "The generated answer and its parent link must appear together, even across lease replacement.",
+    });
+    const { client } = makeClient(response);
+    const staleFence = store.activateContentFence({
+      resource: "content",
+      ownerToken: "stale-worker",
+      fencingToken: 1,
+    });
+    const warning = spyOn(console, "warn").mockImplementation(() => {});
+    const atomicCommit = store.addDynamicPageWithParentLink.bind(store);
+    spyOn(store, "addDynamicPageWithParentLink").mockImplementation((
+      slug,
+      title,
+      content,
+      parentPageId,
+      userQuestion,
+    ) => {
+      const pageId = atomicCommit(slug, title, content, parentPageId, userQuestion);
+      store.activateContentFence({
+        resource: "content",
+        ownerToken: "replacement-worker",
+        fencingToken: 2,
+      });
+      return pageId;
+    });
+
+    const result = await store.runWithContentFence(staleFence, () => generateDynamicPage(
+      store,
+      client,
+      null,
+      parent,
+      "selected text",
+      "Explain atomic publishing",
+    ));
+
+    const page = store.getPage("atomic-answer");
+    expect(result.slug).toBe("atomic-answer");
+    expect(page).not.toBeNull();
+    expect(store.getForwardLinks(parent.id).map((linked) => linked.id)).toEqual([page!.id]);
+    expect(store.getUsageSummary().totalCalls).toBe(0);
+    expect(warning).toHaveBeenCalledTimes(2);
+    expect(warning.mock.calls.flat().join(" ")).not.toContain("Explain atomic publishing");
   });
 
   test("strips markdown code fences around the JSON", async () => {
@@ -109,5 +156,14 @@ describe("generateDynamicPage", () => {
 
     const result = await generateDynamicPage(store, client, null, parent, "sel", "define momentum");
     expect(result.isPromotable).toBe(true);
+  });
+
+  test("preserves LaTeX backslashes after parsing JSON", async () => {
+    const content = "The angle is written as $\\theta$ and the set as $\\times$, with enough explanation to form a page.";
+    const { client } = makeClient(JSON.stringify({ title: "Angles", content }));
+
+    const result = await generateDynamicPage(store, client, null, parent, "angle", "explain the angle");
+    expect(result.content).toBe(content);
+    expect(result.content).not.toContain("\t");
   });
 });

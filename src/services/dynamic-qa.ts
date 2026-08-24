@@ -134,15 +134,6 @@ Return a JSON object:
     };
   }
 
-  // Unescape JSON string escapes that might remain in content
-  if (parsed.content) {
-    parsed.content = parsed.content
-      .replace(/\\n/g, '\n')
-      .replace(/\\t/g, '\t')
-      .replace(/\\"/g, '"')
-      .replace(/\\\\/g, '\\');
-  }
-
   if (!parsed.title || !parsed.content || parsed.content.length < 20) {
     throw new Error("LLM 응답이 불충분합니다. 다시 시도해주세요.");
   }
@@ -158,18 +149,26 @@ Return a JSON object:
     finalSlug = `${slug}-${counter++}`;
   }
 
-  // 6. Store the page
-  const pageId = store.addDynamicPage(finalSlug, parsed.title, parsed.content, parentPage.id, userQuestion);
+  // 6. Store the page and its parent link in one fenced transaction.
+  const pageId = store.addDynamicPageWithParentLink(
+    finalSlug,
+    parsed.title,
+    parsed.content,
+    parentPage.id,
+    userQuestion,
+  );
 
-  // 7. Add link from parent to new page
-  store.addLink(parentPage.id, pageId, parsed.title);
-
-  // 8. Log usage
+  // 7. Log noncritical telemetry separately from the required content commit.
+  // A fence can be replaced immediately after page/link commit; telemetry
+  // failure must not turn that successful content operation into an error.
   const usage = llmClient.getUsageStats();
   const estimatedCostUsd = llmClient.getEstimatedCost();
-  store.addUsageLog(null, usage.totalCalls, usage.promptTokens, usage.completionTokens, usage.totalTokens, estimatedCostUsd);
-
-  store.addActivityLog('query', `Asked: ${userQuestion.slice(0, 80)}`, 'page', pageId, { parentSlug: parentPage.slug, selectedText: selectedText.slice(0, 200) });
+  tryRecordTelemetry("usage", () => {
+    store.addUsageLog(null, usage.totalCalls, usage.promptTokens, usage.completionTokens, usage.totalTokens, estimatedCostUsd ?? 0);
+  });
+  tryRecordTelemetry("activity", () => {
+    store.addActivityLog('query', `Asked: ${userQuestion.slice(0, 80)}`, 'page', pageId, { parentSlug: parentPage.slug, selectedText: selectedText.slice(0, 200) });
+  });
 
   // Determine promotability: content should be substantial (2+ paragraphs, 200+ chars)
   const isPromotable = parsed.isPromotable !== undefined
@@ -187,4 +186,12 @@ Return a JSON object:
     suggestedTitle: parsed.title,
     keyConcepts,
   };
+}
+
+function tryRecordTelemetry(kind: "usage" | "activity", record: () => void): void {
+  try {
+    record();
+  } catch {
+    console.warn(`[kiwimu] Failed to record dynamic Q&A ${kind} telemetry`);
+  }
 }

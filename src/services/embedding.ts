@@ -1,11 +1,30 @@
 import type { Store } from "../store";
 import type { LLMConfig } from "../config";
+import { StaleContentFenceError } from "../repositories/content-fence-repository";
+import { awaitWithAbort, withAbortDeadline } from "../abort";
+
+export const DEFAULT_EMBEDDING_DEADLINE_MS = 120_000;
+
+export class EmbeddingDeadlineExceededError extends Error {
+  constructor(deadlineMs: number) {
+    super(`Embedding request could not complete within the ${deadlineMs}ms deadline`);
+    this.name = "EmbeddingDeadlineExceededError";
+  }
+}
+
+export interface EmbeddingRequestOptions {
+  deadlineMs?: number;
+  signal?: AbortSignal;
+  fetch?: typeof fetch;
+}
 
 // Cosine similarity between two vectors
 export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
+  // Embeddings from different models can have different dimensions. Comparing
+  // only their shared prefix can produce a convincing but meaningless score.
+  if (a.length === 0 || a.length !== b.length) return 0;
   let dot = 0, normA = 0, normB = 0;
-  const len = Math.min(a.length, b.length);
-  for (let i = 0; i < len; i++) {
+  for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
     normA += a[i] * a[i];
     normB += b[i] * b[i];
@@ -20,26 +39,66 @@ export function embeddingSupported(provider: string): boolean {
   return provider === "gemini" || provider === "azure-openai" || provider === "openai";
 }
 
-// Get embedding — auto-detect provider
-export async function getEmbedding(text: string, config: LLMConfig): Promise<Float32Array> {
-  const input = text.slice(0, 8000);
-
-  if (config.provider === "gemini") {
-    return await geminiEmbedding(input, config);
-  } else if (config.provider === "azure-openai") {
-    return await azureEmbedding(input, config);
-  } else if (config.provider === "openai") {
-    return await openaiEmbedding(input, config);
+/** Identity of the vector space actually used by getEmbedding(). */
+export function embeddingModelIdentity(config: Pick<LLMConfig, "provider" | "endpoint">): string | null {
+  switch (config.provider) {
+    case "gemini":
+      return "gemini:gemini-embedding-001";
+    case "openai":
+      return "openai:text-embedding-3-small";
+    case "azure-openai":
+      return `azure-openai:${config.endpoint.trim().replace(/\/+$/, "").toLowerCase()}:text-embedding-3-small`;
+    default:
+      return null;
   }
-  throw new Error(`Embedding not supported for provider: ${config.provider}`);
+}
+
+// Get embedding — auto-detect provider
+export async function getEmbedding(
+  text: string,
+  config: LLMConfig,
+  options: EmbeddingRequestOptions = {},
+): Promise<Float32Array> {
+  const input = text.slice(0, 8000);
+  const deadlineMs = options.deadlineMs ?? DEFAULT_EMBEDDING_DEADLINE_MS;
+  if (!Number.isFinite(deadlineMs) || !Number.isInteger(deadlineMs) || deadlineMs < 1) {
+    throw new RangeError("Embedding deadlineMs must be a positive finite integer");
+  }
+  const fetchFn = options.fetch ?? fetch;
+  const timeoutError = new EmbeddingDeadlineExceededError(deadlineMs);
+  const deadline = withAbortDeadline(deadlineMs, timeoutError, options.signal);
+
+  try {
+    if (deadline.signal.aborted) throw deadline.signal.reason;
+    let operation: Promise<Float32Array>;
+    if (config.provider === "gemini") {
+      operation = geminiEmbedding(input, config, fetchFn, deadline.signal);
+    } else if (config.provider === "azure-openai") {
+      operation = azureEmbedding(input, config, fetchFn, deadline.signal);
+    } else if (config.provider === "openai") {
+      operation = openaiEmbedding(input, config, fetchFn, deadline.signal);
+    } else {
+      throw new Error(`Embedding not supported for provider: ${config.provider}`);
+    }
+
+    return await awaitWithAbort(operation, deadline.signal);
+  } finally {
+    deadline.cleanup();
+  }
 }
 
 // Gemini Embedding API (free)
-async function geminiEmbedding(text: string, config: LLMConfig): Promise<Float32Array> {
+async function geminiEmbedding(
+  text: string,
+  config: LLMConfig,
+  fetchFn: typeof fetch,
+  signal: AbortSignal,
+): Promise<Float32Array> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent`;
-  const resp = await fetch(url, {
+  const resp = await fetchFn(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": config.api_key },
+    signal,
     body: JSON.stringify({
       model: "models/gemini-embedding-001",
       content: { parts: [{ text }] }
@@ -51,12 +110,18 @@ async function geminiEmbedding(text: string, config: LLMConfig): Promise<Float32
 }
 
 // Azure OpenAI Embedding
-async function azureEmbedding(text: string, config: LLMConfig): Promise<Float32Array> {
+async function azureEmbedding(
+  text: string,
+  config: LLMConfig,
+  fetchFn: typeof fetch,
+  signal: AbortSignal,
+): Promise<Float32Array> {
   const url = `${config.endpoint}/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-06-01`;
-  const resp = await fetch(url, {
+  const resp = await fetchFn(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "api-key": config.api_key },
-    body: JSON.stringify({ input: text, model: "text-embedding-3-small" })
+    body: JSON.stringify({ input: text, model: "text-embedding-3-small" }),
+    signal,
   });
   if (!resp.ok) throw new Error(`Azure embedding error (${resp.status})`);
   const data = await resp.json() as { data: Array<{ embedding: number[] }> };
@@ -64,11 +129,17 @@ async function azureEmbedding(text: string, config: LLMConfig): Promise<Float32A
 }
 
 // OpenAI Embedding
-async function openaiEmbedding(text: string, config: LLMConfig): Promise<Float32Array> {
-  const resp = await fetch("https://api.openai.com/v1/embeddings", {
+async function openaiEmbedding(
+  text: string,
+  config: LLMConfig,
+  fetchFn: typeof fetch,
+  signal: AbortSignal,
+): Promise<Float32Array> {
+  const resp = await fetchFn("https://api.openai.com/v1/embeddings", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${config.api_key}` },
-    body: JSON.stringify({ input: text, model: "text-embedding-3-small" })
+    body: JSON.stringify({ input: text, model: "text-embedding-3-small" }),
+    signal,
   });
   if (!resp.ok) throw new Error(`OpenAI embedding error (${resp.status})`);
   const data = await resp.json() as { data: Array<{ embedding: number[] }> };
@@ -77,7 +148,9 @@ async function openaiEmbedding(text: string, config: LLMConfig): Promise<Float32
 
 // Generate embeddings for all pages that don't have one
 export async function generateMissingEmbeddings(store: Store, config: LLMConfig, onProgress?: (msg: string) => void): Promise<number> {
-  const pages = store.getPagesWithoutEmbeddings();
+  const modelIdentity = embeddingModelIdentity(config);
+  if (!modelIdentity) return 0;
+  const pages = store.getPagesWithoutEmbeddings(modelIdentity);
   if (!pages.length) return 0;
 
   onProgress?.(`⏳ ${pages.length}개 페이지 임베딩 생성 중...`);
@@ -87,10 +160,11 @@ export async function generateMissingEmbeddings(store: Store, config: LLMConfig,
     try {
       const text = `${page.title}\n\n${page.content.slice(0, 4000)}`;
       const embedding = await getEmbedding(text, config);
-      store.saveEmbedding(page.id, embedding, "text-embedding-3-small");
+      store.saveEmbedding(page.id, embedding, modelIdentity);
       count++;
       if (count % 10 === 0) onProgress?.(`  ${count}/${pages.length} 완료`);
     } catch (e) {
+      if (e instanceof StaleContentFenceError) throw e;
       // Skip failed pages silently
       onProgress?.(`  ⚠ ${page.title} 실패: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -107,7 +181,9 @@ export async function semanticSearch(
   config: LLMConfig,
   limit: number = 5
 ): Promise<Array<{slug: string; title: string; pageType: string; origin: string; similarity: number}>> {
-  const allEmbeddings = store.getAllEmbeddings();
+  const modelIdentity = embeddingModelIdentity(config);
+  if (!modelIdentity) return [];
+  const allEmbeddings = store.getAllEmbeddings(modelIdentity);
   if (!allEmbeddings.length) return [];
 
   // Get query embedding

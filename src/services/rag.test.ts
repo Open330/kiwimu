@@ -79,6 +79,12 @@ describe("rankChunks", () => {
     const q = new Float32Array([1, 0, 0, 0, 0, 0]); // orthogonal → sim 0
     expect(rankChunks(q, chunks, 5, 0.5)).toHaveLength(0);
   });
+
+  test("does not compare embeddings from different model dimensions", () => {
+    const chunks = [makeChunk(1, "a", "A", "legacy", [1])];
+    const q = new Float32Array([1, 0, 0]);
+    expect(rankChunks(q, chunks, 5, 0.1)).toHaveLength(0);
+  });
 });
 
 describe("indexWiki (incremental, mocked embeddings)", () => {
@@ -113,11 +119,53 @@ describe("indexWiki (incremental, mocked embeddings)", () => {
     expect(r.skipped).toBe(1);
   });
 
+  test("re-embeds unchanged chunks when the embedding provider changes", async () => {
+    store.addPage("switch", "Switch", "cat dog", undefined, undefined, "concept", 0);
+    let openAiCalls = 0;
+    let geminiCalls = 0;
+    await indexWiki(store, cfg, {
+      embedFn: async () => {
+        openAiCalls++;
+        return new Float32Array([1, 0]);
+      },
+    });
+
+    const geminiConfig: LLMConfig = { provider: "gemini", model: "chat-model", api_key: "k", endpoint: "" };
+    const result = await indexWiki(store, geminiConfig, {
+      embedFn: async () => {
+        geminiCalls++;
+        return new Float32Array([0, 1, 0]);
+      },
+    });
+
+    expect(openAiCalls).toBeGreaterThan(0);
+    expect(geminiCalls).toBe(openAiCalls);
+    expect(result.pagesChunked).toBe(0);
+    expect(result.chunksEmbedded).toBe(geminiCalls);
+    expect(store.getAllChunkEmbeddings("openai:text-embedding-3-small")).toHaveLength(0);
+    expect(store.getAllChunkEmbeddings("gemini:gemini-embedding-001")).toHaveLength(geminiCalls);
+  });
+
   test("degrades (no-op) for unsupported provider without embedFn", async () => {
     store.addPage("p", "P", "content", undefined, undefined, "concept", 0);
     const r = await indexWiki(store, { provider: "anthropic", model: "m", api_key: "k", endpoint: "" });
     expect(r.chunksEmbedded).toBe(0);
     expect(store.countChunks()).toBe(0);
+  });
+
+  test("does not downgrade shutdown cancellation to a skipped embedding", async () => {
+    store.addPage("cancel", "Cancel", "content to embed", undefined, undefined, "concept", 0);
+    const reason = new Error("shutdown interrupted indexing");
+    const controller = new AbortController();
+
+    await expect(indexWiki(store, cfg, {
+      signal: controller.signal,
+      embedFn: async () => {
+        controller.abort(reason);
+        throw reason;
+      },
+    })).rejects.toBe(reason);
+    expect(store.countChunkEmbeddings()).toBe(0);
   });
 });
 

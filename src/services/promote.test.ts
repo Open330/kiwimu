@@ -1,5 +1,5 @@
 import { expect, test, describe, beforeEach, afterEach, spyOn } from "bun:test";
-import { Store } from "../store";
+import { IngestManualEditConflictError, Store } from "../store";
 import { LLMClient } from "../llm-client";
 import { promoteToWiki } from "./promote";
 import type { LLMConfig } from "../config";
@@ -29,10 +29,10 @@ describe("promoteToWiki", () => {
     store.close();
   });
 
-  test("dedup: appends to an existing concept page when titles match (no LLM call)", async () => {
+  test("dedup: marks an existing batch page and blocks a destructive re-ingest", async () => {
     const src = store.addSource("file:///t.pdf", "pdf", "T", "raw");
-    const source = store.addPage("src", "Src", "s", src.id, null, "source", 0);
-    const existing = store.addPage("entropy", "Entropy", "Original body.", undefined, undefined, "concept", 0);
+    const source = store.addPage("src", "Src", "s", src.id, undefined, "source", 0);
+    const existing = store.addPage("entropy", "Entropy", "Original body.", src.id, undefined, "concept", 0);
 
     const result = await promoteToWiki(store, {
       question: "what is entropy?",
@@ -45,12 +45,46 @@ describe("promoteToWiki", () => {
     expect(result.pageId).toBe(existing.id);
     const page = store.getPage("entropy")!;
     expect(page.content).toBe("Original body.\n\n---\n\nNew answer.");
+    expect(page.manual_revision).toBe(1);
+    expect(store.getForwardLinks(source.id).map(page => page.slug)).toContain("entropy");
     expect(chatSpy).not.toHaveBeenCalled();
+
+    const staging = new Store(":memory:");
+    try {
+      const draft = { uri: src.uri, type: "pdf", title: "T v2", rawContent: "new raw" };
+      const stagedSource = staging.seedIngestStaging(
+        store.createIngestStagingSnapshot(src.uri),
+        draft,
+      );
+      staging.addPage(
+        existing.slug,
+        existing.title,
+        "regenerated content",
+        stagedSource.id,
+        undefined,
+        "concept",
+      );
+
+      expect(() => store.publishIngestGeneration(
+        staging,
+        stagedSource.id,
+        draft,
+        "a".repeat(64),
+      )).toThrow(IngestManualEditConflictError);
+      expect(store.getPage(existing.slug)).toMatchObject({
+        id: existing.id,
+        content: "Original body.\n\n---\n\nNew answer.",
+        manual_revision: 1,
+      });
+      expect(store.getSource(src.uri)).toMatchObject({ title: "T", raw_content: "raw" });
+    } finally {
+      staging.close();
+    }
   });
 
   test("new page: creates a concept page, links from source, generates quizzes", async () => {
     const src = store.addSource("file:///t.pdf", "pdf", "T", "raw");
-    const source = store.addPage("src", "Src", "s", src.id, null, "source", 0);
+    const source = store.addPage("src", "Src", "s", src.id, undefined, "source", 0);
 
     const result = await promoteToWiki(store, {
       question: "what is gibbs free energy?",
@@ -79,7 +113,7 @@ describe("promoteToWiki", () => {
 
   test("new page: prepends selected text as a blockquote", async () => {
     const src = store.addSource("file:///t.pdf", "pdf", "T", "raw");
-    const source = store.addPage("src", "Src", "s", src.id, null, "source", 0);
+    const source = store.addPage("src", "Src", "s", src.id, undefined, "source", 0);
 
     const result = await promoteToWiki(store, {
       question: "explain",
@@ -95,7 +129,7 @@ describe("promoteToWiki", () => {
 
   test("new page: slug collision appends a numeric suffix", async () => {
     const src = store.addSource("file:///t.pdf", "pdf", "T", "raw");
-    const source = store.addPage("src", "Src", "s", src.id, null, "source", 0);
+    const source = store.addPage("src", "Src", "s", src.id, undefined, "source", 0);
     // Pre-occupy the natural slug
     store.addPage("enthalpy", "Some Other", "x", undefined, undefined, "concept", 0);
 
@@ -112,7 +146,7 @@ describe("promoteToWiki", () => {
   test("new page still succeeds when quiz generation throws", async () => {
     chatSpy.mockRejectedValueOnce(new Error("boom"));
     const src = store.addSource("file:///t.pdf", "pdf", "T", "raw");
-    const source = store.addPage("src", "Src", "s", src.id, null, "source", 0);
+    const source = store.addPage("src", "Src", "s", src.id, undefined, "source", 0);
 
     const result = await promoteToWiki(store, {
       question: "q",

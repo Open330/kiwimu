@@ -25,12 +25,18 @@ Write an expanded version of this page in markdown:`;
     .replace("{context}", context.slice(0, 10).map((p) => `- ${p.title}`).join("\n"));
 }
 
-export async function expandWithApi(page: Page, context: Page[], provider: string, model?: string): Promise<string> {
+export async function expandWithApi(
+  page: Page,
+  context: Page[],
+  provider: string,
+  model?: string,
+  apiKey?: string,
+): Promise<string> {
   const prompt = buildPrompt(page, context);
 
   if (provider === "anthropic") {
     const { default: Anthropic } = await importAnthropic();
-    const client = new Anthropic();
+    const client = new Anthropic({ apiKey });
     const resp = await client.messages.create({
       model: model || "claude-sonnet-4-6",
       max_tokens: 4096,
@@ -41,7 +47,7 @@ export async function expandWithApi(page: Page, context: Page[], provider: strin
 
   if (provider === "openai") {
     const { default: OpenAI } = await importOpenAI();
-    const client = new OpenAI();
+    const client = new OpenAI({ apiKey });
     const resp = await client.chat.completions.create({
       model: model || "gpt-5.4",
       messages: [{ role: "user", content: prompt }],

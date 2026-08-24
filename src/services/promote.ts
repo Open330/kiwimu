@@ -1,6 +1,7 @@
 import type { Store } from "../store";
 import type { LLMConfig } from "../config";
 import { stripJsonFences } from "../utils";
+import { throwIfAborted } from "../abort";
 
 export interface PromoteParams {
   question: string;
@@ -28,14 +29,17 @@ export async function promoteToWiki(
   store: Store,
   params: PromoteParams,
   llmConfig: LLMConfig,
+  options: { signal?: AbortSignal } = {},
 ): Promise<PromoteResult> {
+  throwIfAborted(options.signal);
   const { question, answer, title, sourcePageId, selectedText } = params;
 
   // Deduplication: check if a similar page already exists
   const existing = store.findSimilarPage(title);
   if (existing) {
     const updatedContent = existing.content + "\n\n---\n\n" + answer;
-    store.updatePageContent(existing.id, updatedContent);
+    store.updatePageContentAsManualEdit(existing.id, updatedContent);
+    store.addLink(sourcePageId, existing.id, title);
     return {
       pageId: existing.id,
       slug: existing.slug,
@@ -100,7 +104,7 @@ export async function promoteToWiki(
   // --- Generate 1-2 quizzes for the new concept ---
   try {
     const { LLMClient } = await import("../llm-client");
-    const llmClient = new LLMClient(llmConfig);
+    const llmClient = new LLMClient(llmConfig, { signal: options.signal });
 
     const quizSystem = `You are a quiz generator for a study wiki. Generate quiz questions that test UNDERSTANDING, not just memorization.
 Focus on higher-order thinking: "\uc65c?", "\uc5b4\ub5bb\uac8c?", "\ube44\uad50\ud558\ub77c", "\uc124\uba85\ud558\ub77c" style questions.
@@ -137,6 +141,7 @@ Rules:
       }
     }
   } catch {
+    throwIfAborted(options.signal);
     // Quiz generation is non-critical; silently skip failures
     console.log(`\x1b[33m\u26a0 \ud504\ub85c\ubaa8\ud2b8 \ud034\uc988 \uc0dd\uc131 \uc2e4\ud328\x1b[0m`);
   }
