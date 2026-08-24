@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>kiwimu — 위키는 만드는 게 아니라 자라는 거였다</title>
-<meta name="description" content="문서를 드래그하면 새 위키 페이지가 됩니다. 셀프호스팅, MIT, 30초 데모.">
+<meta name="description" content="문서를 드래그하면 새 위키 페이지가 됩니다. 이제 위키 전체에게 질문하세요. 셀프호스팅, MIT, 30초 데모.">
 <meta property="og:title" content="kiwimu — 위키는 자라는 도구입니다">
-<meta property="og:description" content="문서 드래그 → 질문 → 위키 페이지로 저장. 셀프호스팅 학습 위키 빌더 v1.1.">
+<meta property="og:description" content="문서 드래그 → 질문 → 위키 페이지로 저장. 이제 위키 전체 대상 질의(RAG)까지. 셀프호스팅 학습 위키 빌더 v1.2.">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://github.com/Open330/kiwimu/raw/main/.context/marketing/og-card.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -152,9 +152,9 @@
 </head>
 <body>
 <main class="wrap">
-  <span class="eyebrow">v1.1 · 2026-05</span>
+  <span class="eyebrow">v1.2 · 2026-07</span>
   <h1>위키는 만드는 게 아니라 <em>자라는</em> 거였다.</h1>
-  <p class="lede">문서를 드래그하세요. 질문하세요. 답이 위키 페이지가 됩니다.<br>kiwimu는 셀프호스팅 학습 위키 빌더입니다.</p>
+  <p class="lede">문서를 드래그하세요. 질문하세요. 답이 위키 페이지가 됩니다.<br>이제 다 자란 위키 <strong>전체에게</strong> 물어볼 수도 있습니다. kiwimu는 셀프호스팅 학습 위키 빌더입니다.</p>
 
   <div class="demo-frame">
     <video autoplay loop muted playsinline poster="./demo-poster.jpg">
@@ -172,31 +172,30 @@
 
   <section class="features">
     <div class="feature">
-      <h3>📚 모든 문장에 출처가 붙습니다</h3>
-      <p>인라인 인용 + 출처 커버리지 행렬. AI가 만든 위키의 가장 큰 약점을 메웁니다.</p>
+      <h3>🤖 위키 전체에게 질문합니다 <span style="color:var(--green);font-size:12px;font-weight:700;">NEW</span></h3>
+      <p>페이지를 청크 단위로 임베딩해 시맨틱 검색 + 위키 전체 대상 채팅. 근거를 찾아 인용과 함께 답합니다. (<code style="background:none;padding:0;color:var(--muted)">kiwimu ask</code>)</p>
     </div>
     <div class="feature">
-      <h3>🧱 팀의 언어를 강제합니다</h3>
-      <p>kiwi.toml의 schema 5줄로 카테고리·용어·페이지 템플릿을 정의하면 LLM이 따라옵니다.</p>
+      <h3>🖼️ PDF 그림까지 위키가 됩니다 <span style="color:var(--green);font-size:12px;font-weight:700;">NEW</span></h3>
+      <p>PDF의 다이어그램·그림을 자동 추출해 페이지에 임베드하고, 멀티모달 LLM이 캡션을 씁니다.</p>
+    </div>
+    <div class="feature">
+      <h3>📚 모든 문장에 출처가 붙습니다</h3>
+      <p>인라인 인용 + 출처 커버리지 행렬. AI가 만든 위키의 가장 큰 약점을 메웁니다.</p>
     </div>
     <div class="feature">
       <h3>💬 질문이 페이지가 됩니다</h3>
       <p>본문 드래그 → 팝오버 질문 → 답변 → "위키에 저장". 중복 자동 감지.</p>
     </div>
     <div class="feature">
-      <h3>📑 100개 페이지에서도 길을 잃지 않습니다</h3>
-      <p>자동 카테고리 카탈로그. 검색이 아니라 발견이 가능해집니다.</p>
-    </div>
-    <div class="feature">
-      <h3>📈 진척이 보입니다</h3>
-      <p>모든 작업이 시간선으로 누적. 보이지 않는 진척은 없는 진척입니다.</p>
+      <h3>♻️ 바뀐 것만 다시, 비용은 미리 <span style="color:var(--green);font-size:12px;font-weight:700;">NEW</span></h3>
+      <p>내용이 바뀐 문서만 재인제스트(변경 없으면 LLM 호출 없이 스킵). <code style="background:none;padding:0;color:var(--muted)">add</code> 전에 예상 토큰·비용을 먼저 보여줍니다.</p>
     </div>
   </section>
 
   <div class="links">
     <a class="primary" href="https://github.com/Open330/kiwimu">GitHub →</a>
-    <a href="https://jiun.dev/posts/kiwimu-v1-1">v1.1 후속편 글</a>
-    <a href="https://jiun.dev/posts/kiwimu-14-persona-review">v1.0 비하인드</a>
+    <a href="https://jiun.dev/posts/kiwimu">제작기 v1.0→v1.2</a>
   </div>
 
   <footer>

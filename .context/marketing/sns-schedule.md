@@ -18,7 +18,7 @@
   - Threads: MP4 (세로 9:16 크롭)
   - 블로그: MP4 + WebP
 - [ ] 랜딩 페이지 배포: jiun.dev/kiwimu/demo
-- [ ] 팔로우업 블로그 글 배포: jiun.dev/posts/kiwimu-v1-1
+- [ ] 팔로우업 블로그 글 배포: jiun.dev/posts/kiwimu
 
 ### 발행 순서
 1. **블로그** 먼저 (소개 링크의 최종 목적지)
@@ -65,7 +65,7 @@
 > 셀프호스팅, MIT, 텔레메트리 없음. 30초 데모:
 > `bunx @open330/kiwimu init --demo`
 >
-> 글: jiun.dev/posts/kiwimu-v1-1
+> 글: jiun.dev/posts/kiwimu
 > 코드: github.com/Open330/kiwimu
 >
 > #LLM #OpenSource #DeveloperTools #KnowledgeManagement #Wiki
@@ -99,7 +99,7 @@
 > bunx @open330/kiwimu init --demo
 >
 > 코드 → github.com/Open330/kiwimu
-> 글 → jiun.dev/posts/kiwimu-v1-1
+> 글 → jiun.dev/posts/kiwimu
 
 ## D+1 ~ D+5
 
@@ -133,7 +133,7 @@
 > ```
 >
 > Repo: https://github.com/Open330/kiwimu
-> Long-form post: https://jiun.dev/posts/kiwimu-v1-1
+> Long-form post: https://jiun.dev/posts/kiwimu
 >
 > Happy to discuss design decisions — especially the citation pipeline (LLM-as-judge for source attribution turned out trickier than I expected) and the schema enforcement (deterministic post-processing vs system prompt vs structured output, all three have failure modes).
 
@@ -166,7 +166,7 @@
 > ```
 >
 > Repo: https://github.com/Open330/kiwimu
-> Writeup: https://jiun.dev/posts/kiwimu-v1-1
+> Writeup: https://jiun.dev/posts/kiwimu
 >
 > Discussion welcome — particularly interested in feedback on the citation enforcement (LLM-as-judge has been the trickiest piece).
 
@@ -199,7 +199,7 @@
 > Hosting story: static site builds via `kiwimu build` for read-only deploys, or `kiwimu serve` for the editable + dynamic Q&A version. SQLite under the hood, easy to back up.
 >
 > Repo: https://github.com/Open330/kiwimu
-> Writeup: https://jiun.dev/posts/kiwimu-v1-1
+> Writeup: https://jiun.dev/posts/kiwimu
 
 ### 그 외
 - [ ] 댓글/멘션 모니터링 및 응답 (24h 적극 응답)
