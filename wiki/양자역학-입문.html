@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; style-src-attr 'none'; font-src 'self' data:; img-src 'self' data: blob: https: http:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>양자역학 입문 - Quantum Wiki Demo</title>
+    <link rel="canonical" href="https://open330.github.io/kiwimu/wiki/양자역학-입문.html">
+    <meta property="og:title" content="양자역학 입문 - Quantum Wiki Demo">
+    <meta property="og:description" content="양자역학 입문 - Quantum Wiki Demo 학습 위키">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Quantum Wiki Demo">
+    <meta property="og:image" content="https://open330.github.io/kiwimu/static/logo.png">
+    <meta property="og:url" content="https://open330.github.io/kiwimu/wiki/양자역학-입문.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="양자역학 입문 - Quantum Wiki Demo">
+    <meta name="twitter:image" content="https://open330.github.io/kiwimu/static/logo.png">
+    <meta name="description" content="양자역학 입문 - Quantum Wiki Demo 학습 위키">
+    <link rel="stylesheet" href="/kiwimu/static/style.css">
+    <link rel="stylesheet" href="/kiwimu/static/peek-panel.css">
+    <link rel="stylesheet" href="/kiwimu/static/ask-wiki.css">
+    <script defer src="/kiwimu/static/vendor/katex/katex.min.js"></script>
+    <script defer src="/kiwimu/static/vendor-runtime.js"></script>
+</head>
+<body>
+    <a class="skip-link" href="#main-content">본문으로 건너뛰기</a>
+    <nav class="topbar" aria-label="주요 메뉴">
+        <button type="button" class="topbar-menu-btn" aria-label="문서 메뉴 열기" aria-expanded="false" aria-controls="wiki-sidebar">☰</button>
+        <a href="/kiwimu/index.html" class="topbar-brand">
+            <img src="/kiwimu/static/logo.png" alt="Kiwi Mu" class="topbar-logo">
+            Quantum Wiki Demo
+        </a>
+        <div class="topbar-search" role="search">
+            <label class="visually-hidden" for="search-input">위키 문서 검색</label>
+            <input type="search" id="search-input" placeholder="문서 검색…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list" aria-label="위키 문서 검색">
+            <div id="search-results" class="search-dropdown" role="listbox" aria-label="검색 결과"></div>
+            <div id="search-status" class="visually-hidden" role="status" aria-live="polite"></div>
+        </div>
+        <div class="topbar-links">
+            <a href="/kiwimu/catalog.html" class="btn-graph">📑 목록</a>
+            <a href="/kiwimu/wiki/random.html" class="btn-graph">🎲 임의</a>
+            <a href="/kiwimu/quiz.html" class="btn-graph">📝 퀴즈</a>
+            <a href="/kiwimu/dashboard.html" class="btn-graph">📊 대시보드</a>
+            <a href="/kiwimu/graph.html" class="btn-graph">🔗 그래프</a>
+            <a href="/kiwimu/manage" class="btn-graph live-only">⚙️ 관리</a>
+        </div>
+    </nav>
+    <div class="sidebar-overlay" aria-hidden="true"></div>
+    <div class="layout">
+        <aside class="sidebar" id="wiki-sidebar" aria-label="문서 탐색">
+            
+            <div class="sidebar-tabs" role="tablist" aria-label="문서 유형">
+                <button type="button" id="sidebar-tab-source" class="sidebar-tab active" data-tab="source" role="tab" aria-selected="true" aria-controls="tab-source" tabindex="0">📖 원본 (2)</button>
+                <button type="button" id="sidebar-tab-concept" class="sidebar-tab" data-tab="concept" role="tab" aria-selected="false" aria-controls="tab-concept" tabindex="-1">📝 개념 (8)</button>
+            </div>
+            <div class="sidebar-panel active" id="tab-source" role="tabpanel" aria-labelledby="sidebar-tab-source">
+                <ul class="page-list"><li><a href="/kiwimu/wiki/양자역학-입문.html" class="active">양자역학 입문</a></li>
+<li><a href="/kiwimu/wiki/자료구조-입문.html">자료구조와 알고리즘 입문</a></li></ul>
+                
+            </div>
+            <div class="sidebar-panel" id="tab-concept" role="tabpanel" aria-labelledby="sidebar-tab-concept" hidden>
+                <ul class="page-list"><li><a href="/kiwimu/wiki/배열과-연결리스트.html">📝 배열과 연결리스트</a></li>
+<li><a href="/kiwimu/wiki/슈뢰딩거-방정식.html">📝 슈뢰딩거 방정식</a></li>
+<li><a href="/kiwimu/wiki/스택과-큐.html">📝 스택과 큐</a></li>
+<li><a href="/kiwimu/wiki/양자-얽힘.html">📝 양자 얽힘</a></li>
+<li><a href="/kiwimu/wiki/양자-중첩.html">📝 양자 중첩</a></li>
+<li><a href="/kiwimu/wiki/이진탐색트리.html">📝 이진탐색트리</a></li>
+<li><a href="/kiwimu/wiki/하이젠베르크.html">📝 하이젠베르크의 불확정성 원리</a></li>
+<li><a href="/kiwimu/wiki/해시테이블.html">📝 해시테이블</a></li></ul>
+                
+            </div>
+            <nav class="sidebar-mobile-nav" aria-label="모바일 주요 메뉴">
+                <a href="/kiwimu/catalog.html">📑 목록</a>
+                <a href="/kiwimu/wiki/random.html">🎲 임의 문서</a>
+                <a href="/kiwimu/quiz.html">📝 퀴즈</a>
+                <a href="/kiwimu/dashboard.html">📊 대시보드</a>
+                <a href="/kiwimu/graph.html">🔗 그래프</a>
+                <a href="/kiwimu/provenance.html">📚 출처</a>
+                <a href="/kiwimu/manage" class="live-only">⚙️ 관리</a>
+            </nav>
+        </aside>
+        <main class="content" id="main-content" tabindex="-1">
+            
+<article class="wiki-page" data-page-slug="양자역학-입문" data-page-id="1" aria-labelledby="page-title">
+    <header class="page-header">
+        <span class="page-type-badge source">📖 원본 문서</span>
+        <h1 id="page-title">양자역학 입문 <button type="button" class="edit-btn" data-slug="양자역학-입문" title="페이지 편집" aria-label="양자역학 입문 페이지 편집" hidden>&#9998;</button></h1>
+    </header>
+    <details class="toc-box" open><summary>목차</summary><div class="toc"><ul><li class="toc-level-2"><a href="#핵심-개념">핵심 개념</a></li><li class="toc-level-3"><a href="#파동-입자-이중성">파동-입자 이중성</a></li><li class="toc-level-3"><a href="#불확정성-원리">불확정성 원리</a></li><li class="toc-level-3"><a href="#슈뢰딩거-방정식">슈뢰딩거 방정식</a></li><li class="toc-level-2"><a href="#관련-개념">관련 개념</a></li></ul></div></details>
+    <div class="page-body"><h1>양자역학 입문</h1>
+<p>양자역학은 원자와 아원자 입자의 행동을 설명하는 물리학의 분야입니다.</p>
+<h2 id="핵심-개념">핵심 개념</h2>
+<h3 id="파동-입자-이중성">파동-입자 이중성</h3>
+<p>입자는 파동과 입자의 성질을 동시에 가집니다. <del>이것만 이해하면 양자역학 마스터</del></p>
+<h3 id="불확정성-원리">불확정성 원리</h3>
+<p><a href="/kiwimu/wiki/%ED%95%98%EC%9D%B4%EC%A0%A0%EB%B2%A0%EB%A5%B4%ED%81%AC.html">하이젠베르크</a>가 제안한 원리로, 위치와 운동량을 동시에 정확히 측정할 수 없습니다. (아인슈타인도 처음엔 못 믿었다고 합니다)</p>
+<h3 id="슈뢰딩거-방정식">슈뢰딩거 방정식</h3>
+<p>$$i\hbar\frac{\partial}{\partial t}|\psi(t)\rangle = \hat{H}|\psi(t)\rangle$$</p>
+<p>양자계의 시간 변화를 기술하는 기본 방정식입니다.</p>
+<h2 id="관련-개념">관련 개념</h2>
+<ul>
+<li><a href="/kiwimu/wiki/%EC%8A%88%EB%A2%B0%EB%94%A9%EA%B1%B0-%EB%B0%A9%EC%A0%95%EC%8B%9D.html">슈뢰딩거 방정식</a></li>
+<li><a href="/kiwimu/wiki/%ED%95%98%EC%9D%B4%EC%A0%A0%EB%B2%A0%EB%A5%B4%ED%81%AC.html">하이젠베르크</a></li>
+<li><a href="/kiwimu/wiki/%EC%96%91%EC%9E%90-%EC%A4%91%EC%B2%A9.html">양자 중첩</a></li>
+<li><a href="/kiwimu/wiki/%EC%96%91%EC%9E%90-%EC%96%BD%ED%9E%98.html">양자 얽힘</a></li>
+</ul>
+</div>
+    
+    
+    <aside class="backlinks"><h3>🔗 이 문서를 참조하는 문서</h3><div class="backlink-group"><span class="backlink-label">📝 개념</span><a href="/kiwimu/wiki/하이젠베르크.html" class="backlink-item concept">하이젠베르크의 불확정성 원리</a><a href="/kiwimu/wiki/양자-중첩.html" class="backlink-item concept">양자 중첩</a><a href="/kiwimu/wiki/양자-얽힘.html" class="backlink-item concept">양자 얽힘</a></div></aside>
+</article>
+<div class="edit-modal" id="edit-modal" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title" aria-describedby="edit-status" hidden>
+  <div class="edit-modal-inner" tabindex="-1">
+    <div class="edit-modal-header">
+      <h2 id="edit-modal-title">페이지 편집</h2>
+      <button type="button" class="edit-modal-close" aria-label="편집 창 닫기">&times;</button>
+    </div>
+    <label class="visually-hidden" for="edit-textarea">마크다운 내용</label>
+    <textarea class="edit-textarea" id="edit-textarea" spellcheck="true"></textarea>
+    <p class="edit-status" id="edit-status" role="status" aria-live="polite"></p>
+    <div class="edit-modal-footer">
+      <button type="button" class="edit-cancel">취소</button>
+      <button type="button" class="edit-save">저장</button>
+    </div>
+  </div>
+</div>
+        </main>
+    </div>
+    <script src="/kiwimu/static/search.js"></script>
+    <script src="/kiwimu/static/dynamic-qa.js"></script>
+    <script src="/kiwimu/static/edit-page.js"></script>
+    <script src="/kiwimu/static/peek-panel.js"></script>
+    <script src="/kiwimu/static/ask-wiki.js"></script>
+    <script src="/kiwimu/static/navigation.js"></script>
+<footer class="kiwimu-badge">
+  🥝 Built with <a href="https://github.com/Open330/kiwimu" target="_blank" rel="noopener">Kiwi Mu</a> — 나만의 학습 위키 빌더
+</footer>
+</body>
+</html>

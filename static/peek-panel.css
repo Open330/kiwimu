@@ -1,0 +1,224 @@
+/* Notion-style peek panel: right-side slide-in for /wiki/* links.
+   All rules are scoped under .peek-* to avoid leaking into the page. */
+
+/* z-index: stays above topbar (100) and sidebar (200), below qa-popover (1000)
+   and edit-modal (1001) so popovers/modals triggered inside the panel surface
+   correctly above it. */
+.peek-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+  z-index: 500;
+}
+.peek-backdrop.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.peek-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(720px, max(480px, 40vw));
+  max-width: 95vw;
+  background: var(--bg, #fff);
+  color: var(--text, #1a1a1a);
+  border-left: 1px solid var(--border, #dcdcdc);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+  transform: translateX(100%);
+  transition: transform 250ms ease;
+  z-index: 501;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+.peek-panel.peek-width-320 { width: 320px; }
+.peek-panel.peek-width-400 { width: 400px; }
+.peek-panel.peek-width-480 { width: 480px; }
+.peek-panel.peek-width-560 { width: 560px; }
+.peek-panel.peek-width-640 { width: 640px; }
+.peek-panel.peek-width-720 { width: 720px; }
+.peek-panel.peek-width-800 { width: 800px; }
+.peek-panel.peek-width-960 { width: 960px; }
+.peek-panel.peek-width-1120 { width: 1120px; }
+.peek-panel.peek-width-1280 { width: 1280px; }
+.peek-panel.peek-width-1400 { width: 1400px; }
+body.peek-panel-open { overflow: hidden; }
+.peek-panel.is-open {
+  transform: translateX(0);
+}
+.peek-panel:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -4px;
+  box-shadow: inset 0 0 0 5px var(--focus-ring, #005fcc);
+}
+
+/* Resize handle on the left edge — invisible 8px hit area with a visible
+   1px line on hover/active. Disabled on mobile (panel is full-screen). */
+.peek-resize-handle {
+  position: absolute;
+  top: 0;
+  left: -12px;
+  width: 24px;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: 1;
+  touch-action: none;
+}
+.peek-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 11px;
+  width: 2px;
+  height: 100%;
+  background: transparent;
+  transition: background 150ms ease;
+}
+.peek-resize-handle:hover::after,
+body.peek-resizing .peek-resize-handle::after {
+  background: var(--namu-green, #00a495);
+}
+.peek-resize-handle:focus-visible::after {
+  background: Highlight;
+  width: 4px;
+  left: 10px;
+}
+/* Suspend transition + select while dragging so resize feels immediate. */
+body.peek-resizing {
+  cursor: ew-resize;
+  user-select: none;
+}
+body.peek-resizing .peek-panel {
+  transition: none;
+}
+
+.peek-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-alt, #f6f6f6);
+  border-bottom: 1px solid var(--border, #dcdcdc);
+  flex: 0 0 auto;
+  min-height: var(--topbar-height, 44px);
+}
+
+/* Defeat .page-body h2 (green pill) inheritance for the header title — the
+   title isn't article content, so it should stay as plain header text. */
+.peek-panel .peek-title {
+  flex: 1 1 auto;
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text, #1a1a1a);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.peek-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.peek-button {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text, #1a1a1a);
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.peek-button:hover {
+  background: var(--bg-hover, #eaeaea);
+}
+.peek-button:focus-visible {
+  outline: 2px solid var(--namu-green, #00a495);
+  outline-offset: 1px;
+}
+.peek-button[hidden] {
+  display: none;
+}
+
+.peek-back {
+  font-size: 0.95rem;
+}
+
+.peek-content {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: auto;
+  padding: 20px 28px 40px;
+  background: var(--bg, #fff);
+  -webkit-overflow-scrolling: touch;
+}
+/* Article inside the panel uses the same .page-body styles as full pages,
+   but drops the top margin on the first heading so it hugs the header. */
+.peek-content .peek-article {
+  margin: 0;
+}
+.peek-content .page-body > :first-child {
+  margin-top: 0;
+}
+
+.peek-loading,
+.peek-error {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted, #6b6b6b);
+}
+
+.peek-error {
+  color: #c0392b;
+}
+.peek-error .peek-button {
+  margin-top: 12px;
+  border-color: var(--border, #dcdcdc);
+}
+
+.peek-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -2px;
+  margin-right: 6px;
+  animation: peek-spin 0.8s linear infinite;
+}
+@keyframes peek-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 768px) {
+  .peek-panel {
+    width: 100vw !important;
+    border-left: none;
+  }
+  .peek-resize-handle {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .peek-panel,
+  .peek-backdrop {
+    transition: none;
+  }
+  .peek-spinner {
+    animation: none;
+  }
+}

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; style-src-attr 'none'; font-src 'self' data:; img-src 'self' data: blob: https: http:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>지식 그래프 - Quantum Wiki Demo</title>
+    <link rel="canonical" href="https://open330.github.io/kiwimu/graph.html">
+    <meta property="og:title" content="지식 그래프 - Quantum Wiki Demo">
+    <meta property="og:description" content="LLM으로 자동 생성된 학습 위키">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Quantum Wiki Demo">
+    <meta property="og:image" content="https://open330.github.io/kiwimu/static/logo.png">
+    <meta property="og:url" content="https://open330.github.io/kiwimu/graph.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="지식 그래프 - Quantum Wiki Demo">
+    <meta name="twitter:image" content="https://open330.github.io/kiwimu/static/logo.png">
+    <meta name="description" content="LLM으로 자동 생성된 학습 위키">
+    <link rel="stylesheet" href="/kiwimu/static/style.css">
+    <link rel="stylesheet" href="/kiwimu/static/peek-panel.css">
+    <link rel="stylesheet" href="/kiwimu/static/ask-wiki.css">
+    <script defer src="/kiwimu/static/vendor/katex/katex.min.js"></script>
+    <script defer src="/kiwimu/static/vendor-runtime.js"></script>
+</head>
+<body>
+    <a class="skip-link" href="#main-content">본문으로 건너뛰기</a>
+    <nav class="topbar" aria-label="주요 메뉴">
+        <button type="button" class="topbar-menu-btn" aria-label="문서 메뉴 열기" aria-expanded="false" aria-controls="wiki-sidebar">☰</button>
+        <a href="/kiwimu/index.html" class="topbar-brand">
+            <img src="/kiwimu/static/logo.png" alt="Kiwi Mu" class="topbar-logo">
+            Quantum Wiki Demo
+        </a>
+        <div class="topbar-search" role="search">
+            <label class="visually-hidden" for="search-input">위키 문서 검색</label>
+            <input type="search" id="search-input" placeholder="문서 검색…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list" aria-label="위키 문서 검색">
+            <div id="search-results" class="search-dropdown" role="listbox" aria-label="검색 결과"></div>
+            <div id="search-status" class="visually-hidden" role="status" aria-live="polite"></div>
+        </div>
+        <div class="topbar-links">
+            <a href="/kiwimu/catalog.html" class="btn-graph">📑 목록</a>
+            <a href="/kiwimu/wiki/random.html" class="btn-graph">🎲 임의</a>
+            <a href="/kiwimu/quiz.html" class="btn-graph">📝 퀴즈</a>
+            <a href="/kiwimu/dashboard.html" class="btn-graph">📊 대시보드</a>
+            <a href="/kiwimu/graph.html" class="btn-graph">🔗 그래프</a>
+            <a href="/kiwimu/manage" class="btn-graph live-only">⚙️ 관리</a>
+        </div>
+    </nav>
+    <div class="sidebar-overlay" aria-hidden="true"></div>
+    <div class="layout">
+        <aside class="sidebar" id="wiki-sidebar" aria-label="문서 탐색">
+            
+            <div class="sidebar-tabs" role="tablist" aria-label="문서 유형">
+                <button type="button" id="sidebar-tab-source" class="sidebar-tab active" data-tab="source" role="tab" aria-selected="true" aria-controls="tab-source" tabindex="0">📖 원본 (2)</button>
+                <button type="button" id="sidebar-tab-concept" class="sidebar-tab" data-tab="concept" role="tab" aria-selected="false" aria-controls="tab-concept" tabindex="-1">📝 개념 (8)</button>
+            </div>
+            <div class="sidebar-panel active" id="tab-source" role="tabpanel" aria-labelledby="sidebar-tab-source">
+                <ul class="page-list"><li><a href="/kiwimu/wiki/양자역학-입문.html">양자역학 입문</a></li>
+<li><a href="/kiwimu/wiki/자료구조-입문.html">자료구조와 알고리즘 입문</a></li></ul>
+                
+            </div>
+            <div class="sidebar-panel" id="tab-concept" role="tabpanel" aria-labelledby="sidebar-tab-concept" hidden>
+                <ul class="page-list"><li><a href="/kiwimu/wiki/배열과-연결리스트.html">📝 배열과 연결리스트</a></li>
+<li><a href="/kiwimu/wiki/슈뢰딩거-방정식.html">📝 슈뢰딩거 방정식</a></li>
+<li><a href="/kiwimu/wiki/스택과-큐.html">📝 스택과 큐</a></li>
+<li><a href="/kiwimu/wiki/양자-얽힘.html">📝 양자 얽힘</a></li>
+<li><a href="/kiwimu/wiki/양자-중첩.html">📝 양자 중첩</a></li>
+<li><a href="/kiwimu/wiki/이진탐색트리.html">📝 이진탐색트리</a></li>
+<li><a href="/kiwimu/wiki/하이젠베르크.html">📝 하이젠베르크의 불확정성 원리</a></li>
+<li><a href="/kiwimu/wiki/해시테이블.html">📝 해시테이블</a></li></ul>
+                
+            </div>
+            <nav class="sidebar-mobile-nav" aria-label="모바일 주요 메뉴">
+                <a href="/kiwimu/catalog.html">📑 목록</a>
+                <a href="/kiwimu/wiki/random.html">🎲 임의 문서</a>
+                <a href="/kiwimu/quiz.html">📝 퀴즈</a>
+                <a href="/kiwimu/dashboard.html">📊 대시보드</a>
+                <a href="/kiwimu/graph.html">🔗 그래프</a>
+                <a href="/kiwimu/provenance.html">📚 출처</a>
+                <a href="/kiwimu/manage" class="live-only">⚙️ 관리</a>
+            </nav>
+        </aside>
+        <main class="content" id="main-content" tabindex="-1">
+            
+<div class="graph-page">
+    <h1>📊 지식 그래프</h1>
+    <p class="graph-desc" id="graph-help">
+        <span><span class="legend-dot source" aria-hidden="true"></span> 원본 문서</span>
+        <span><span class="legend-dot concept" aria-hidden="true"></span> 개념 문서</span>
+        <span>노드를 클릭하거나 키보드로 선택하면 문서로 이동합니다.</span>
+    </p>
+    <div class="graph-toolbar" aria-label="그래프 보기 조절">
+        <button type="button" id="graph-zoom-in" aria-label="그래프 확대">＋</button>
+        <button type="button" id="graph-zoom-out" aria-label="그래프 축소">－</button>
+        <button type="button" id="graph-reset">화면 맞춤</button>
+    </div>
+    <div id="graph-container" role="region" aria-label="문서 연결 그래프" aria-describedby="graph-help" aria-busy="true">
+        <p class="graph-state" id="graph-status" role="status" aria-live="polite">그래프를 불러오는 중…</p>
+    </div>
+</div>
+<script src="/kiwimu/static/vendor/d3/d3.min.js"></script>
+<script src="/kiwimu/static/graph.js"></script>
+        </main>
+    </div>
+    <script src="/kiwimu/static/search.js"></script>
+    <script src="/kiwimu/static/dynamic-qa.js"></script>
+    <script src="/kiwimu/static/edit-page.js"></script>
+    <script src="/kiwimu/static/peek-panel.js"></script>
+    <script src="/kiwimu/static/ask-wiki.js"></script>
+    <script src="/kiwimu/static/navigation.js"></script>
+<footer class="kiwimu-badge">
+  🥝 Built with <a href="https://github.com/Open330/kiwimu" target="_blank" rel="noopener">Kiwi Mu</a> — 나만의 학습 위키 빌더
+</footer>
+</body>
+</html>

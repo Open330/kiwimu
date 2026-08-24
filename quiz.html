@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'sha256-I7+aEoUiexpexclwNP8w1B6t8DcYr/3WzWGCmvR2uxw='; style-src-attr 'none'; font-src 'self' data:; img-src 'self' data: blob: https: http:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>학습 퀴즈 - Quantum Wiki Demo</title>
+    <link rel="canonical" href="https://open330.github.io/kiwimu/quiz.html">
+    <meta property="og:title" content="학습 퀴즈 - Quantum Wiki Demo">
+    <meta property="og:description" content="LLM으로 자동 생성된 학습 위키">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Quantum Wiki Demo">
+    <meta property="og:image" content="https://open330.github.io/kiwimu/static/logo.png">
+    <meta property="og:url" content="https://open330.github.io/kiwimu/quiz.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="학습 퀴즈 - Quantum Wiki Demo">
+    <meta name="twitter:image" content="https://open330.github.io/kiwimu/static/logo.png">
+    <meta name="description" content="LLM으로 자동 생성된 학습 위키">
+    <link rel="stylesheet" href="/kiwimu/static/style.css">
+    <link rel="stylesheet" href="/kiwimu/static/peek-panel.css">
+    <link rel="stylesheet" href="/kiwimu/static/ask-wiki.css">
+    <script defer src="/kiwimu/static/vendor/katex/katex.min.js"></script>
+    <script defer src="/kiwimu/static/vendor-runtime.js"></script>
+</head>
+<body>
+    <a class="skip-link" href="#main-content">본문으로 건너뛰기</a>
+    <nav class="topbar" aria-label="주요 메뉴">
+        <button type="button" class="topbar-menu-btn" aria-label="문서 메뉴 열기" aria-expanded="false" aria-controls="wiki-sidebar">☰</button>
+        <a href="/kiwimu/index.html" class="topbar-brand">
+            <img src="/kiwimu/static/logo.png" alt="Kiwi Mu" class="topbar-logo">
+            Quantum Wiki Demo
+        </a>
+        <div class="topbar-search" role="search">
+            <label class="visually-hidden" for="search-input">위키 문서 검색</label>
+            <input type="search" id="search-input" placeholder="문서 검색…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list" aria-label="위키 문서 검색">
+            <div id="search-results" class="search-dropdown" role="listbox" aria-label="검색 결과"></div>
+            <div id="search-status" class="visually-hidden" role="status" aria-live="polite"></div>
+        </div>
+        <div class="topbar-links">
+            <a href="/kiwimu/catalog.html" class="btn-graph">📑 목록</a>
+            <a href="/kiwimu/wiki/random.html" class="btn-graph">🎲 임의</a>
+            <a href="/kiwimu/quiz.html" class="btn-graph">📝 퀴즈</a>
+            <a href="/kiwimu/dashboard.html" class="btn-graph">📊 대시보드</a>
+            <a href="/kiwimu/graph.html" class="btn-graph">🔗 그래프</a>
+            <a href="/kiwimu/manage" class="btn-graph live-only">⚙️ 관리</a>
+        </div>
+    </nav>
+    <div class="sidebar-overlay" aria-hidden="true"></div>
+    <div class="layout">
+        <aside class="sidebar" id="wiki-sidebar" aria-label="문서 탐색">
+            
+            <div class="sidebar-tabs" role="tablist" aria-label="문서 유형">
+                <button type="button" id="sidebar-tab-source" class="sidebar-tab active" data-tab="source" role="tab" aria-selected="true" aria-controls="tab-source" tabindex="0">📖 원본 (2)</button>
+                <button type="button" id="sidebar-tab-concept" class="sidebar-tab" data-tab="concept" role="tab" aria-selected="false" aria-controls="tab-concept" tabindex="-1">📝 개념 (8)</button>
+            </div>
+            <div class="sidebar-panel active" id="tab-source" role="tabpanel" aria-labelledby="sidebar-tab-source">
+                <ul class="page-list"><li><a href="/kiwimu/wiki/양자역학-입문.html">양자역학 입문</a></li>
+<li><a href="/kiwimu/wiki/자료구조-입문.html">자료구조와 알고리즘 입문</a></li></ul>
+                
+            </div>
+            <div class="sidebar-panel" id="tab-concept" role="tabpanel" aria-labelledby="sidebar-tab-concept" hidden>
+                <ul class="page-list"><li><a href="/kiwimu/wiki/배열과-연결리스트.html">📝 배열과 연결리스트</a></li>
+<li><a href="/kiwimu/wiki/슈뢰딩거-방정식.html">📝 슈뢰딩거 방정식</a></li>
+<li><a href="/kiwimu/wiki/스택과-큐.html">📝 스택과 큐</a></li>
+<li><a href="/kiwimu/wiki/양자-얽힘.html">📝 양자 얽힘</a></li>
+<li><a href="/kiwimu/wiki/양자-중첩.html">📝 양자 중첩</a></li>
+<li><a href="/kiwimu/wiki/이진탐색트리.html">📝 이진탐색트리</a></li>
+<li><a href="/kiwimu/wiki/하이젠베르크.html">📝 하이젠베르크의 불확정성 원리</a></li>
+<li><a href="/kiwimu/wiki/해시테이블.html">📝 해시테이블</a></li></ul>
+                
+            </div>
+            <nav class="sidebar-mobile-nav" aria-label="모바일 주요 메뉴">
+                <a href="/kiwimu/catalog.html">📑 목록</a>
+                <a href="/kiwimu/wiki/random.html">🎲 임의 문서</a>
+                <a href="/kiwimu/quiz.html">📝 퀴즈</a>
+                <a href="/kiwimu/dashboard.html">📊 대시보드</a>
+                <a href="/kiwimu/graph.html">🔗 그래프</a>
+                <a href="/kiwimu/provenance.html">📚 출처</a>
+                <a href="/kiwimu/manage" class="live-only">⚙️ 관리</a>
+            </nav>
+        </aside>
+        <main class="content" id="main-content" tabindex="-1">
+            
+<div class="quiz-page">
+    <h1>📝 학습 퀴즈</h1>
+    <p class="quiz-desc">위키 내용을 기반으로 생성된 퀴즈입니다. 학습한 내용을 확인해보세요!</p>
+
+    <div id="quiz-container">
+        <div id="quiz-empty" role="status" hidden>
+            <p class="quiz-empty-message">퀴즈가 없습니다. 먼저 문서를 추가하세요.</p>
+        </div>
+        <div id="quiz-active" hidden>
+            <div class="quiz-progress">
+                <span id="quiz-progress-text" aria-live="polite">1 / 5</span>
+                <progress class="quiz-progress-bar" id="quiz-progress-bar" aria-label="퀴즈 진행률" max="5" value="1"></progress>
+            </div>
+            <div class="quiz-card" id="quiz-card">
+                <div class="quiz-card-inner" id="quiz-card-inner">
+                    <div class="quiz-card-front" id="quiz-card-front" aria-hidden="false">
+                        <span class="quiz-type-badge" id="quiz-type-badge">빈칸 채우기</span>
+                        <p class="quiz-question" id="quiz-question"></p>
+                        <p id="quiz-input-error" class="quiz-input-error" role="alert" hidden></p>
+                        <div class="quiz-input-area" id="quiz-input-area">
+                            <label class="visually-hidden" for="quiz-answer-input">정답</label>
+                            <input type="text" id="quiz-answer-input" placeholder="정답을 입력하세요…" autocomplete="off" aria-describedby="quiz-question quiz-input-error">
+                            <button type="button" id="quiz-submit-btn" class="quiz-btn primary">확인</button>
+                        </div>
+                        <div class="quiz-ox-area" id="quiz-ox-area" role="group" aria-labelledby="quiz-question" hidden>
+                            <button type="button" class="quiz-btn ox-btn" data-answer="O" aria-label="O, 맞음">⭕ O</button>
+                            <button type="button" class="quiz-btn ox-btn" data-answer="X" aria-label="X, 틀림">❌ X</button>
+                        </div>
+                    </div>
+                    <div class="quiz-card-back" id="quiz-card-back" aria-hidden="true" inert>
+                        <div id="quiz-result-icon" class="quiz-result-icon" aria-hidden="true"></div>
+                        <p id="quiz-result-status" class="visually-hidden"></p>
+                        <p class="quiz-answer-label">정답</p>
+                        <p class="quiz-answer-text" id="quiz-answer-text"></p>
+                        <div id="quiz-explanation" class="quiz-explanation" hidden>
+                            <p id="quiz-explanation-text" class="explanation-text"></p>
+                        </div>
+                        <p class="quiz-source" id="quiz-source"></p>
+                        <p class="quiz-review-info" id="quiz-review-info" hidden></p>
+                        <button type="button" id="quiz-next-btn" class="quiz-btn primary">다음 문제 →</button>
+                    </div>
+                </div>
+            </div>
+            <p id="quiz-live-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></p>
+        </div>
+        <div id="quiz-done" hidden tabindex="-1" aria-labelledby="quiz-done-title">
+            <div class="quiz-score-card">
+                <h2 id="quiz-done-title">🎉 퀴즈 완료!</h2>
+                <div class="quiz-score" role="status" aria-live="polite">
+                    <span id="quiz-score-text">0 / 5</span>
+                </div>
+                <progress id="quiz-score-bar" class="quiz-score-bar" aria-label="퀴즈 점수" max="100" value="0"></progress>
+                <p id="quiz-score-msg" class="quiz-score-msg"></p>
+                <div id="quiz-stats" class="quiz-stats" hidden>
+                    <h3>📊 학습 통계</h3>
+                    <p id="quiz-stats-summary"></p>
+                    <p id="quiz-stats-weak" hidden></p>
+                </div>
+                <button type="button" id="quiz-restart-btn" class="quiz-btn primary">🔄 다시 풀기</button>
+            </div>
+        </div>
+    </div>
+</div>
+<style>
+    .quiz-page { max-width: 700px; margin: 0 auto; padding: 24px 16px; }
+    .quiz-page h1 { font-size: 24px; margin-bottom: 8px; }
+    .quiz-desc { color: var(--text-muted); font-size: 14px; margin-bottom: 24px; }
+    .quiz-progress { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+    #quiz-progress-text { font-size: 14px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+    .quiz-empty-message { text-align: center; color: var(--text-muted); padding: 40px 0; }
+    .quiz-progress-bar, .quiz-score-bar { appearance: none; border: 0; overflow: hidden; background: var(--border); }
+    .quiz-progress-bar { flex: 1; height: 6px; border-radius: 3px; }
+    .quiz-progress-bar::-webkit-progress-bar, .quiz-score-bar::-webkit-progress-bar { background: var(--border); }
+    .quiz-progress-bar::-webkit-progress-value, .quiz-score-bar::-webkit-progress-value { background: var(--accent, #4caf50); }
+    .quiz-progress-bar::-moz-progress-bar, .quiz-score-bar::-moz-progress-bar { background: var(--accent, #4caf50); }
+    .quiz-card { perspective: 1000px; min-height: 300px; }
+    .quiz-card-inner { position: relative; transition: transform 0.5s ease; transform-style: preserve-3d; }
+    .quiz-card-inner.flipped { transform: rotateY(180deg); }
+    .quiz-card-front, .quiz-card-back {
+        background: var(--bg-alt, #fff); border: 1px solid var(--border); border-radius: 12px;
+        padding: 32px 24px; backface-visibility: hidden;
+    }
+    .quiz-card-back { position: absolute; top: 0; left: 0; right: 0; transform: rotateY(180deg); text-align: center; }
+    .quiz-type-badge {
+        display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600;
+        background: var(--accent-light, #e8f5e9); color: var(--accent-text, #006b62); margin-bottom: 16px;
+    }
+    .quiz-question { font-size: 18px; line-height: 1.6; margin-bottom: 24px; font-weight: 500; }
+    .quiz-input-area { display: flex; gap: 8px; }
+    .quiz-input-error { margin: -14px 0 8px; color: #b42318; font-size: 13px; }
+    #quiz-answer-input {
+        flex: 1; min-width: 0; padding: 10px 14px; border: 2px solid var(--border); border-radius: 8px;
+        font-size: 16px; transition: border-color 0.2s;
+    }
+    #quiz-answer-input:focus { border-color: var(--accent, #4caf50); }
+    .quiz-btn {
+        padding: 10px 20px; border: none; border-radius: 8px; font-size: 15px; font-weight: 600;
+        cursor: pointer; transition: all 0.2s;
+    }
+    .quiz-btn.primary { background: var(--control-bg, #006b62); color: white; }
+    .quiz-btn.primary:hover { opacity: 0.9; transform: translateY(-1px); }
+    .quiz-ox-area { display: flex; gap: 16px; justify-content: center; }
+    .ox-btn { padding: 16px 32px; font-size: 20px; border: 2px solid var(--border); border-radius: 12px; background: var(--bg-alt, #fff); }
+    .ox-btn:hover { border-color: var(--accent, #4caf50); background: var(--accent-light, #e8f5e9); }
+    .quiz-result-icon { font-size: 48px; margin-bottom: 12px; }
+    .quiz-answer-label { font-size: 13px; color: var(--text-muted); margin-bottom: 4px; }
+    .quiz-answer-text { font-size: 22px; font-weight: 700; color: var(--accent, #4caf50); margin-bottom: 16px; }
+    .quiz-answer-text.is-incorrect { color: #e53935; }
+    .quiz-source { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
+    .quiz-source a { color: var(--link, #005ea8); text-decoration: none; }
+    .quiz-source a:hover { text-decoration: underline; }
+    .quiz-score-card { text-align: center; background: var(--bg-alt, #fff); border: 1px solid var(--border); border-radius: 12px; padding: 40px 24px; }
+    .quiz-score { font-size: 48px; font-weight: 800; color: var(--accent, #4caf50); margin: 16px 0; }
+    .quiz-score-bar { width: 100%; height: 8px; border-radius: 4px; margin: 16px 0 20px; }
+    .quiz-score-msg { font-size: 16px; color: var(--text-muted); margin-bottom: 24px; }
+    .quiz-explanation { background: var(--accent-light, #e8f5e9); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; text-align: left; }
+    .explanation-text { font-size: 14px; line-height: 1.6; color: var(--text, #333); margin: 0; }
+    .quiz-stats { background: var(--bg-alt, #f5f5f5); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 20px; text-align: left; }
+    .quiz-stats h3 { font-size: 15px; margin: 0 0 8px; }
+    .quiz-stats p { font-size: 14px; color: var(--text-muted); margin: 4px 0; }
+    .quiz-review-info { font-size: 13px; color: var(--text-muted); margin-bottom: 12px; padding: 6px 12px; background: var(--accent-light, #e8f5e9); border-radius: 6px; display: inline-block; }
+    @media (max-width: 400px) {
+        .quiz-card-front, .quiz-card-back { padding: 24px 16px; }
+        .quiz-input-area { flex-direction: column; }
+        .quiz-input-area .quiz-btn { width: 100%; }
+    }
+</style>
+<script id="kiwi-quiz-data" type="application/json">[{"id":1,"question":"___은 위치와 운동량을 동시에 정확히 측정할 수 없다는 양자역학의 원리이다.","answer":"불확정성 원리","explanation":"하이젠베르크가 1927년에 제안한 이 원리는 양자역학의 근본적 한계를 보여줍니다. 위치를 정확히 측정하면 운동량의 불확정성이 커지고, 그 반대도 마찬가지입니다.","quiz_type":"fill_blank","page_title":"하이젠베르크의 불확정성 원리","page_slug":"하이젠베르크"},{"id":2,"question":"슈뢰딩거 방정식은 1936년에 발표되었다.","answer":"X","explanation":"슈뢰딩거 방정식은 1936년이 아니라 1926년에 에르빈 슈뢰딩거가 발표했습니다.","quiz_type":"ox","page_title":"슈뢰딩거 방정식","page_slug":"슈뢰딩거-방정식"},{"id":3,"question":"양자 중첩에서 관측하면 어떤 현상이 일어나는가?","answer":"중첩이 붕괴하여 하나의 상태만 남는다","explanation":"관측 행위가 양자 시스템에 영향을 주어 여러 가능한 상태 중 하나로 '붕괴'됩니다. 이를 파동함수 붕괴라고 합니다.","quiz_type":"short_answer","page_title":"양자 중첩","page_slug":"양자-중첩"},{"id":4,"question":"아인슈타인은 양자 얽힘을 '___한 원격 작용'이라 불렀다.","answer":"으스스","explanation":"아인슈타인은 양자 얽힘이 국소적 실재론에 위배된다고 생각하여 'spooky action at a distance(으스스한 원격 작용)'이라 비판했습니다.","quiz_type":"fill_blank","page_title":"양자 얽힘","page_slug":"양자-얽힘"},{"id":5,"question":"슈뢰딩거의 고양이 사고실험에서 고양이는 살아있는 상태와 죽어있는 상태의 ___에 놓인다.","answer":"중첩","explanation":"이 사고실험은 양자 중첩의 개념을 거시적 세계에 적용하여 양자역학의 해석 문제를 드러내기 위해 고안되었습니다.","quiz_type":"fill_blank","page_title":"양자 중첩","page_slug":"양자-중첩"},{"id":6,"question":"2022년 노벨 물리학상은 양자 얽힘의 벨 부등식 실험 검증과 관련이 있다.","answer":"O","explanation":"알랭 아스페, 존 클라우저, 안톤 차일링거가 벨 부등식 위반을 실험적으로 증명하여 양자 얽힘의 실재성을 확인한 공로로 수상했습니다.","quiz_type":"ox","page_title":"양자 얽힘","page_slug":"양자-얽힘"},{"id":7,"question":"시간 독립 슈뢰딩거 방정식에서 E는 무엇을 나타내는가?","answer":"에너지 고유값","explanation":"시간 독립 슈뢰딩거 방정식 Hψ = Eψ에서 E는 시스템의 에너지 고유값으로, 허용된 에너지 준위를 나타냅니다.","quiz_type":"short_answer","page_title":"슈뢰딩거 방정식","page_slug":"슈뢰딩거-방정식"},{"id":8,"question":"불확정성 원리에서 Δx·Δp ≥ ℏ 이다.","answer":"X","explanation":"정확한 부등식은 Δx·Δp ≥ ℏ/2 입니다. ℏ가 아니라 ℏ/2(플랑크 상수의 절반)가 하한값입니다.","quiz_type":"ox","page_title":"하이젠베르크의 불확정성 원리","page_slug":"하이젠베르크"},{"id":9,"question":"배열에서 인덱스를 통한 랜덤 접근의 시간 복잡도는?","answer":"O(1)","explanation":"배열은 연속된 메모리 공간에 저장되므로 인덱스 계산만으로 직접 접근 가능합니다.","quiz_type":"short_answer","page_title":"배열과 연결리스트","page_slug":"배열과-연결리스트"},{"id":10,"question":"해시테이블의 평균 탐색 시간 복잡도는 ___이다.","answer":"O(1)","explanation":"해시 함수가 키를 배열 인덱스로 직접 변환하므로 상수 시간에 접근 가능합니다.","quiz_type":"fill_blank","page_title":"해시테이블","page_slug":"해시테이블"},{"id":11,"question":"스택은 FIFO(First In First Out) 구조이다.","answer":"X","explanation":"스택은 LIFO(Last In First Out)입니다. FIFO는 큐의 특성입니다.","quiz_type":"ox","page_title":"스택과 큐","page_slug":"스택과-큐"},{"id":12,"question":"BST에서 중위 순회를 하면 데이터가 정렬된 순서로 출력된다.","answer":"O","explanation":"BST의 왼쪽 \u003c 부모 \u003c 오른쪽 규칙에 의해 중위 순회는 오름차순 정렬을 보장합니다.","quiz_type":"ox","page_title":"이진탐색트리","page_slug":"이진탐색트리"},{"id":13,"question":"해시 충돌을 해결하는 두 가지 방법은 ___과 개방 주소법이다.","answer":"체이닝","explanation":"체이닝은 같은 인덱스에 연결리스트로 저장하고, 개방 주소법은 다음 빈 슬롯을 찾습니다.","quiz_type":"fill_blank","page_title":"해시테이블","page_slug":"해시테이블"},{"id":14,"question":"편향 이진 트리에서 탐색의 최악 시간 복잡도는?","answer":"O(n)","explanation":"트리가 한쪽으로 치우치면 사실상 연결리스트와 같아져 선형 탐색이 됩니다.","quiz_type":"short_answer","page_title":"이진탐색트리","page_slug":"이진탐색트리"}]</script>
+<script src="/kiwimu/static/quiz.js"></script>
+        </main>
+    </div>
+    <script src="/kiwimu/static/search.js"></script>
+    <script src="/kiwimu/static/dynamic-qa.js"></script>
+    <script src="/kiwimu/static/edit-page.js"></script>
+    <script src="/kiwimu/static/peek-panel.js"></script>
+    <script src="/kiwimu/static/ask-wiki.js"></script>
+    <script src="/kiwimu/static/navigation.js"></script>
+<footer class="kiwimu-badge">
+  🥝 Built with <a href="https://github.com/Open330/kiwimu" target="_blank" rel="noopener">Kiwi Mu</a> — 나만의 학습 위키 빌더
+</footer>
+</body>
+</html>

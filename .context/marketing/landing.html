@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kiwimu — 위키는 만드는 게 아니라 자라는 거였다</title>
+<meta name="description" content="문서를 드래그하면 새 위키 페이지가 됩니다. 이제 위키 전체에게 질문하세요. 셀프호스팅, MIT, 30초 데모.">
+<meta property="og:title" content="kiwimu — 위키는 자라는 도구입니다">
+<meta property="og:description" content="문서 드래그 → 질문 → 위키 페이지로 저장. 이제 위키 전체 대상 질의(RAG)까지. 셀프호스팅 학습 위키 빌더 v1.2.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://github.com/Open330/kiwimu/raw/main/.context/marketing/og-card.png">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+  :root {
+    --green: #2e7d32;
+    --green-soft: #e8f5e9;
+    --bg: #fafaf7;
+    --text: #1a1a1a;
+    --muted: #5f6b6f;
+    --border: #e0e0e0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --green: #66bb6a;
+      --green-soft: #1b3a1f;
+      --bg: #0f1411;
+      --text: #f0f0f0;
+      --muted: #a0a8a4;
+      --border: #2a3530;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 64px 24px 96px; }
+  .eyebrow {
+    display: inline-block;
+    font-size: 12px;
+    color: var(--green);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  h1 {
+    font-size: clamp(28px, 5vw, 44px);
+    line-height: 1.2;
+    margin: 0 0 16px;
+    letter-spacing: -0.02em;
+  }
+  h1 em { color: var(--green); font-style: normal; }
+  .lede {
+    font-size: 17px;
+    color: var(--muted);
+    margin: 0 0 32px;
+  }
+  .demo-frame {
+    aspect-ratio: 16 / 9;
+    background: #000;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.18);
+    margin-bottom: 24px;
+  }
+  .demo-frame video, .demo-frame img {
+    width: 100%; height: 100%; object-fit: cover;
+    display: block;
+  }
+  .demo-caption {
+    text-align: center;
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 40px;
+  }
+  .try-now {
+    background: var(--green-soft);
+    border: 1px solid var(--green);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin: 32px 0;
+  }
+  .try-now h2 {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 0 0 12px;
+    color: var(--green);
+  }
+  .try-now code {
+    display: block;
+    background: #0d0d0d;
+    color: #e8f5e9;
+    padding: 14px 18px;
+    border-radius: 8px;
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 14px;
+    overflow-x: auto;
+    user-select: all;
+  }
+  .try-now small {
+    display: block;
+    margin-top: 10px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .features {
+    display: grid;
+    gap: 20px;
+    margin: 48px 0;
+  }
+  .feature {
+    border-left: 3px solid var(--green);
+    padding: 4px 0 4px 16px;
+  }
+  .feature h3 { margin: 0 0 4px; font-size: 16px; }
+  .feature p { margin: 0; color: var(--muted); font-size: 14px; }
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 32px 0;
+  }
+  .links a {
+    flex: 1;
+    min-width: 160px;
+    text-align: center;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    text-decoration: none;
+    color: var(--text);
+    font-weight: 600;
+    transition: border-color 0.15s, transform 0.15s;
+  }
+  .links a:hover { border-color: var(--green); transform: translateY(-1px); }
+  .links a.primary { background: var(--green); color: #fff; border-color: var(--green); }
+  footer {
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+  }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <span class="eyebrow">v1.2 · 2026-07</span>
+  <h1>위키는 만드는 게 아니라 <em>자라는</em> 거였다.</h1>
+  <p class="lede">문서를 드래그하세요. 질문하세요. 답이 위키 페이지가 됩니다.<br>이제 다 자란 위키 <strong>전체에게</strong> 물어볼 수도 있습니다. kiwimu는 셀프호스팅 학습 위키 빌더입니다.</p>
+
+  <div class="demo-frame">
+    <video autoplay loop muted playsinline poster="./demo-poster.jpg">
+      <source src="./demo.mp4" type="video/mp4">
+      <img src="./demo.gif" alt="kiwimu 30초 데모: 텍스트 드래그 → 질문 → 위키 페이지로 저장">
+    </video>
+  </div>
+  <p class="demo-caption">30초 시연 — 본문 드래그 · 질문 · 답변을 정식 위키 페이지로 승격</p>
+
+  <section class="try-now">
+    <h2>30초 안에 직접 써보기</h2>
+    <code>bunx @open330/kiwimu init --demo</code>
+    <small>API 키 없이 즉시 동작합니다. (Bun &gt;= 1.0 필요)</small>
+  </section>
+
+  <section class="features">
+    <div class="feature">
+      <h3>🤖 위키 전체에게 질문합니다 <span style="color:var(--green);font-size:12px;font-weight:700;">NEW</span></h3>
+      <p>페이지를 청크 단위로 임베딩해 시맨틱 검색 + 위키 전체 대상 채팅. 근거를 찾아 인용과 함께 답합니다. (<code style="background:none;padding:0;color:var(--muted)">kiwimu ask</code>)</p>
+    </div>
+    <div class="feature">
+      <h3>🖼️ PDF 그림까지 위키가 됩니다 <span style="color:var(--green);font-size:12px;font-weight:700;">NEW</span></h3>
+      <p>PDF의 다이어그램·그림을 자동 추출해 페이지에 임베드하고, 멀티모달 LLM이 캡션을 씁니다.</p>
+    </div>
+    <div class="feature">
+      <h3>📚 모든 문장에 출처가 붙습니다</h3>
+      <p>인라인 인용 + 출처 커버리지 행렬. AI가 만든 위키의 가장 큰 약점을 메웁니다.</p>
+    </div>
+    <div class="feature">
+      <h3>💬 질문이 페이지가 됩니다</h3>
+      <p>본문 드래그 → 팝오버 질문 → 답변 → "위키에 저장". 중복 자동 감지.</p>
+    </div>
+    <div class="feature">
+      <h3>♻️ 바뀐 것만 다시, 비용은 미리 <span style="color:var(--green);font-size:12px;font-weight:700;">NEW</span></h3>
+      <p>내용이 바뀐 문서만 재인제스트(변경 없으면 LLM 호출 없이 스킵). <code style="background:none;padding:0;color:var(--muted)">add</code> 전에 예상 토큰·비용을 먼저 보여줍니다.</p>
+    </div>
+  </section>
+
+  <div class="links">
+    <a class="primary" href="https://github.com/Open330/kiwimu">GitHub →</a>
+    <a href="https://jiun.dev/posts/kiwimu">제작기 v1.0→v1.2</a>
+  </div>
+
+  <footer>
+    🥝 MIT · 셀프호스팅 · 텔레메트리 없음<br>
+    by <a href="https://jiun.dev">jiun.dev</a>
+  </footer>
+</main>
+</body>
+</html>

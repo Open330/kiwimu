@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://open330.github.io/kiwimu/sitemap.xml

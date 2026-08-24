@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'sha256-Ugv+FKQniNTGsWTEOd8CEp1wrjN6C7SB+7yvCm8Lvzc='; style-src-attr 'none'; font-src 'self' data:; img-src 'self' data: blob: https: http:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Source Provenance - Quantum Wiki Demo</title>
+    <link rel="canonical" href="https://open330.github.io/kiwimu/provenance.html">
+    <meta property="og:title" content="Source Provenance - Quantum Wiki Demo">
+    <meta property="og:description" content="LLM으로 자동 생성된 학습 위키">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Quantum Wiki Demo">
+    <meta property="og:image" content="https://open330.github.io/kiwimu/static/logo.png">
+    <meta property="og:url" content="https://open330.github.io/kiwimu/provenance.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Source Provenance - Quantum Wiki Demo">
+    <meta name="twitter:image" content="https://open330.github.io/kiwimu/static/logo.png">
+    <meta name="description" content="LLM으로 자동 생성된 학습 위키">
+    <link rel="stylesheet" href="/kiwimu/static/style.css">
+    <link rel="stylesheet" href="/kiwimu/static/peek-panel.css">
+    <link rel="stylesheet" href="/kiwimu/static/ask-wiki.css">
+    <script defer src="/kiwimu/static/vendor/katex/katex.min.js"></script>
+    <script defer src="/kiwimu/static/vendor-runtime.js"></script>
+</head>
+<body>
+    <a class="skip-link" href="#main-content">본문으로 건너뛰기</a>
+    <nav class="topbar" aria-label="주요 메뉴">
+        <button type="button" class="topbar-menu-btn" aria-label="문서 메뉴 열기" aria-expanded="false" aria-controls="wiki-sidebar">☰</button>
+        <a href="/kiwimu/index.html" class="topbar-brand">
+            <img src="/kiwimu/static/logo.png" alt="Kiwi Mu" class="topbar-logo">
+            Quantum Wiki Demo
+        </a>
+        <div class="topbar-search" role="search">
+            <label class="visually-hidden" for="search-input">위키 문서 검색</label>
+            <input type="search" id="search-input" placeholder="문서 검색…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list" aria-label="위키 문서 검색">
+            <div id="search-results" class="search-dropdown" role="listbox" aria-label="검색 결과"></div>
+            <div id="search-status" class="visually-hidden" role="status" aria-live="polite"></div>
+        </div>
+        <div class="topbar-links">
+            <a href="/kiwimu/catalog.html" class="btn-graph">📑 목록</a>
+            <a href="/kiwimu/wiki/random.html" class="btn-graph">🎲 임의</a>
+            <a href="/kiwimu/quiz.html" class="btn-graph">📝 퀴즈</a>
+            <a href="/kiwimu/dashboard.html" class="btn-graph">📊 대시보드</a>
+            <a href="/kiwimu/graph.html" class="btn-graph">🔗 그래프</a>
+            <a href="/kiwimu/manage" class="btn-graph live-only">⚙️ 관리</a>
+        </div>
+    </nav>
+    <div class="sidebar-overlay" aria-hidden="true"></div>
+    <div class="layout">
+        <aside class="sidebar" id="wiki-sidebar" aria-label="문서 탐색">
+            
+            <div class="sidebar-tabs" role="tablist" aria-label="문서 유형">
+                <button type="button" id="sidebar-tab-source" class="sidebar-tab active" data-tab="source" role="tab" aria-selected="true" aria-controls="tab-source" tabindex="0">📖 원본 (2)</button>
+                <button type="button" id="sidebar-tab-concept" class="sidebar-tab" data-tab="concept" role="tab" aria-selected="false" aria-controls="tab-concept" tabindex="-1">📝 개념 (8)</button>
+            </div>
+            <div class="sidebar-panel active" id="tab-source" role="tabpanel" aria-labelledby="sidebar-tab-source">
+                <ul class="page-list"><li><a href="/kiwimu/wiki/양자역학-입문.html">양자역학 입문</a></li>
+<li><a href="/kiwimu/wiki/자료구조-입문.html">자료구조와 알고리즘 입문</a></li></ul>
+                
+            </div>
+            <div class="sidebar-panel" id="tab-concept" role="tabpanel" aria-labelledby="sidebar-tab-concept" hidden>
+                <ul class="page-list"><li><a href="/kiwimu/wiki/배열과-연결리스트.html">📝 배열과 연결리스트</a></li>
+<li><a href="/kiwimu/wiki/슈뢰딩거-방정식.html">📝 슈뢰딩거 방정식</a></li>
+<li><a href="/kiwimu/wiki/스택과-큐.html">📝 스택과 큐</a></li>
+<li><a href="/kiwimu/wiki/양자-얽힘.html">📝 양자 얽힘</a></li>
+<li><a href="/kiwimu/wiki/양자-중첩.html">📝 양자 중첩</a></li>
+<li><a href="/kiwimu/wiki/이진탐색트리.html">📝 이진탐색트리</a></li>
+<li><a href="/kiwimu/wiki/하이젠베르크.html">📝 하이젠베르크의 불확정성 원리</a></li>
+<li><a href="/kiwimu/wiki/해시테이블.html">📝 해시테이블</a></li></ul>
+                
+            </div>
+            <nav class="sidebar-mobile-nav" aria-label="모바일 주요 메뉴">
+                <a href="/kiwimu/catalog.html">📑 목록</a>
+                <a href="/kiwimu/wiki/random.html">🎲 임의 문서</a>
+                <a href="/kiwimu/quiz.html">📝 퀴즈</a>
+                <a href="/kiwimu/dashboard.html">📊 대시보드</a>
+                <a href="/kiwimu/graph.html">🔗 그래프</a>
+                <a href="/kiwimu/provenance.html">📚 출처</a>
+                <a href="/kiwimu/manage" class="live-only">⚙️ 관리</a>
+            </nav>
+        </aside>
+        <main class="content" id="main-content" tabindex="-1">
+            
+<div class="provenance-page">
+  <h1>📚 출처 추적</h1>
+  <p class="provenance-summary">
+    전체 2개 소스 중 0개에서 0건의 인용을 확인했습니다.
+  </p>
+
+  <div class="provenance-table-wrap" tabindex="0" role="region" aria-label="소스별 인용 현황 표">
+  <table class="provenance-table">
+    <caption class="visually-hidden">소스별 인용 및 연결 문서 현황</caption>
+    <thead>
+      <tr>
+        <th scope="col">소스</th>
+        <th scope="col" class="text-center">인용</th>
+        <th scope="col" class="text-center">문서</th>
+        <th scope="col">인용 비중</th>
+        <th scope="col">인용한 문서</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+      <th scope="row">양자역학 입문</th>
+      <td class="text-center">0</td>
+      <td class="text-center">0</td>
+      <td><progress class="provenance-bar empty" aria-label="양자역학 입문 인용 비중" max="100" value="0"></progress></td>
+      <td class="provenance-pages"><span class="text-muted">-</span></td>
+    </tr>
+<tr>
+      <th scope="row">자료구조와 알고리즘 입문</th>
+      <td class="text-center">0</td>
+      <td class="text-center">0</td>
+      <td><progress class="provenance-bar empty" aria-label="자료구조와 알고리즘 입문 인용 비중" max="100" value="0"></progress></td>
+      <td class="provenance-pages"><span class="text-muted">-</span></td>
+    </tr>
+    </tbody>
+  </table>
+  </div>
+
+  
+  <div class="provenance-warning" role="note">
+    <strong>인용되지 않은 소스:</strong>
+    양자역학 입문, 자료구조와 알고리즘 입문
+    <br><small><code>kiwimu cite</code>를 실행하면 기존 콘텐츠의 인용을 생성할 수 있습니다.</small>
+  </div>
+</div>
+
+<style>
+.provenance-page { max-width: 960px; margin: 0 auto; }
+.provenance-page h1 { margin-bottom: 8px; }
+.provenance-summary { color: var(--text-muted); margin-bottom: 24px; }
+.provenance-table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--border); }
+.provenance-table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 14px; }
+.provenance-table th, .provenance-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+.provenance-table th { font-weight: 600; background: var(--bg-alt, #f8f9fa); }
+.text-center { text-align: center !important; }
+.text-muted { color: var(--text-muted, #999); }
+.provenance-bar { appearance: none; width: 100%; min-width: 100px; height: 8px; overflow: hidden; border: 0; border-radius: 4px; background: var(--bg-hover); }
+.provenance-bar::-webkit-progress-bar { background: var(--bg-hover); }
+.provenance-bar.empty::-webkit-progress-value { background: var(--border); }
+.provenance-bar.partial::-webkit-progress-value { background: #b36b00; }
+.provenance-bar.strong::-webkit-progress-value { background: var(--namu-green); }
+.provenance-bar.empty::-moz-progress-bar { background: var(--border); }
+.provenance-bar.partial::-moz-progress-bar { background: #b36b00; }
+.provenance-bar.strong::-moz-progress-bar { background: var(--namu-green); }
+.provenance-pages { font-size: 12px; }
+.provenance-page-link { display: inline-block; margin: 2px 4px 2px 0; padding: 1px 6px; background: var(--bg-alt, #f0f0f0); border-radius: 3px; text-decoration: none; color: var(--accent-text, #006b62); }
+.provenance-page-link:hover { background: var(--control-bg, #006b62); color: white; }
+.provenance-warning { margin-top: 24px; padding: 12px 16px; background: var(--warning-bg, #fff8e1); color: var(--text); border: 1px solid var(--warning-border, #b36b00); border-radius: 6px; font-size: 13px; }
+.provenance-empty { padding: 32px !important; text-align: center !important; color: var(--text-muted); }
+</style>
+        </main>
+    </div>
+    <script src="/kiwimu/static/search.js"></script>
+    <script src="/kiwimu/static/dynamic-qa.js"></script>
+    <script src="/kiwimu/static/edit-page.js"></script>
+    <script src="/kiwimu/static/peek-panel.js"></script>
+    <script src="/kiwimu/static/ask-wiki.js"></script>
+    <script src="/kiwimu/static/navigation.js"></script>
+<footer class="kiwimu-badge">
+  🥝 Built with <a href="https://github.com/Open330/kiwimu" target="_blank" rel="noopener">Kiwi Mu</a> — 나만의 학습 위키 빌더
+</footer>
+</body>
+</html>

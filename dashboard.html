@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'sha256-sO5Z5tsRS8h1Ajzts0PLUeSajfKMroY5gURsl4E2WYQ='; style-src-attr 'none'; font-src 'self' data:; img-src 'self' data: blob: https: http:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📊 학습 대시보드 — Quantum Wiki Demo</title>
+    <link rel="canonical" href="https://open330.github.io/kiwimu/dashboard.html">
+    <meta property="og:title" content="📊 학습 대시보드 — Quantum Wiki Demo">
+    <meta property="og:description" content="LLM으로 자동 생성된 학습 위키">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Quantum Wiki Demo">
+    <meta property="og:image" content="https://open330.github.io/kiwimu/static/logo.png">
+    <meta property="og:url" content="https://open330.github.io/kiwimu/dashboard.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="📊 학습 대시보드 — Quantum Wiki Demo">
+    <meta name="twitter:image" content="https://open330.github.io/kiwimu/static/logo.png">
+    <meta name="description" content="LLM으로 자동 생성된 학습 위키">
+    <link rel="stylesheet" href="/kiwimu/static/style.css">
+    <link rel="stylesheet" href="/kiwimu/static/peek-panel.css">
+    <link rel="stylesheet" href="/kiwimu/static/ask-wiki.css">
+    <script defer src="/kiwimu/static/vendor/katex/katex.min.js"></script>
+    <script defer src="/kiwimu/static/vendor-runtime.js"></script>
+</head>
+<body>
+    <a class="skip-link" href="#main-content">본문으로 건너뛰기</a>
+    <nav class="topbar" aria-label="주요 메뉴">
+        <button type="button" class="topbar-menu-btn" aria-label="문서 메뉴 열기" aria-expanded="false" aria-controls="wiki-sidebar">☰</button>
+        <a href="/kiwimu/index.html" class="topbar-brand">
+            <img src="/kiwimu/static/logo.png" alt="Kiwi Mu" class="topbar-logo">
+            Quantum Wiki Demo
+        </a>
+        <div class="topbar-search" role="search">
+            <label class="visually-hidden" for="search-input">위키 문서 검색</label>
+            <input type="search" id="search-input" placeholder="문서 검색…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list" aria-label="위키 문서 검색">
+            <div id="search-results" class="search-dropdown" role="listbox" aria-label="검색 결과"></div>
+            <div id="search-status" class="visually-hidden" role="status" aria-live="polite"></div>
+        </div>
+        <div class="topbar-links">
+            <a href="/kiwimu/catalog.html" class="btn-graph">📑 목록</a>
+            <a href="/kiwimu/wiki/random.html" class="btn-graph">🎲 임의</a>
+            <a href="/kiwimu/quiz.html" class="btn-graph">📝 퀴즈</a>
+            <a href="/kiwimu/dashboard.html" class="btn-graph">📊 대시보드</a>
+            <a href="/kiwimu/graph.html" class="btn-graph">🔗 그래프</a>
+            <a href="/kiwimu/manage" class="btn-graph live-only">⚙️ 관리</a>
+        </div>
+    </nav>
+    <div class="sidebar-overlay" aria-hidden="true"></div>
+    <div class="layout">
+        <aside class="sidebar" id="wiki-sidebar" aria-label="문서 탐색">
+            
+            <div class="sidebar-tabs" role="tablist" aria-label="문서 유형">
+                <button type="button" id="sidebar-tab-source" class="sidebar-tab active" data-tab="source" role="tab" aria-selected="true" aria-controls="tab-source" tabindex="0">📖 원본 (2)</button>
+                <button type="button" id="sidebar-tab-concept" class="sidebar-tab" data-tab="concept" role="tab" aria-selected="false" aria-controls="tab-concept" tabindex="-1">📝 개념 (8)</button>
+            </div>
+            <div class="sidebar-panel active" id="tab-source" role="tabpanel" aria-labelledby="sidebar-tab-source">
+                <ul class="page-list"><li><a href="/kiwimu/wiki/양자역학-입문.html">양자역학 입문</a></li>
+<li><a href="/kiwimu/wiki/자료구조-입문.html">자료구조와 알고리즘 입문</a></li></ul>
+                
+            </div>
+            <div class="sidebar-panel" id="tab-concept" role="tabpanel" aria-labelledby="sidebar-tab-concept" hidden>
+                <ul class="page-list"><li><a href="/kiwimu/wiki/배열과-연결리스트.html">📝 배열과 연결리스트</a></li>
+<li><a href="/kiwimu/wiki/슈뢰딩거-방정식.html">📝 슈뢰딩거 방정식</a></li>
+<li><a href="/kiwimu/wiki/스택과-큐.html">📝 스택과 큐</a></li>
+<li><a href="/kiwimu/wiki/양자-얽힘.html">📝 양자 얽힘</a></li>
+<li><a href="/kiwimu/wiki/양자-중첩.html">📝 양자 중첩</a></li>
+<li><a href="/kiwimu/wiki/이진탐색트리.html">📝 이진탐색트리</a></li>
+<li><a href="/kiwimu/wiki/하이젠베르크.html">📝 하이젠베르크의 불확정성 원리</a></li>
+<li><a href="/kiwimu/wiki/해시테이블.html">📝 해시테이블</a></li></ul>
+                
+            </div>
+            <nav class="sidebar-mobile-nav" aria-label="모바일 주요 메뉴">
+                <a href="/kiwimu/catalog.html">📑 목록</a>
+                <a href="/kiwimu/wiki/random.html">🎲 임의 문서</a>
+                <a href="/kiwimu/quiz.html">📝 퀴즈</a>
+                <a href="/kiwimu/dashboard.html">📊 대시보드</a>
+                <a href="/kiwimu/graph.html">🔗 그래프</a>
+                <a href="/kiwimu/provenance.html">📚 출처</a>
+                <a href="/kiwimu/manage" class="live-only">⚙️ 관리</a>
+            </nav>
+        </aside>
+        <main class="content" id="main-content" tabindex="-1">
+            
+<div class="dash-page">
+    <h1>📊 학습 대시보드</h1>
+    <p class="dash-desc">스페이스드 리피티션(SM-2) 기반 학습 현황을 확인하세요.</p>
+
+    <div class="dash-cards" role="list" aria-label="학습 현황 요약">
+        <div class="dash-card" role="listitem">
+            <div class="dash-card-value" id="dash-total">14</div>
+            <div class="dash-card-label">전체 문제</div>
+        </div>
+        <div class="dash-card dash-card-mastered" role="listitem">
+            <div class="dash-card-value" id="dash-mastered">0</div>
+            <div class="dash-card-label">숙달</div>
+        </div>
+        <div class="dash-card dash-card-learning" role="listitem">
+            <div class="dash-card-value" id="dash-learning">0</div>
+            <div class="dash-card-label">학습중</div>
+        </div>
+        <div class="dash-card dash-card-new" role="listitem">
+            <div class="dash-card-value" id="dash-new">14</div>
+            <div class="dash-card-label">새 문제</div>
+        </div>
+        <div class="dash-card dash-card-due" role="listitem">
+            <div class="dash-card-value" id="dash-due">0</div>
+            <div class="dash-card-label">오늘 복습</div>
+        </div>
+    </div>
+
+    <div class="dash-progress-section">
+        <h2>📈 숙달 진행률</h2>
+        <progress class="dash-progress-bar" id="dash-progress-bar" aria-label="숙달 진행률" aria-valuetext="0 / 14 문제 숙달" max="100" value="0"></progress>
+        <p class="dash-progress-text" id="dash-progress-text">0 / 14 문제 숙달 (0%)</p>
+    </div>
+
+    <div class="dash-columns">
+        <div class="dash-section">
+            <h2>💪 약한 개념</h2>
+            <ul class="dash-list" id="dash-weak-list"><li class="dash-empty">아직 데이터가 없습니다.</li></ul>
+        </div>
+        <div class="dash-section">
+            <h2>🕐 최근 시도</h2>
+            <ul class="dash-list" id="dash-recent-list"><li class="dash-empty">아직 시도한 퀴즈가 없습니다.</li></ul>
+        </div>
+    </div>
+
+    <div class="dash-action">
+        <a href="/kiwimu/quiz.html" class="dash-review-btn">📝 복습 시작</a>
+    </div>
+</div>
+<style>
+    .dash-page { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
+    .dash-page h1 { font-size: 24px; margin-bottom: 8px; }
+    .dash-page h2 { font-size: 18px; margin-bottom: 12px; }
+    .dash-desc { color: var(--text-muted); font-size: 14px; margin-bottom: 24px; }
+    .dash-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 28px; }
+    .dash-card {
+        background: var(--bg-alt, #fff); border: 1px solid var(--border); border-radius: 10px;
+        padding: 16px; text-align: center;
+    }
+    .dash-card-value { font-size: 28px; font-weight: 800; color: var(--text); }
+    .dash-card-label { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+    .dash-card-mastered .dash-card-value { color: #2e7d32; }
+    .dash-card-learning .dash-card-value { color: #f9a825; }
+    .dash-card-new .dash-card-value { color: var(--link, #005ea8); }
+    .dash-card-due .dash-card-value { color: #e53935; }
+    .dash-progress-section { margin-bottom: 28px; }
+    .dash-progress-bar { appearance: none; width: 100%; height: 10px; border: 0; background: var(--border); border-radius: 5px; overflow: hidden; margin: 8px 0; }
+    .dash-progress-bar::-webkit-progress-bar { background: var(--border); }
+    .dash-progress-bar::-webkit-progress-value { background: #2e7d32; }
+    .dash-progress-bar::-moz-progress-bar { background: #2e7d32; }
+    .dash-progress-text { font-size: 14px; color: var(--text-muted); }
+    .dash-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 28px; }
+    @media (max-width: 600px) { .dash-columns { grid-template-columns: 1fr; } }
+    .dash-section { background: var(--bg-alt, #fff); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+    .dash-list { list-style: none; padding: 0; margin: 0; }
+    .dash-list li { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 14px; display: flex; align-items: center; gap: 8px; }
+    .dash-list li:last-child { border-bottom: none; }
+    .dash-list a { color: var(--link, #005ea8); text-decoration: underline; text-underline-offset: 2px; }
+    .dash-list a:hover { text-decoration: underline; }
+    .dash-weak-count { font-size: 12px; color: #e53935; margin-left: auto; white-space: nowrap; }
+    .dash-date { font-size: 12px; color: var(--text-muted); margin-left: auto; white-space: nowrap; }
+    .dash-q { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dash-empty { color: var(--text-muted); font-style: italic; }
+    .dash-action { text-align: center; margin-top: 8px; }
+    .dash-review-btn {
+        display: inline-block; padding: 12px 32px; background: var(--control-bg, #006b62); color: white;
+        border-radius: 8px; font-size: 16px; font-weight: 600; text-decoration: none; transition: opacity 0.2s;
+    }
+    .dash-review-btn:hover { opacity: 0.9; }
+</style>
+<script src="/kiwimu/static/dashboard.js"></script>
+        </main>
+    </div>
+    <script src="/kiwimu/static/search.js"></script>
+    <script src="/kiwimu/static/dynamic-qa.js"></script>
+    <script src="/kiwimu/static/edit-page.js"></script>
+    <script src="/kiwimu/static/peek-panel.js"></script>
+    <script src="/kiwimu/static/ask-wiki.js"></script>
+    <script src="/kiwimu/static/navigation.js"></script>
+<footer class="kiwimu-badge">
+  🥝 Built with <a href="https://github.com/Open330/kiwimu" target="_blank" rel="noopener">Kiwi Mu</a> — 나만의 학습 위키 빌더
+</footer>
+</body>
+</html>
