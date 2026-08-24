@@ -41,24 +41,53 @@ describe("parseCitations", () => {
     const body = "A [^src:chapter-1] and B [^src:chapter-2].";
     const result = parseCitations(body, page.id, store);
 
-    expect(result).toContain('href="#cite-1"');
-    expect(result).toContain('href="#cite-2"');
-    expect(store.getCitationsForPage(page.id)).toHaveLength(2);
+    expect(result).toContain('A <sup class="citation-ref"><a href="#cite-1"');
+    expect(result).toContain('B <sup class="citation-ref"><a href="#cite-2"');
+    expect(store.getCitationsForPage(page.id).map((citation) => citation.source_page_slug)).toEqual([
+      "chapter-1",
+      "chapter-2",
+    ]);
   });
 
-  test("removes invalid markers silently and records nothing", () => {
+  test("keeps an invalid marker visible and records nothing", () => {
     const page = store.addPage("c3", "C3", "x", undefined, undefined, "concept", 0);
     const body = "Claim [^src:does-not-exist] here.";
     const result = parseCitations(body, page.id, store);
 
-    expect(result).toBe("Claim  here.");
+    expect(result).toBe(body);
     expect(store.getCitationsForPage(page.id)).toHaveLength(0);
+  });
+
+  test("supports Unicode and underscore slugs", () => {
+    store.addPage("क्वांटम_기초", "Quantum 기초", "source", sourceId, "क्वांटम_기초", "source", 2);
+    const page = store.addPage("unicode-citation", "Unicode", "x");
+
+    const result = parseCitations("Claim [^src:क्वांटम_기초].", page.id, store);
+
+    expect(result).toContain('href="#cite-1"');
+    expect(store.getCitationsForPage(page.id)[0].source_page_slug).toBe("क्वांटम_기초");
+  });
+
+  test("does not turn citation examples in code into provenance", () => {
+    const page = store.addPage("citation-guide", "Citation guide", "x");
+    const body = [
+      "Inline `[^src:chapter-1]`.",
+      "",
+      "```md",
+      "[^src:chapter-2]",
+      "```",
+    ].join("\n");
+
+    expect(parseCitations(body, page.id, store)).toBe(body);
+    expect(store.getCitationsForPage(page.id)).toEqual([]);
   });
 
   test("returns body unchanged when there are no markers", () => {
     const page = store.addPage("c4", "C4", "x", undefined, undefined, "concept", 0);
+    store.addCitation(page.id, sourceId, store.getPage("chapter-1")!.id);
     const body = "No citations at all.";
     expect(parseCitations(body, page.id, store)).toBe(body);
+    expect(store.getCitationsForPage(page.id)).toEqual([]);
   });
 
   test("re-parsing deletes prior citations to avoid duplicates", () => {

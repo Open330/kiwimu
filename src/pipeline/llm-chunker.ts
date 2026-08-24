@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import { LLMClient } from "../llm-client";
 import type { Store } from "../store";
 import { slugify } from "./chunker";
 import type { Persona, WikiSchema } from "../config";
 import { compileTerms, standardizeTerms } from "./standardizer";
 import { parseCitations } from "./citations";
+import { replaceWikiLinkMarkers } from "./markdown-segments";
 import { stripJsonFences } from "../utils";
 
 // ── Phase 1: Extract original document structure ──
@@ -128,6 +130,128 @@ interface ConceptPage {
   suggested_links?: Array<{ text: string; url: string }>;
 }
 
+interface QuizPage {
+  question: string;
+  answer: string;
+  explanation?: string;
+  type: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseStructureResponse(raw: string): StructurePage[] {
+  const parsed = parseJSON<unknown>(raw);
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error("Phase 1 response must contain at least one section");
+  }
+
+  return parsed.map((value, index) => {
+    if (
+      !isRecord(value) ||
+      typeof value.title !== "string" || !value.title.trim() ||
+      typeof value.content !== "string" || value.content.length <= 30 ||
+      typeof value.level !== "number" || !Number.isFinite(value.level)
+    ) {
+      throw new Error(`Phase 1 section ${index + 1} is malformed`);
+    }
+    return { title: value.title, content: value.content, level: value.level };
+  });
+}
+
+function parseConceptResponse(raw: string): ConceptPage[] {
+  const parsed = parseJSON<unknown>(raw);
+  if (!Array.isArray(parsed)) throw new Error("Phase 2 response must be an array");
+
+  return parsed.map((value, index) => {
+    if (
+      !isRecord(value) ||
+      typeof value.title !== "string" || !value.title.trim() ||
+      typeof value.content !== "string" || value.content.length <= 50 ||
+      (value.category !== undefined && typeof value.category !== "string") ||
+      (value.suggested_links !== undefined && (
+        !Array.isArray(value.suggested_links) ||
+        value.suggested_links.some(link =>
+          !isRecord(link) || typeof link.text !== "string" || typeof link.url !== "string"
+        )
+      ))
+    ) {
+      throw new Error(`Phase 2 concept ${index + 1} is malformed`);
+    }
+    return value as unknown as ConceptPage;
+  });
+}
+
+function parseQuizResponse(raw: string): QuizPage[] {
+  const parsed = parseJSON<unknown>(raw);
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error("Quiz response must contain at least one quiz");
+  }
+
+  return parsed.map((value, index) => {
+    if (
+      !isRecord(value) ||
+      typeof value.question !== "string" || !value.question.trim() ||
+      typeof value.answer !== "string" || !value.answer.trim() ||
+      typeof value.type !== "string" || !value.type.trim() ||
+      (value.explanation !== undefined && typeof value.explanation !== "string")
+    ) {
+      throw new Error(`Quiz ${index + 1} is malformed`);
+    }
+    return value as unknown as QuizPage;
+  });
+}
+
+function appendSlugSuffix(base: string, suffix: string): string {
+  const available = Math.max(1, 80 - Array.from(suffix).length);
+  const prefix = Array.from(base).slice(0, available).join("").replace(/-+$/g, "");
+  return `${prefix}${suffix}`;
+}
+
+/** Keep the first generated slug readable while isolating foreign/user collisions. */
+function resolveGeneratedPageSlug(
+  base: string,
+  title: string,
+  sourceId: number,
+  pageType: "source" | "concept",
+  store: Store,
+): string {
+  const belongsToSource = (slug: string): boolean => {
+    const page = store.getPage(slug);
+    return page?.page_type === pageType && page.source_id === sourceId && page.origin === "batch";
+  };
+
+  const existing = store.getPage(base);
+  if (!existing || (belongsToSource(base) && existing.title === title)) return base;
+
+  // Different generated titles can normalize to the same slug (for example,
+  // C++ and C#). A title-derived suffix is stable across retries and resume,
+  // unlike selecting whichever numeric slot happens to be free at the time.
+  if (belongsToSource(base)) {
+    const identity = createHash("sha256").update(title.normalize("NFC")).digest("hex").slice(0, 8);
+    let counter = 1;
+    while (true) {
+      const suffix = counter === 1 ? `-${identity}` : `-${identity}-${counter}`;
+      const candidate = appendSlugSuffix(base, suffix);
+      const candidatePage = store.getPage(candidate);
+      if (!candidatePage || (belongsToSource(candidate) && candidatePage.title === title)) {
+        return candidate;
+      }
+      counter++;
+    }
+  }
+
+  let counter = 1;
+  while (true) {
+    const suffix = counter === 1 ? `-source-${sourceId}` : `-source-${sourceId}-${counter}`;
+    const candidate = appendSlugSuffix(base, suffix);
+    const candidatePage = store.getPage(candidate);
+    if (!candidatePage || (belongsToSource(candidate) && candidatePage.title === title)) return candidate;
+    counter++;
+  }
+}
+
 async function parallelMap<T, R>(
   items: T[],
   concurrency: number,
@@ -240,14 +364,15 @@ function resolveWikiLinks(
   slugMap: Map<string, { id: number; slug: string }>,
   store: Store
 ): string {
-  return content.replace(/\[\[([^\]]+)\]\]/g, (_match, term: string) => {
-    const slug = slugify(term);
+  return replaceWikiLinkMarkers(content, (marker) => {
+    const slug = slugify(marker.slug);
     const target = slugMap.get(slug);
     if (target && target.id !== pageId) {
-      store.addLink(pageId, target.id, term);
-      return `[${term}](/wiki/${target.slug})`;
+      const label = marker.display ?? marker.slug;
+      store.addLink(pageId, target.id, label);
+      return `[${label}](/wiki/${target.slug})`;
     }
-    return term;
+    return marker.raw;
   });
 }
 
@@ -261,7 +386,8 @@ export async function llmChunkDocument(
   llmClient: LLMClient,
   onProgress?: (status: string) => void,
   schema?: WikiSchema,
-  incremental: boolean = false
+  incremental: boolean = false,
+  checkpointInputHash?: string,
 ): Promise<{ sourceCount: number; conceptCount: number }> {
   const chat = (system: string, user: string, maxTokens?: number) =>
     llmClient.chatComplete(system, user, maxTokens);
@@ -285,7 +411,8 @@ export async function llmChunkDocument(
 
   if (store.hasPhaseCheckpoint(sourceId, 'phase1')) {
     // Resume: Phase 1 already done, rebuild summaries from DB
-    const existingPages = store.getSourcePages(sourceId);
+    const existingPages = store.getSourcePages(sourceId)
+      .filter(page => page.origin === "batch");
     sourceCount = existingPages.length;
     sourcePageSummaries = existingPages.map(p =>
       `- ${p.title} [slug: ${p.slug}]: ${p.content.slice(0, 150).replace(/\n/g, " ")}`
@@ -298,7 +425,8 @@ export async function llmChunkDocument(
 
     // Per-chunk resumability: skip chunks already committed in a prior run.
     const lastChunk = store.getLastCompletedBatch(sourceId, 'phase1_chunk'); // -1 if none
-    const existingPages = store.getSourcePages(sourceId);
+    const existingPages = store.getSourcePages(sourceId)
+      .filter(page => page.origin === "batch");
     let orderCounter = existingPages.length;
     sourcePageSummaries = existingPages.map(p =>
       `- ${p.title} [slug: ${p.slug}]: ${p.content.slice(0, 150).replace(/\n/g, " ")}`
@@ -331,43 +459,50 @@ export async function llmChunkDocument(
           console.log(`    \x1b[33m⚠ 빈 응답, 재시도...\x1b[0m`);
           raw = await chat(structureSystem, prompt, 16384);
           if (!raw || raw.trim().length < 10) {
-            console.log(`    \x1b[31m✗ 재시도도 빈 응답\x1b[0m`);
-            return { ci, sections: [] as StructurePage[] };
+            throw new Error("Phase 1 returned an empty response twice");
           }
         }
-        const sections = parseJSON<StructurePage[]>(raw).filter(s => s.title && s.content && s.content.length > 30);
+        const sections = parseStructureResponse(raw);
         console.log(`    → ${sections.length}개 섹션`);
-        return { ci, sections };
+        return { ci, sections, error: null };
       } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e);
         console.log(`    \x1b[31m✗ 실패: ${message}\x1b[0m`);
-        return { ci, sections: [] as StructurePage[] };
+        return { ci, sections: [] as StructurePage[], error: e };
       }
     });
 
     // Store results sequentially in chunk order, checkpointing per chunk so a
     // crash resumes from the last fully-committed chunk.
-    for (const { ci, sections } of chunkResults) {
-      for (const section of sections) {
-        const slug = slugify(section.title);
-        if (!slug) continue;
-
-        const existing = store.getPage(slug);
-        if (existing) {
-          store.updatePageContent(existing.id, existing.content + "\n\n" + section.content);
-        } else {
-          const page = store.addPage(slug, section.title, section.content, sourceId, slug, "source", orderCounter++);
-          store.addActivityLog('page_created', `Created page: ${section.title}`, 'page', page.id);
-          sourcePageSummaries.push(`- ${section.title} [slug: ${slug}]: ${section.content.slice(0, 150).replace(/\n/g, " ")}`);
-        }
+    for (const { ci, sections, error } of chunkResults) {
+      if (error !== null) {
+        throw new Error(`Phase 1 chunk ${ci + 1}/${chunks.length} failed`, { cause: error });
       }
-      store.setCheckpoint(sourceId, 'phase1_chunk', ci);
+      store.commitIngestStep(() => {
+        for (const section of sections) {
+          const baseSlug = slugify(section.title);
+          if (!baseSlug) continue;
+          const slug = resolveGeneratedPageSlug(baseSlug, section.title, sourceId, "source", store);
+
+          const existing = store.getPage(slug);
+          if (existing?.page_type === "source" && existing.source_id === sourceId) {
+            store.updatePageContent(existing.id, existing.content + "\n\n" + section.content);
+          } else {
+            const page = store.addPage(slug, section.title, section.content, sourceId, slug, "source", orderCounter++);
+            store.addActivityLog('page_created', `Created page: ${section.title}`, 'page', page.id);
+            sourcePageSummaries.push(`- ${section.title} [slug: ${slug}]: ${section.content.slice(0, 150).replace(/\n/g, " ")}`);
+          }
+        }
+        store.setCheckpoint(sourceId, 'phase1_chunk', ci, checkpointInputHash);
+      });
       completedCount++;
       onProgress?.(`Phase 1: ${completedCount}/${chunks.length} 청크 완료`);
     }
 
     sourceCount = orderCounter;
-    store.setCheckpoint(sourceId, 'phase1');
+    store.commitIngestStep(() => {
+      store.setCheckpoint(sourceId, 'phase1', 0, checkpointInputHash);
+    });
     const phase1Sec = ((performance.now() - phase1Start) / 1000).toFixed(1);
     console.log(`\x1b[32m✅ Phase 1 완료 (${phase1Sec}초) — 📖 ${sourceCount}개 원본 페이지 생성\x1b[0m`);
   }
@@ -386,7 +521,8 @@ export async function llmChunkDocument(
     const lastCompletedBatch = store.getLastCompletedBatch(sourceId, 'phase2');
 
     if (lastCompletedBatch >= totalBatches - 1 && store.hasPhaseCheckpoint(sourceId, 'phase2')) {
-      cachedConceptPages = store.listConceptPages();
+      cachedConceptPages = store.listConceptPages()
+        .filter(page => page.source_id === sourceId && page.origin === "batch");
       conceptCount = cachedConceptPages.length;
       console.log(`\x1b[32m⏭ Phase 2 건너뜀 (이미 완료) — 📝 ${conceptCount}개 개념 페이지\x1b[0m`);
       onProgress?.(`Phase 2 건너뜀 (${conceptCount}개 개념 이미 존재)`);
@@ -425,45 +561,46 @@ export async function llmChunkDocument(
 
         try {
           const raw = await chat(conceptSystem, prompt, 16384);
-          const concepts = parseJSON<ConceptPage[]>(raw).filter(c => c.title && c.content && c.content.length > 50);
+          const concepts = parseConceptResponse(raw);
 
-          for (const concept of concepts) {
-            const slug = slugify(concept.title);
-            if (!slug) continue;
+          store.commitIngestStep(() => {
+            for (const concept of concepts) {
+              const baseSlug = slugify(concept.title);
+              if (!baseSlug) continue;
+              const slug = resolveGeneratedPageSlug(baseSlug, concept.title, sourceId, "concept", store);
 
-            const existing = store.getPage(slug);
-            if (existing) continue;
+              const existing = store.getPage(slug);
+              if (existing?.page_type === "concept" && existing.source_id === sourceId) continue;
 
-            let content = concept.content;
-            // Apply term standardization if schema.terms is defined
-            if (compiledTerms) {
-              content = standardizeTerms(content, compiledTerms);
-            }
-            if (concept.suggested_links?.length) {
-              content += "\n\n## External References\n\n";
-              for (const link of concept.suggested_links) {
-                content += `- [${link.text}](${link.url})\n`;
+              let content = concept.content;
+              // Apply term standardization if schema.terms is defined
+              if (compiledTerms) {
+                content = standardizeTerms(content, compiledTerms);
               }
-            }
+              if (concept.suggested_links?.length) {
+                content += "\n\n## External References\n\n";
+                for (const link of concept.suggested_links) {
+                  content += `- [${link.text}](${link.url})\n`;
+                }
+              }
 
-            const conceptPage = store.addPage(slug, concept.title, content, sourceId, slug, "concept", 0);
-            store.addActivityLog('page_created', `Created page: ${concept.title}`, 'page', conceptPage.id);
-            // Store category if provided by LLM and schema supports it
-            if (concept.category && schema?.categories?.length) {
-              store.updatePageCategory(conceptPage.id, concept.category);
+              const conceptPage = store.addPage(slug, concept.title, content, sourceId, slug, "concept", 0);
+              store.addActivityLog('page_created', `Created page: ${concept.title}`, 'page', conceptPage.id);
+              // Store category if provided by LLM and schema supports it
+              if (concept.category && schema?.categories?.length) {
+                store.updatePageCategory(conceptPage.id, concept.category);
+              }
+              existingConceptTitles.add(concept.title);
+              conceptCount++;
             }
-            existingConceptTitles.add(concept.title);
-            conceptCount++;
-          }
-          store.setCheckpoint(sourceId, 'phase2', batchIdx);
+            store.setCheckpoint(sourceId, 'phase2', batchIdx, checkpointInputHash);
+          });
           console.log(`    → ${concepts.length}개 개념`);
           onProgress?.(`Phase 2: ${batchIdx + 1}/${totalBatches} 배치 완료`);
         } catch (e: unknown) {
           const message = e instanceof Error ? e.message : String(e);
-          console.log(`    \x1b[31m✗ 배치 ${batchIdx + 1} 실패 (건너뜀): ${message}\x1b[0m`);
-          // Non-retryable errors (parse failures, etc.) — skip batch, continue pipeline
-          // Rate-limit errors are already retried in LLMClient; if we reach here, retries exhausted
-          store.setCheckpoint(sourceId, 'phase2', batchIdx);
+          console.log(`    \x1b[31m✗ 배치 ${batchIdx + 1} 실패: ${message}\x1b[0m`);
+          throw new Error(`Phase 2 batch ${batchIdx + 1}/${totalBatches} failed`, { cause: e });
         }
       }
 
@@ -475,18 +612,22 @@ export async function llmChunkDocument(
   }
 
   // ── Phase 2 post-processing: Parse citation markers ──
-  {
-    const conceptPagesForCitations = store.listConceptPages();
+  if (!store.hasPhaseCheckpoint(sourceId, "phase2_citations")) {
     let citationCount = 0;
-    for (const page of conceptPagesForCitations) {
-      if (page.content.includes("[^src:")) {
-        const parsed = parseCitations(page.content, page.id, store);
-        if (parsed !== page.content) {
-          store.updatePageContent(page.id, parsed);
-          citationCount++;
+    store.commitIngestStep(() => {
+      const conceptPagesForCitations = store.listConceptPages()
+        .filter(page => page.source_id === sourceId && page.origin === "batch");
+      for (const page of conceptPagesForCitations) {
+        if (page.content.includes("[^src:")) {
+          const parsed = parseCitations(page.content, page.id, store);
+          if (parsed !== page.content) {
+            store.updatePageContent(page.id, parsed);
+            citationCount++;
+          }
         }
       }
-    }
+      store.setCheckpoint(sourceId, "phase2_citations", 0, checkpointInputHash);
+    });
     if (citationCount > 0) {
       console.log(`\x1b[32m  📚 ${citationCount}개 페이지에서 인용 정보 생성 완료\x1b[0m`);
     }
@@ -498,24 +639,26 @@ export async function llmChunkDocument(
     console.log(`\x1b[32m⏭ Phase 2.5 건너뜀 (퀴즈 이미 생성됨)\x1b[0m`);
     onProgress?.(`Phase 2.5 건너뜀 (퀴즈 이미 존재)`);
   } else {
-    try {
-      const conceptPagesForQuiz = cachedConceptPages ?? store.listConceptPages();
-      if (conceptPagesForQuiz.length > 0) {
-        console.log(`\x1b[34m⏳ Phase 2.5: 퀴즈 생성 중... (${conceptPagesForQuiz.length}개 개념 페이지)\x1b[0m`);
-        onProgress?.(`Phase 2.5: 퀴즈 생성 중...`);
+    const conceptPagesForQuiz = (cachedConceptPages ?? store.listConceptPages())
+      .filter(page => page.source_id === sourceId && page.origin === "batch");
+    if (conceptPagesForQuiz.length > 0) {
+      console.log(`\x1b[34m⏳ Phase 2.5: 퀴즈 생성 중... (${conceptPagesForQuiz.length}개 개념 페이지)\x1b[0m`);
+      onProgress?.(`Phase 2.5: 퀴즈 생성 중...`);
 
-        let quizSystemExtra = "";
-        if (schema?.terms && Object.keys(schema.terms).length > 0) {
-          const termList = Object.entries(schema.terms).map(([k, v]) => `${k} -> ${v}`).join(", ");
-          quizSystemExtra = `\nUse these standard terms in questions and answers (replace abbreviations with full forms): ${termList}`;
-        }
-        const quizSystem = `You are a quiz generator for a study wiki. Generate quiz questions that test UNDERSTANDING, not just memorization.
+      let quizSystemExtra = "";
+      if (schema?.terms && Object.keys(schema.terms).length > 0) {
+        const termList = Object.entries(schema.terms).map(([k, v]) => `${k} -> ${v}`).join(", ");
+        quizSystemExtra = `\nUse these standard terms in questions and answers (replace abbreviations with full forms): ${termList}`;
+      }
+      const quizSystem = `You are a quiz generator for a study wiki. Generate quiz questions that test UNDERSTANDING, not just memorization.
 Focus on higher-order thinking: "왜?", "어떻게?", "비교하라", "설명하라" style questions.${quizSystemExtra}
 Return valid JSON only. No markdown fences.`;
 
-        await parallelMap(conceptPagesForQuiz, 3, async (page, i) => {
-          try {
-            const quizPrompt = `Based on this wiki content, generate 2-3 quiz questions that test UNDERSTANDING, not just memorization.
+      try {
+        // Generate and validate every response before persisting any quiz. A
+        // malformed or failed response must not produce a completed phase.
+        const generated = await parallelMap(conceptPagesForQuiz, 3, async (page) => {
+          const quizPrompt = `Based on this wiki content, generate 2-3 quiz questions that test UNDERSTANDING, not just memorization.
 Include questions that ask "왜?", "어떻게?", "비교하라" etc.
 Types: "fill_blank" (빈칸 채우기), "ox" (OX 퀴즈 - true/false), "short_answer" (단답형)
 
@@ -534,38 +677,39 @@ Rules:
 - Questions should test understanding, application, or analysis — not just recall
 - Write questions in Korean when the content is in Korean`;
 
-            const raw = await chat(quizSystem, quizPrompt, 2048);
-            const quizzes = parseJSON<Array<{ question: string; answer: string; explanation?: string; type: string }>>(raw);
-
-            for (const q of quizzes) {
-              if (q.question && q.answer && q.type) {
-                const question = compiledTerms ? standardizeTerms(q.question, compiledTerms) : q.question;
-                const answer = compiledTerms ? standardizeTerms(q.answer, compiledTerms) : q.answer;
-                const explanation = compiledTerms && q.explanation ? standardizeTerms(q.explanation, compiledTerms) : (q.explanation || "");
-                store.addQuiz(page.id, question, answer, q.type, explanation);
-                quizCount++;
-              }
-            }
-          } catch (e: unknown) {
-            // Quiz generation is non-critical; silently skip failures
-            const message = e instanceof Error ? e.message : String(e);
-            console.log(`    \x1b[33m⚠ 퀴즈 생성 실패 (${page.title}): ${message}\x1b[0m`);
-          }
+          const raw = await chat(quizSystem, quizPrompt, 2048);
+          return { page, quizzes: parseQuizResponse(raw) };
         });
 
-        store.setCheckpoint(sourceId, 'phase2_5');
+        store.commitIngestStep(() => {
+          for (const { page, quizzes } of generated) {
+            for (const q of quizzes) {
+              const question = compiledTerms ? standardizeTerms(q.question, compiledTerms) : q.question;
+              const answer = compiledTerms ? standardizeTerms(q.answer, compiledTerms) : q.answer;
+              const explanation = compiledTerms && q.explanation ? standardizeTerms(q.explanation, compiledTerms) : (q.explanation || "");
+              store.addQuiz(page.id, question, answer, q.type, explanation);
+              quizCount++;
+            }
+          }
+          store.setCheckpoint(sourceId, 'phase2_5', 0, checkpointInputHash);
+        });
         console.log(`\x1b[32m  🧩 ${quizCount}개 퀴즈 생성 완료\x1b[0m`);
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        console.log(`\x1b[31m  ✗ 퀴즈 생성 단계 실패: ${message}\x1b[0m`);
+        throw new Error("Phase 2.5 quiz generation failed", { cause: e });
       }
-    } catch (e: unknown) {
-      // Phase 2.5 is optional — don't block the pipeline
-      const message = e instanceof Error ? e.message : String(e);
-      console.log(`\x1b[33m  ⚠ 퀴즈 생성 단계 건너뜀: ${message}\x1b[0m`);
     }
   }
 
   // ── Phase 3: Resolve wiki links + inject concept links into source pages ──
+  if (!store.hasPhaseCheckpoint(sourceId, "phase3")) {
+  store.commitIngestStep(() => {
   console.log(`\x1b[34m🔗 위키 링크 해석 중...\x1b[0m`);
   const allPages = store.listPages();
+  const generatedPages = allPages.filter(
+    page => page.source_id === sourceId && page.origin === "batch",
+  );
   const slugMap = new Map(allPages.map(p => [p.slug, { id: p.id, slug: p.slug }]));
   for (const p of allPages) {
     const titleSlug = slugify(p.title);
@@ -574,7 +718,7 @@ Rules:
 
   // Resolve [[wiki links]] in concept pages
   let linkedPages = 0;
-  for (const page of allPages) {
+  for (const page of generatedPages.filter(page => page.page_type === "concept")) {
     if (!page.content.includes("[[")) continue;
     const resolved = resolveWikiLinks(page.id, page.content, slugMap, store);
     if (resolved !== page.content) {
@@ -585,7 +729,7 @@ Rules:
 
   // Inject concept links into source pages
   const conceptPages = allPages.filter(p => p.page_type === "concept");
-  const srcPages = allPages.filter(p => p.page_type === "source");
+  const srcPages = generatedPages.filter(p => p.page_type === "source");
 
   // Build search terms: full title + key words from title (2+ words long)
   const searchTerms: Array<{ term: string; concept: typeof conceptPages[0]; regex: RegExp | null }> = [];
@@ -634,6 +778,9 @@ Rules:
   }
 
   console.log(`\x1b[32m  ${linkedPages}개 페이지에서 위키 링크 해석 완료\x1b[0m`);
+  store.setCheckpoint(sourceId, "phase3", 0, checkpointInputHash);
+  });
+  }
 
   return { sourceCount, conceptCount };
 }

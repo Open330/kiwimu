@@ -7,7 +7,9 @@
  * (`attachFigures`) is unit-testable without a real PDF or a live vision call.
  */
 import type { LLMClient } from "../llm-client";
-import type { Store } from "../store";
+import type { Figure, Store } from "../store";
+import { abortReason, awaitWithAbort, throwIfAborted } from "../abort";
+import { GENERATION_FIGURE_PREFIX_PATTERN } from "../services/figure-maintenance";
 
 export interface ExtractedFigure {
   /** Absolute path to the extracted image on disk (read by the captioner). */
@@ -27,6 +29,19 @@ const CAPTION_PROMPT =
   "You are captioning a figure extracted from a study document. " +
   "Write a single concise caption (max 20 words) describing what this figure/diagram shows. " +
   "Reply with the caption text only — no quotes, no 'Figure:' prefix.";
+
+export const MAX_EXTRACTED_PDF_FIGURES = 128;
+export const MAX_EXTRACTED_PDF_FIGURE_BYTES = 64 * 1024 * 1024;
+const FIGURE_BUDGET_POLL_MS = 100;
+
+export class PdfFigureExtractionLimitError extends Error {
+  constructor(count: number, bytes: number) {
+    super(
+      `PDF figure extraction exceeded the limit (${count}/${MAX_EXTRACTED_PDF_FIGURES} files, ${bytes}/${MAX_EXTRACTED_PDF_FIGURE_BYTES} bytes)`,
+    );
+    this.name = "PdfFigureExtractionLimitError";
+  }
+}
 
 /**
  * Build the production captioner from an LLM client. Returns null captions when
@@ -56,44 +71,186 @@ export function makeVisionCaptioner(client: LLMClient): Captioner {
 export async function extractFiguresFromPdf(
   pdfPath: string,
   outDir: string,
-  sourceId: number
+  sourceId: number,
+  filePrefix?: string,
+  signal?: AbortSignal,
 ): Promise<ExtractedFigure[]> {
-  const { mkdirSync, existsSync, readdirSync } = await import("fs");
-  mkdirSync(outDir, { recursive: true });
+  const { chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync } = await import("fs");
+  const { dirname, join, resolve } = await import("path");
+  const outputRoot = resolve(outDir);
+  const prefix = filePrefix ?? `src${sourceId}`;
+  if (!GENERATION_FIGURE_PREFIX_PATTERN.test(prefix)) {
+    throw new TypeError("Unsafe figure filename prefix");
+  }
+  let stagingDir: string | null = null;
+  let processHandle: ReturnType<typeof Bun.spawn> | null = null;
 
-  const prefix = `src${sourceId}`;
   try {
-    const proc = Bun.spawn(["pdfimages", "-png", "-p", pdfPath, `${outDir}/${prefix}`], {
+    throwIfAborted(signal);
+    mkdirSync(outputRoot, { recursive: true, mode: 0o700 });
+    chmodSync(outputRoot, 0o700);
+
+    // Keep extraction output outside the live figures root. A sibling staging
+    // directory guarantees rename-based publication stays on one filesystem.
+    stagingDir = mkdtempSync(join(dirname(outputRoot), `.figures-src${sourceId}-`));
+    chmodSync(stagingDir, 0o700);
+
+    const proc = Bun.spawn(["pdfimages", "-png", "-p", pdfPath, join(stagingDir, prefix)], {
       stdout: "pipe",
       stderr: "pipe",
     });
-    const code = await proc.exited;
+    processHandle = proc;
+    const kill = () => {
+      try {
+        if (proc.exitCode === null) proc.kill("SIGKILL");
+      } catch {}
+    };
+    signal?.addEventListener("abort", kill, { once: true });
+    let extractionRunning = true;
+    let limitError: PdfFigureExtractionLimitError | null = null;
+    const assertWithinBudget = (): void => {
+      let count = 0;
+      let bytes = 0;
+      for (const entry of readdirSync(stagingDir!)) {
+        const stat = lstatSync(join(stagingDir!, entry));
+        if (stat.isSymbolicLink() || !stat.isFile()) {
+          throw new Error(`Unsafe PDF figure extraction output: ${entry}`);
+        }
+        count++;
+        bytes += stat.size;
+        if (count > MAX_EXTRACTED_PDF_FIGURES || bytes > MAX_EXTRACTED_PDF_FIGURE_BYTES) {
+          throw new PdfFigureExtractionLimitError(count, bytes);
+        }
+      }
+    };
+    const budgetMonitor = (async () => {
+      while (extractionRunning) {
+        await Bun.sleep(FIGURE_BUDGET_POLL_MS);
+        if (!extractionRunning) break;
+        try {
+          assertWithinBudget();
+        } catch (error) {
+          if (!(error instanceof PdfFigureExtractionLimitError)) throw error;
+          limitError = error;
+          try { proc.kill("SIGKILL"); } catch {}
+          break;
+        }
+      }
+    })();
+    let code: number;
+    try {
+      code = await awaitWithAbort(proc.exited, signal);
+    } finally {
+      extractionRunning = false;
+      signal?.removeEventListener("abort", kill);
+      await budgetMonitor;
+    }
+    if (limitError) throw limitError;
     if (code !== 0) return [];
-  } catch {
+    throwIfAborted(signal);
+    assertWithinBudget();
+
+    const files = readdirSync(stagingDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.startsWith(`${prefix}-`) && entry.name.endsWith(".png"))
+      .map((entry) => entry.name)
+      .sort();
+
+    for (const file of files) {
+      const stagedPath = join(stagingDir, file);
+      const publishedPath = join(outputRoot, file);
+      chmodSync(stagedPath, 0o600);
+      renameSync(stagedPath, publishedPath);
+      chmodSync(publishedPath, 0o600);
+    }
+
+    return files.map((file, index) => {
+      // pdfimages -p names files "<prefix>-<page>-<num>.png"
+      const match = file.match(/-(\d+)-\d+\.png$/);
+      return {
+        filePath: join(outputRoot, file),
+        publicPath: `/static/figures/${file}`,
+        pageNumber: match ? parseInt(match[1], 10) : null,
+        index,
+      };
+    });
+  } catch (error) {
+    if (signal?.aborted) {
+      if (processHandle) await Promise.allSettled([processHandle.exited]);
+      throw abortReason(signal);
+    }
+    if (error instanceof PdfFigureExtractionLimitError) throw error;
     // pdfimages not installed → graceful skip
     return [];
+  } finally {
+    if (stagingDir) rmSync(stagingDir, { recursive: true, force: true });
   }
-
-  if (!existsSync(outDir)) return [];
-  const files = readdirSync(outDir)
-    .filter((f) => f.startsWith(prefix) && f.endsWith(".png"))
-    .sort();
-
-  return files.map((f, index) => {
-    // pdfimages -p names files "<prefix>-<page>-<num>.png"
-    const m = f.match(/-(\d+)-\d+\.png$/);
-    return {
-      filePath: `${outDir}/${f}`,
-      publicPath: `/static/figures/${f}`,
-      pageNumber: m ? parseInt(m[1], 10) : null,
-      index,
-    };
-  });
 }
 
 export interface AttachFiguresResult {
   figureCount: number;
   captionedCount: number;
+}
+
+const FIGURES_SECTION_START = "<!-- figures -->";
+const FIGURES_SECTION_END = "<!-- /figures -->";
+
+export interface FigureStateSnapshot {
+  figures: Array<Pick<Figure, "image_path" | "caption" | "page_number">>;
+  section: string | null;
+}
+
+function extractFiguresSection(content: string): string | null {
+  const start = content.indexOf(FIGURES_SECTION_START);
+  if (start < 0) return null;
+  const endStart = content.indexOf(FIGURES_SECTION_END, start + FIGURES_SECTION_START.length);
+  return endStart < 0
+    ? content.slice(start).trim()
+    : content.slice(start, endStart + FIGURES_SECTION_END.length).trim();
+}
+
+/** Capture the last successful figure rows/section before fresh re-ingest deletes source pages. */
+export function captureFigureState(store: Store, sourceId: number): FigureStateSnapshot {
+  const figures = store.listFiguresBySource(sourceId).map((figure) => ({
+    image_path: figure.image_path,
+    caption: figure.caption,
+    page_number: figure.page_number,
+  }));
+  const section = store.getSourcePages(sourceId)
+    .map((page) => extractFiguresSection(page.content))
+    .find((value): value is string => value !== null) ?? null;
+  return { figures, section };
+}
+
+/** Restore a captured non-empty state when the extractor is temporarily unavailable. */
+export function restoreFigureState(store: Store, sourceId: number, snapshot?: FigureStateSnapshot): void {
+  if (!snapshot || snapshot.figures.length === 0 || store.listFiguresBySource(sourceId).length > 0) return;
+
+  const targetPage = store.getSourcePages(sourceId)[0] ?? null;
+  for (const figure of snapshot.figures) {
+    store.addFigure(
+      sourceId,
+      figure.image_path,
+      targetPage?.id ?? null,
+      figure.caption,
+      figure.page_number,
+    );
+  }
+  if (targetPage && snapshot.section && !targetPage.content.includes(FIGURES_SECTION_START)) {
+    store.updatePageContent(targetPage.id, `${targetPage.content.trimEnd()}\n\n${snapshot.section}\n`);
+  }
+}
+
+function replaceFiguresSection(content: string, blocks: string[]): string {
+  const section = `${FIGURES_SECTION_START}\n## Figures\n\n${blocks.join("\n\n")}\n${FIGURES_SECTION_END}`;
+  const start = content.indexOf(FIGURES_SECTION_START);
+  if (start < 0) return `${content.trimEnd()}\n\n${section}\n`;
+
+  const endStart = content.indexOf(FIGURES_SECTION_END, start + FIGURES_SECTION_START.length);
+  const suffix = endStart < 0
+    ? ""
+    : content.slice(endStart + FIGURES_SECTION_END.length).trimStart();
+  const prefix = content.slice(0, start).trimEnd();
+  return [prefix, section, suffix].filter(Boolean).join("\n\n") + "\n";
 }
 
 /**
@@ -112,6 +269,7 @@ export async function attachFigures(opts: {
   captioner: Captioner;
   targetPageId?: number | null;
   onProgress?: (status: string) => void;
+  signal?: AbortSignal;
 }): Promise<AttachFiguresResult> {
   const { store, sourceId, figures, captioner, onProgress } = opts;
   if (figures.length === 0) return { figureCount: 0, captionedCount: 0 };
@@ -129,12 +287,15 @@ export async function attachFigures(opts: {
   const blocks: string[] = [];
 
   for (const fig of figures) {
+    throwIfAborted(opts.signal);
     let caption: string | null = null;
     try {
       caption = await captioner(fig);
     } catch {
+      throwIfAborted(opts.signal);
       caption = null;
     }
+    throwIfAborted(opts.signal);
     if (caption) captionedCount++;
     onProgress?.(`그림 ${fig.index + 1}/${figures.length} 캡션${caption ? " 생성" : " 건너뜀"}`);
 
@@ -147,9 +308,8 @@ export async function attachFigures(opts: {
 
   if (targetPageId != null && blocks.length > 0) {
     const page = store.getPageById(targetPageId);
-    if (page && !page.content.includes("<!-- figures -->")) {
-      const section = `\n\n<!-- figures -->\n## Figures\n\n${blocks.join("\n\n")}\n`;
-      store.updatePageContent(targetPageId, page.content + section);
+    if (page) {
+      store.updatePageContent(targetPageId, replaceFiguresSection(page.content, blocks));
     }
   }
 
@@ -168,8 +328,18 @@ export async function runFigureStage(opts: {
   filePath: string;
   uploadsFiguresDir: string;
   onProgress?: (status: string) => void;
-  extractor?: (pdfPath: string, outDir: string, sourceId: number) => Promise<ExtractedFigure[]>;
+  extractor?: (
+    pdfPath: string,
+    outDir: string,
+    sourceId: number,
+    filePrefix?: string,
+    signal?: AbortSignal,
+  ) => Promise<ExtractedFigure[]>;
   captioner?: Captioner;
+  preservedState?: FigureStateSnapshot;
+  /** Unique generation prefix; keeps unpublished files from replacing live figures. */
+  filePrefix?: string;
+  signal?: AbortSignal;
 }): Promise<AttachFiguresResult> {
   const { store, client, sourceId, ext, filePath, uploadsFiguresDir, onProgress } = opts;
   if (ext !== "pdf") return { figureCount: 0, captionedCount: 0 };
@@ -178,8 +348,10 @@ export async function runFigureStage(opts: {
   const captioner = opts.captioner ?? makeVisionCaptioner(client);
 
   onProgress?.("⏳ 그림 추출 중...");
-  const figures = await extractor(filePath, uploadsFiguresDir, sourceId);
+  throwIfAborted(opts.signal);
+  const figures = await extractor(filePath, uploadsFiguresDir, sourceId, opts.filePrefix, opts.signal);
   if (figures.length === 0) {
+    restoreFigureState(store, sourceId, opts.preservedState);
     onProgress?.("그림 없음 (또는 추출 도구 미설치) — 건너뜀");
     return { figureCount: 0, captionedCount: 0 };
   }
@@ -188,5 +360,5 @@ export async function runFigureStage(opts: {
     onProgress?.(`⚠ ${figures.length}개 그림 추출됨, vision 미지원 — 캡션 없이 임베드`);
   }
 
-  return attachFigures({ store, sourceId, figures, captioner, onProgress });
+  return attachFigures({ store, sourceId, figures, captioner, onProgress, signal: opts.signal });
 }

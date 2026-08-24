@@ -166,7 +166,7 @@ export async function generateContentIndex(
   config?: IndexConfig
 ): Promise<ContentIndex> {
   const totalPages = store.countPages();
-  const totalLinks = store.getAllLinks().length;
+  const totalLinks = store.countLinks();
 
   let categories: IndexCategory[];
 

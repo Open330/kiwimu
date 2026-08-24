@@ -1,5 +1,6 @@
-import type { Store, Citation } from "../store";
+import type { Store, Citation, CitationInput } from "../store";
 import { escapeHtml } from "../utils";
+import { splitProtectedMarkdown } from "./markdown-segments";
 
 /**
  * Parse [^src:SLUG] citation markers in page body.
@@ -9,40 +10,46 @@ export function parseCitations(body: string, pageId: number, store: Store): stri
   const page = store.getPageById(pageId);
   if (!page) return body;
 
-  // Find all [^src:SLUG] markers
-  const markerRegex = /\[\^src:([a-z0-9가-힣][-a-z0-9가-힣]*)\]/gi;
+  // Keep this grammar aligned with generated slugs: Unicode letters/numbers,
+  // underscore, and internal hyphens. Citation examples inside code or links
+  // are documentation, not provenance records.
+  const markerRegex = /\[\^src:([-_\p{L}\p{N}\p{M}]+)\]/giu;
   const markers: Array<{ fullMatch: string; slug: string; index: number }> = [];
-  let match: RegExpExecArray | null;
-
-  while ((match = markerRegex.exec(body)) !== null) {
-    markers.push({ fullMatch: match[0], slug: match[1], index: match.index });
+  for (const segment of splitProtectedMarkdown(body)) {
+    if (segment.protected) continue;
+    markerRegex.lastIndex = 0;
+    for (const match of segment.text.matchAll(markerRegex)) {
+      markers.push({
+        fullMatch: match[0],
+        slug: match[1],
+        index: segment.start + match.index,
+      });
+    }
   }
 
-  if (markers.length === 0) return body;
+  if (markers.length === 0) {
+    store.replaceCitations(pageId, []);
+    return body;
+  }
 
-  // Delete existing citations for this page to avoid duplicates on re-parse
-  store.deleteCitationsForPage(pageId);
-
-  // Build footnote references
-  let result = body;
-  let footnoteNum = 0;
+  // Resolve and render first, then publish the complete persistence set in one
+  // atomic operation. No partially rebuilt citation list is externally visible.
+  const replacements: Array<{ marker: (typeof markers)[number]; html: string }> = [];
+  const citations: CitationInput[] = [];
   const citationMap = new Map<string, number>(); // slug -> footnote number
 
-  // Process in reverse order to preserve indices during replacement
-  for (let i = markers.length - 1; i >= 0; i--) {
-    const marker = markers[i];
+  for (const marker of markers) {
     const sourcePage = store.getPage(marker.slug);
 
     if (!sourcePage || !sourcePage.source_id) {
-      // Remove invalid markers silently
-      result = result.slice(0, marker.index) + result.slice(marker.index + marker.fullMatch.length);
+      // Preserve the visible marker. Silently removing a hallucinated or stale
+      // source slug would make an unsupported claim look properly authored.
       continue;
     }
 
     // Assign footnote number (reuse if same slug cited multiple times)
     if (!citationMap.has(marker.slug)) {
-      footnoteNum = citationMap.size + 1;
-      citationMap.set(marker.slug, footnoteNum);
+      citationMap.set(marker.slug, citationMap.size + 1);
     }
     const num = citationMap.get(marker.slug)!;
 
@@ -51,12 +58,19 @@ export function parseCitations(body: string, pageId: number, store: Store): stri
     const contextEnd = Math.min(body.length, marker.index + marker.fullMatch.length + 80);
     const context = body.slice(contextStart, contextEnd).replace(/\[\^src:[^\]]+\]/g, '').trim();
 
-    // Create citation record
-    store.addCitation(pageId, sourcePage.source_id, sourcePage.id, null, context);
+    citations.push({ sourceId: sourcePage.source_id, sourcePageId: sourcePage.id, context });
 
-    // Replace marker with footnote superscript
     const footnoteRef = `<sup class="citation-ref"><a href="#cite-${num}" title="${escapeCitationTitle(sourcePage.title)}">[${num}]</a></sup>`;
-    result = result.slice(0, marker.index) + footnoteRef + result.slice(marker.index + marker.fullMatch.length);
+    replacements.push({ marker, html: footnoteRef });
+  }
+
+  store.replaceCitations(pageId, citations);
+
+  // Apply replacements in reverse so original marker indices remain valid.
+  let result = body;
+  for (let i = replacements.length - 1; i >= 0; i--) {
+    const { marker, html } = replacements[i];
+    result = result.slice(0, marker.index) + html + result.slice(marker.index + marker.fullMatch.length);
   }
 
   return result;

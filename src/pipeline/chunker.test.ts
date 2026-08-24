@@ -27,6 +27,12 @@ describe("slugify", () => {
   test("한글 자모", () => {
     expect(slugify("ㅋㅋㅋ 테스트")).toBe("ㅋㅋㅋ-테스트");
   });
+  test("Unicode 문자와 결합 문자를 보존", () => {
+    expect(slugify("Crème brûlée 東京 Δοκιμή")).toBe("crème-brûlée-東京-δοκιμή");
+  });
+  test("Unicode 이모지는 제거", () => {
+    expect(slugify("학습 🥝 wiki")).toBe("학습-wiki");
+  });
 });
 
 describe("cleanTitle", () => {

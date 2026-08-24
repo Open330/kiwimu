@@ -1,11 +1,13 @@
 export function slugify(text: string): string {
-  return text
+  const normalized = text
+    .normalize("NFC")
     .toLowerCase()
     .trim()
-    .replace(/[^\w\s가-힣ㄱ-ㅎㅏ-ㅣ-]/g, "")
+    .replace(/[^\p{L}\p{N}\p{M}_\s-]/gu, "")
     .replace(/[-\s]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 80);
+    .replace(/^-|-$/g, "");
+
+  return Array.from(normalized).slice(0, 80).join("").replace(/-+$/g, "");
 }
 
 export function cleanTitle(title: string): string {

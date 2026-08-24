@@ -25,7 +25,12 @@ export interface IngestEstimate {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
-  estimatedCostUsd: number;
+  /** Null means this custom provider/model has no verified standard price. */
+  estimatedCostUsd: number | null;
+}
+
+export function formatEstimatedCost(cost: number | null): string {
+  return cost === null ? "가격 정보 없음" : `~$${cost.toFixed(4)}`;
 }
 
 /**
@@ -37,7 +42,7 @@ export interface IngestEstimate {
  *  - Phase 2.5 (quizzes): small calls per concept page
  * We approximate this as a multiple of the raw document token count.
  */
-export function estimateIngest(text: string, provider: string): IngestEstimate {
+export function estimateIngest(text: string, provider: string, model: string): IngestEstimate {
   const sizeChars = text?.length ?? 0;
   const chunks = estimateChunkCount(text);
   const baseTokens = estimateTokens(text);
@@ -55,7 +60,7 @@ export function estimateIngest(text: string, provider: string): IngestEstimate {
   const promptTokens = phase1Prompt + phase2Prompt;
   const completionTokens = phase1Completion + phase2Completion;
   const totalTokens = promptTokens + completionTokens;
-  const estimatedCostUsd = estimateCostUsd(provider, promptTokens, completionTokens);
+  const estimatedCostUsd = estimateCostUsd(provider, model, promptTokens, completionTokens);
 
   return { sizeChars, chunks, promptTokens, completionTokens, totalTokens, estimatedCostUsd };
 }
