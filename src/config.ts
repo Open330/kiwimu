@@ -17,7 +17,7 @@ export const CONFIG_FILE = "kiwi.toml";
 export const DB_FILE = "kiwi.db";
 export const SITE_DIR = "_site";
 export const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'pptx', 'doc', 'ppt', 'key', 'rtf', 'md'];
-export const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
+export const DEFAULT_GEMINI_MODEL = "gemini-3.7-flash";
 // Keep the retired identifier assembled so it cannot accidentally reappear in
 // user-facing defaults or documentation while exact legacy configs still load.
 const RETIRED_GEMINI_DEFAULT = ["gemini-3.1-flash-lite", "preview"].join("-");
