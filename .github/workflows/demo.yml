@@ -51,6 +51,9 @@ jobs:
           cd .demo-build
           git config --global user.name  "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # gh-pages는 임시 클론에서 push하므로 checkout 토큰을 물려받지 못한다.
+          # 모든 https github 원격에 Actions 토큰을 주입해 push 인증을 해결.
+          git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
           bun run "$GITHUB_WORKSPACE/src/index.ts" deploy --base-path /kiwimu
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
