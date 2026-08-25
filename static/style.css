@@ -225,8 +225,10 @@ p a {
 }
 
 .search-dropdown .search-highlight {
+    background: transparent;
     color: var(--namu-green);
     font-weight: 600;
+    padding: 0;
 }
 
 .topbar-links {
@@ -1853,6 +1855,7 @@ body.modal-open { overflow: hidden; }
     .search-dropdown { background: var(--bg); border-color: var(--border); }
     .search-dropdown a { color: var(--text); border-bottom-color: var(--border); }
     .search-dropdown a:hover, .search-dropdown a.selected { background: var(--bg-hover); }
+    .search-dropdown .search-highlight { color: var(--namu-green); }
 
     /* Admin & forms */
     input, textarea, select { background: var(--bg-alt); color: var(--text); border-color: var(--border); }
