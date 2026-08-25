@@ -831,10 +831,11 @@ program
   .option("--json", "사람용 텍스트 대신 machine-readable JSON을 출력합니다")
   .action(async (opts: { json?: boolean }) => {
     const root = findProjectRoot();
+    const config = loadConfig(root);
     const store = new Store(join(root, DB_FILE));
     try {
       const { lintWiki } = await import("./services/lint");
-      const report = lintWiki(store);
+      const report = lintWiki(store, config.schema);
 
       const { summary, issues } = report;
 

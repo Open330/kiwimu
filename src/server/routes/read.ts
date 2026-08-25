@@ -145,7 +145,7 @@ export async function handleReadRoutes(
   if (url.pathname === "/api/lint" && req.method === "GET") {
     try {
       const { lintWiki } = await import("../../services/lint");
-      const report = lintWiki(store);
+      const report = lintWiki(store, config.schema);
       return apiJson(report);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
