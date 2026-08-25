@@ -1,5 +1,5 @@
 import { importAnthropic, importOpenAI } from "./optional-deps";
-import type { LLMConfig } from "./config";
+import { DEFAULT_OLLAMA_BASE_URL, type LLMConfig } from "./config";
 import { abortReason, withAbortDeadline } from "./abort";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -48,6 +48,8 @@ export function estimateCostUsd(
   completionTokens: number,
 ): number | null {
   if (promptTokens === 0 && completionTokens === 0) return 0;
+  // Ollama runs locally: no per-token billing regardless of model.
+  if (provider.trim().toLowerCase() === "ollama") return 0;
   const p = MODEL_PRICING[`${provider.trim().toLowerCase()}:${model.trim().toLowerCase()}`];
   if (!p) return null;
   return (promptTokens / 1_000_000) * p.input + (completionTokens / 1_000_000) * p.output;
@@ -110,6 +112,47 @@ async function geminiComplete(
       total_tokens: usage.totalTokenCount || 0,
     } : undefined,
   };
+}
+
+/** Resolve the Ollama base URL from config, falling back to the local default. */
+function ollamaBaseUrl(config: Pick<LLMConfig, "endpoint">): string {
+  return (config.endpoint?.trim() || DEFAULT_OLLAMA_BASE_URL).replace(/\/+$/, "");
+}
+
+/** Actionable error shown when the local Ollama daemon cannot be reached. */
+function ollamaUnreachableError(base: string): Error {
+  return new Error(`Ollama에 연결할 수 없습니다: ${base}. \`ollama serve\` 실행 여부를 확인하세요.`);
+}
+
+/**
+ * Ollama-native embeddings (POST {base}/api/embeddings) — local and free.
+ * Exported so the embedding pipeline (src/services/embedding.ts) can offer
+ * local vectors: add an `ollama` case there that delegates here. Throws a
+ * clear, actionable error when the daemon is unreachable.
+ */
+export async function ollamaEmbedding(
+  text: string,
+  config: Pick<LLMConfig, "model" | "endpoint">,
+  fetchFn: typeof fetch,
+  signal: AbortSignal,
+): Promise<Float32Array> {
+  const base = ollamaBaseUrl(config);
+  let resp: Response;
+  try {
+    resp = await fetchFn(`${base}/api/embeddings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: config.model, prompt: text }),
+      signal,
+    });
+  } catch (error) {
+    if (signal.aborted) throw error;
+    throw ollamaUnreachableError(base);
+  }
+  if (!resp.ok) throw new Error(`Ollama embedding error (${resp.status})`);
+  const data = await resp.json() as { embedding?: number[] };
+  if (!data.embedding) throw new Error("Ollama embedding 응답에 embedding 필드가 없습니다.");
+  return new Float32Array(data.embedding);
 }
 
 // ── Class-based LLM client ──
@@ -284,6 +327,104 @@ export class LLMClient {
     };
   }
 
+  private async ollamaComplete(
+    system: string,
+    userMessage: string,
+    maxTokens: number,
+    signal: AbortSignal,
+  ): Promise<ProviderResult> {
+    const base = ollamaBaseUrl(this.config);
+    let resp: Response;
+    try {
+      resp = await this.fetchFn(`${base}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: this.config.model,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: userMessage },
+          ],
+          stream: false,
+          options: { num_predict: maxTokens, temperature: 0.7 },
+        }),
+        signal,
+      });
+    } catch (error) {
+      if (signal.aborted) throw error;
+      throw ollamaUnreachableError(base);
+    }
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new ProviderHttpError(`Ollama API error (${resp.status}): ${err.slice(0, 200)}`, resp.status);
+    }
+    const data = await resp.json() as {
+      message?: { content?: string };
+      prompt_eval_count?: number;
+      eval_count?: number;
+    };
+    const promptTokens = data.prompt_eval_count || 0;
+    const completionTokens = data.eval_count || 0;
+    return {
+      text: data.message?.content || "",
+      usage: (promptTokens || completionTokens) ? {
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+        total_tokens: promptTokens + completionTokens,
+      } : undefined,
+    };
+  }
+
+  private async openrouterComplete(
+    system: string,
+    userMessage: string,
+    maxTokens: number,
+    signal: AbortSignal,
+  ): Promise<ProviderResult> {
+    const url = "https://openrouter.ai/api/v1/chat/completions";
+    let resp: Response;
+    try {
+      resp = await this.fetchFn(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${this.config.api_key}`,
+        },
+        body: JSON.stringify({
+          model: this.config.model,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: userMessage },
+          ],
+          max_tokens: maxTokens,
+        }),
+        signal,
+      });
+    } catch (error) {
+      if (signal.aborted) throw error;
+      throw new Error(`OpenRouter에 연결할 수 없습니다: ${url}. 네트워크 연결을 확인하세요.`);
+    }
+    if (!resp.ok) {
+      const err = await resp.text();
+      if (resp.status === 401) {
+        throw new ProviderHttpError("OpenRouter 인증 실패 (401): API key를 확인하세요 (openrouter.ai/keys).", resp.status);
+      }
+      throw new ProviderHttpError(`OpenRouter API error (${resp.status}): ${err.slice(0, 200)}`, resp.status);
+    }
+    const data = await resp.json() as {
+      choices?: Array<{ message?: { content?: string } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+    };
+    return {
+      text: data.choices?.[0]?.message?.content || "",
+      usage: data.usage ? {
+        prompt_tokens: data.usage.prompt_tokens || 0,
+        completion_tokens: data.usage.completion_tokens || 0,
+        total_tokens: data.usage.total_tokens || 0,
+      } : undefined,
+    };
+  }
+
   async chatComplete(system: string, userMessage: string, maxTokens = 8192): Promise<string> {
     const MAX_RETRIES = 5;
     const BASE_DELAY_MS = 2000;
@@ -310,6 +451,12 @@ export class LLMClient {
               break;
             case "anthropic":
               operation = this.anthropicComplete(system, userMessage, maxTokens, deadline.signal, remaining);
+              break;
+            case "ollama":
+              operation = this.ollamaComplete(system, userMessage, maxTokens, deadline.signal);
+              break;
+            case "openrouter":
+              operation = this.openrouterComplete(system, userMessage, maxTokens, deadline.signal);
               break;
             default:
               throw new Error(`Unknown LLM provider: ${this.config.provider}`);

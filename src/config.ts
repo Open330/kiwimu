@@ -18,15 +18,17 @@ export const DB_FILE = "kiwi.db";
 export const SITE_DIR = "_site";
 export const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'pptx', 'doc', 'ppt', 'key', 'rtf', 'md'];
 export const DEFAULT_GEMINI_MODEL = "gemini-3.7-flash";
+/** Default Ollama daemon base URL when the config `endpoint` is left blank. */
+export const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434";
 // Keep the retired identifier assembled so it cannot accidentally reappear in
 // user-facing defaults or documentation while exact legacy configs still load.
 const RETIRED_GEMINI_DEFAULT = ["gemini-3.1-flash-lite", "preview"].join("-");
 
 export interface LLMConfig {
-  provider: string; // "gemini" | "azure-openai" | "openai" | "anthropic"
+  provider: string; // "gemini" | "azure-openai" | "openai" | "anthropic" | "ollama" | "openrouter"
   model: string;
   api_key: string;
-  endpoint: string; // for Azure OpenAI
+  endpoint: string; // for Azure OpenAI; also the Ollama base URL (default http://localhost:11434)
 }
 
 export interface Persona {
@@ -37,9 +39,23 @@ export interface Persona {
 }
 
 export interface EmbeddingConfig {
-  provider: string; // "gemini" | "openai" | "azure-openai"
+  provider: string; // "gemini" | "openai" | "azure-openai" | "ollama"
   api_key: string;
 }
+
+/**
+ * Selectable LLM providers for the interactive `init` picker
+ * (value / label / optional hint). Kept here as the single source of truth so
+ * the picker and any provider validation stay in sync.
+ */
+export const LLM_PROVIDER_OPTIONS: ReadonlyArray<{ value: string; label: string; hint?: string }> = [
+  { value: "gemini", label: "Google Gemini", hint: "무료 API key (aistudio.google.com)" },
+  { value: "azure-openai", label: "Azure OpenAI" },
+  { value: "openai", label: "OpenAI" },
+  { value: "anthropic", label: "Anthropic Claude" },
+  { value: "ollama", label: "Ollama", hint: "로컬·무료 (ollama serve)" },
+  { value: "openrouter", label: "OpenRouter", hint: "openrouter.ai/keys" },
+];
 
 export interface QAConfig {
   auto_promote: boolean; // If true, automatically save all Q&A answers as wiki pages

@@ -96,7 +96,7 @@ Kiwi Mu는 LLM을 활용해 이 연결을 **자동으로** 만들어, 지식을 
 - **지식 그래프** — D3.js 인터랙티브 그래프 (원본: 파란색, 개념: 초록색)
 - **데모 모드** — API key 없이 `--demo`로 즉시 체험 (양자역학 + 자료구조)
 - **다양한 파일 지원** — URL, PDF, DOCX, PPTX, **MD** + extractor 도구가 있는 CLI 환경의 레거시 DOC/PPT/KEY/RTF
-- **4개 LLM 프로바이더** — Google Gemini, Azure OpenAI, OpenAI, Anthropic
+- **6개 LLM 프로바이더** — Google Gemini, Azure OpenAI, OpenAI, Anthropic, Ollama(로컬·무료), OpenRouter
 - **다크 모드** — 시스템 테마에 자동 대응 (100% 커버리지)
 - **모바일 지원** — 햄버거 메뉴 + 슬라이드 사이드바
 - **접근성** — ARIA 속성, 검색 키보드 네비게이션
@@ -367,6 +367,8 @@ DOC/PPT/KEY/RTF는 선택적 레거시 지원입니다. `kiwimu add`를 실행�
 | Azure OpenAI | `gpt-5.4-nano` | Azure 구독 필요 |
 | OpenAI | `gpt-5.4` | API key 필요 |
 | Anthropic | `claude-sonnet-4-6` | API key 필요 |
+| Ollama | `llama3.1` | 로컬 실행·무료, API key 불필요 (`ollama serve`, 기본 `http://localhost:11434`) |
+| OpenRouter | `openrouter/auto` | API key 필요 ([openrouter.ai/keys](https://openrouter.ai/keys)), 채팅 전용·모델별 가격 |
 
 ## Architecture
 
