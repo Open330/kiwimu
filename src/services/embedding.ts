@@ -2,6 +2,8 @@ import type { Store } from "../store";
 import type { LLMConfig } from "../config";
 import { StaleContentFenceError } from "../repositories/content-fence-repository";
 import { awaitWithAbort, withAbortDeadline } from "../abort";
+import { DEFAULT_OLLAMA_BASE_URL } from "../config";
+import { ollamaEmbedding } from "../llm-client";
 
 export const DEFAULT_EMBEDDING_DEADLINE_MS = 120_000;
 
@@ -36,11 +38,11 @@ export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
 // Which providers expose an embeddings endpoint. Others must gracefully
 // degrade to keyword search.
 export function embeddingSupported(provider: string): boolean {
-  return provider === "gemini" || provider === "azure-openai" || provider === "openai";
+  return provider === "gemini" || provider === "azure-openai" || provider === "openai" || provider === "ollama";
 }
 
 /** Identity of the vector space actually used by getEmbedding(). */
-export function embeddingModelIdentity(config: Pick<LLMConfig, "provider" | "endpoint">): string | null {
+export function embeddingModelIdentity(config: Pick<LLMConfig, "provider" | "endpoint" | "model">): string | null {
   switch (config.provider) {
     case "gemini":
       return "gemini:gemini-embedding-001";
@@ -48,6 +50,10 @@ export function embeddingModelIdentity(config: Pick<LLMConfig, "provider" | "end
       return "openai:text-embedding-3-small";
     case "azure-openai":
       return `azure-openai:${config.endpoint.trim().replace(/\/+$/, "").toLowerCase()}:text-embedding-3-small`;
+    case "ollama":
+      // Ollama's embedding vector space depends on the chosen model, so it is
+      // part of the identity (a model switch must invalidate stored vectors).
+      return `ollama:${(config.endpoint.trim() || DEFAULT_OLLAMA_BASE_URL).replace(/\/+$/, "").toLowerCase()}:${config.model.trim()}`;
     default:
       return null;
   }
@@ -77,6 +83,8 @@ export async function getEmbedding(
       operation = azureEmbedding(input, config, fetchFn, deadline.signal);
     } else if (config.provider === "openai") {
       operation = openaiEmbedding(input, config, fetchFn, deadline.signal);
+    } else if (config.provider === "ollama") {
+      operation = ollamaEmbedding(input, config, fetchFn, deadline.signal);
     } else {
       throw new Error(`Embedding not supported for provider: ${config.provider}`);
     }

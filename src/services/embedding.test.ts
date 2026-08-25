@@ -17,11 +17,13 @@ describe("embedding model identity", () => {
   afterEach(() => store.close());
 
   test("identifies the actual provider-specific embedding vector space", () => {
-    expect(embeddingModelIdentity({ provider: "gemini", endpoint: "" })).toBe("gemini:gemini-embedding-001");
-    expect(embeddingModelIdentity({ provider: "openai", endpoint: "" })).toBe("openai:text-embedding-3-small");
-    expect(embeddingModelIdentity({ provider: "azure-openai", endpoint: "https://EXAMPLE.openai.azure.com/" }))
+    expect(embeddingModelIdentity({ provider: "gemini", endpoint: "", model: "" })).toBe("gemini:gemini-embedding-001");
+    expect(embeddingModelIdentity({ provider: "openai", endpoint: "", model: "" })).toBe("openai:text-embedding-3-small");
+    expect(embeddingModelIdentity({ provider: "azure-openai", endpoint: "https://EXAMPLE.openai.azure.com/", model: "" }))
       .toBe("azure-openai:https://example.openai.azure.com:text-embedding-3-small");
-    expect(embeddingModelIdentity({ provider: "anthropic", endpoint: "" })).toBeNull();
+    expect(embeddingModelIdentity({ provider: "ollama", endpoint: "", model: "nomic-embed-text" }))
+      .toBe("ollama:http://localhost:11434:nomic-embed-text");
+    expect(embeddingModelIdentity({ provider: "anthropic", endpoint: "", model: "" })).toBeNull();
   });
 
   test("marks a page for re-embedding and filters retrieval after a model switch", () => {

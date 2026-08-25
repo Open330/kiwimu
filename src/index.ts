@@ -4,7 +4,7 @@ import { Command, InvalidArgumentError } from "commander";
 import { join } from "path";
 import { existsSync, rmSync } from "node:fs";
 import pkg from "../package.json";
-import { CONFIG_FILE, DB_FILE, DEFAULT_GEMINI_MODEL, SUPPORTED_EXTENSIONS, defaultConfig, findProjectRoot, getActivePersona, loadConfig, saveConfig, type KiwiConfig } from "./config";
+import { CONFIG_FILE, DB_FILE, DEFAULT_GEMINI_MODEL, DEFAULT_OLLAMA_BASE_URL, LLM_PROVIDER_OPTIONS, SUPPORTED_EXTENSIONS, defaultConfig, findProjectRoot, getActivePersona, loadConfig, saveConfig, type KiwiConfig } from "./config";
 import { Store } from "./store";
 import { runCliContentJob } from "./cli/content-job";
 import { StaleContentFenceError } from "./repositories/content-fence-repository";
@@ -195,33 +195,32 @@ program
       provider: () =>
         p.select({
           message: "LLM 프로바이더",
-          options: [
-            { value: "gemini", label: "Google Gemini", hint: "무료 API key (aistudio.google.com)" },
-            { value: "azure-openai", label: "Azure OpenAI" },
-            { value: "openai", label: "OpenAI" },
-            { value: "anthropic", label: "Anthropic Claude" },
-          ],
+          options: LLM_PROVIDER_OPTIONS.map((o) => ({ value: o.value, label: o.label, ...(o.hint ? { hint: o.hint } : {}) })),
         }),
-      model: ({ results }) =>
-        p.text({
-          message: "모델명",
-          placeholder:
-            results.provider === "gemini" ? DEFAULT_GEMINI_MODEL :
-            results.provider === "azure-openai" ? "gpt-5.4-nano" :
-            results.provider === "openai" ? "gpt-5.4-nano" : "claude-sonnet-4-6",
-          initialValue:
-            results.provider === "gemini" ? DEFAULT_GEMINI_MODEL :
-            results.provider === "azure-openai" ? "gpt-5.4-nano" :
-            results.provider === "openai" ? "gpt-5.4-nano" : "claude-sonnet-4-6",
-        }),
-      apiKey: () =>
-        p.password({
-          message: "API Key",
-          validate: (v) => (!v?.trim() ? "API Key를 입력해주세요" : undefined),
-        }),
+      model: ({ results }) => {
+        const placeholder =
+          results.provider === "gemini" ? DEFAULT_GEMINI_MODEL :
+          results.provider === "azure-openai" ? "gpt-5.4-nano" :
+          results.provider === "openai" ? "gpt-5.4-nano" :
+          results.provider === "anthropic" ? "claude-sonnet-4-6" :
+          results.provider === "ollama" ? "llama3.1" :
+          results.provider === "openrouter" ? "openai/gpt-4o-mini" : "";
+        // 로컬/게이트웨이 provider는 사용자가 직접 pull/선택한 모델을 쓰므로 prefill하지 않는다.
+        const prefill = (results.provider === "ollama" || results.provider === "openrouter") ? "" : placeholder;
+        return p.text({ message: "모델명", placeholder, initialValue: prefill });
+      },
+      apiKey: ({ results }) =>
+        results.provider === "ollama"
+          ? Promise.resolve("") // 로컬 Ollama는 API Key가 필요 없다
+          : p.password({
+              message: "API Key",
+              validate: (v) => (!v?.trim() ? "API Key를 입력해주세요" : undefined),
+            }),
       endpoint: ({ results }) =>
         results.provider === "azure-openai"
           ? p.text({ message: "Azure Endpoint", placeholder: "https://..." })
+          : results.provider === "ollama"
+          ? p.text({ message: "Ollama Base URL", placeholder: DEFAULT_OLLAMA_BASE_URL, initialValue: DEFAULT_OLLAMA_BASE_URL })
           : Promise.resolve(""),
     });
 
@@ -234,7 +233,7 @@ program
     const config = defaultConfig(wikiName);
     config.llm.provider = requirePromptText(values.provider, "LLM 프로바이더");
     config.llm.model = requirePromptText(values.model, "모델명");
-    config.llm.api_key = requirePromptText(values.apiKey, "API Key");
+    config.llm.api_key = normalizeOptionalText(values.apiKey) || "";
     config.llm.endpoint = normalizeOptionalText(values.endpoint) || "";
     saveConfig(root, config);
 
