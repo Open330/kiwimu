@@ -64,10 +64,12 @@ document.addEventListener("DOMContentLoaded", () => {
         return div.innerHTML;
     }
 
-    function fuzzyMatch(query, text) {
-        query = query.toLocaleLowerCase();
-        text = String(text || "").toLocaleLowerCase();
-        if (text.includes(query)) return true;
+    // Treat the user's query as a literal string when building a RegExp.
+    function escapeRegExp(text) {
+        return String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    function isSubsequence(query, text) {
         let qi = 0;
         for (let i = 0; i < text.length && qi < query.length; i++) {
             if (text[i] === query[qi]) qi++;
@@ -75,12 +77,50 @@ document.addEventListener("DOMContentLoaded", () => {
         return qi === query.length;
     }
 
+    // Relevance tiers: title prefix (4) > title substring (3) > preview
+    // substring (2) > subsequence in either field (1). 0 means no match.
+    function scoreItem(query, item) {
+        const title = String(item.title || "").toLocaleLowerCase();
+        const preview = String(item.preview || "").toLocaleLowerCase();
+        if (title.startsWith(query)) return 4;
+        if (title.includes(query)) return 3;
+        if (preview.includes(query)) return 2;
+        if (isSubsequence(query, title) || isSubsequence(query, preview)) return 1;
+        return 0;
+    }
+
     function search(query) {
         const trimmed = query.trim();
         if (!trimmed) return [];
-        return searchData
-            .filter((item) => fuzzyMatch(trimmed, item.title) || fuzzyMatch(trimmed, item.preview))
-            .slice(0, 8);
+        const normalized = trimmed.toLocaleLowerCase();
+        const scored = [];
+        for (let i = 0; i < searchData.length; i++) {
+            const score = scoreItem(normalized, searchData[i]);
+            if (score > 0) scored.push({ item: searchData[i], score, index: i });
+        }
+        // Highest score first; preserve original order within the same score.
+        scored.sort((a, b) => b.score - a.score || a.index - b.index);
+        return scored.slice(0, 8).map((entry) => entry.item);
+    }
+
+    // XSS-safe: every slice of the source text is escaped before it becomes
+    // markup; only the literal <mark> wrapper is inserted as HTML.
+    function highlight(text, query) {
+        const raw = text == null ? "" : String(text);
+        const trimmed = query.trim();
+        if (!trimmed) return escapeHtml(raw);
+        const matcher = new RegExp(escapeRegExp(trimmed), "gi");
+        let result = "";
+        let lastIndex = 0;
+        let match;
+        while ((match = matcher.exec(raw)) !== null) {
+            result += escapeHtml(raw.slice(lastIndex, match.index));
+            result += `<mark class="search-highlight">${escapeHtml(match[0])}</mark>`;
+            lastIndex = match.index + match[0].length;
+            if (match.index === matcher.lastIndex) matcher.lastIndex++; // guard against zero-length matches
+        }
+        result += escapeHtml(raw.slice(lastIndex));
+        return result;
     }
 
     function selectResult(index) {
@@ -100,19 +140,22 @@ document.addEventListener("DOMContentLoaded", () => {
     function renderResults() {
         selectedIndex = -1;
         input.removeAttribute("aria-activedescendant");
+        const query = input.value.trim();
         const results = search(input.value);
-        if (!input.value.trim() || results.length === 0) {
+        if (!query || results.length === 0) {
             dropdown.replaceChildren();
             setOpen(false);
-            announce(input.value.trim() ? "검색 결과가 없습니다." : "");
+            announce(query ? "검색 결과가 없습니다." : "");
             return;
         }
 
         dropdown.innerHTML = results.map((result, index) => {
-            const preview = typeof result.preview === "string" ? result.preview.slice(0, 80) : "";
+            const hasPreview = typeof result.preview === "string";
+            const preview = hasPreview ? result.preview.slice(0, 80) : "";
+            const previewSuffix = hasPreview && result.preview.length > 80 ? "…" : "";
             return `<a id="search-result-${index}" href="/wiki/${encodeURIComponent(result.slug)}.html" role="option" aria-selected="false">
-                <strong>${escapeHtml(result.title)}</strong>
-                ${preview ? `<span class="search-preview">${escapeHtml(preview)}${result.preview.length > 80 ? "…" : ""}</span>` : ""}
+                <strong>${highlight(result.title, query)}</strong>
+                ${preview ? `<span class="search-preview">${highlight(preview, query)}${previewSuffix}</span>` : ""}
             </a>`;
         }).join("");
         setOpen(true);
@@ -168,13 +211,20 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    // Global "/" shortcut to focus search. Ignore editable controls.
+    // Global shortcuts to focus search. Ignore editable controls so typing is
+    // never hijacked. "/" quick-focuses; ⌘K / Ctrl-K acts as a command palette.
     document.addEventListener("keydown", (event) => {
         const target = event.target;
         if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
         if (event.key === "/" && !event.ctrlKey && !event.metaKey && !event.altKey) {
             event.preventDefault();
             input.focus();
+            return;
+        }
+        if ((event.metaKey || event.ctrlKey) && !event.altKey && (event.key === "k" || event.key === "K")) {
+            event.preventDefault();
+            input.focus();
+            input.select();
         }
     });
 });

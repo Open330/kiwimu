@@ -309,4 +309,42 @@ describe("template security and accessibility", () => {
     expect(withoutSeo).toContain('<meta property="og:image" content="/static/logo.png">');
     expect(withoutSeo).toContain('<meta property="og:site_name" content="Demo Wiki">');
   });
+
+  test("wiki pages expose an accessible, ranked search combobox wired to search.js", () => {
+    const page = renderPage({
+      wikiName: "Demo Wiki",
+      pageTitle: "Attention",
+      pageSlug: "attention",
+      pageType: "concept",
+      pageId: 1,
+      content: "<p>Body</p>",
+      externalRefs: "",
+      toc: "",
+      backlinks: [],
+      sourcePages: emptyLinks,
+      conceptPages: emptyLinks,
+    });
+
+    expect(page).toContain('id="search-input"');
+    expect(page).toContain('role="combobox"');
+    expect(page).toContain('aria-controls="search-results"');
+    expect(page).toContain('aria-autocomplete="list"');
+    expect(page).toContain('id="search-results" class="search-dropdown" role="listbox"');
+    expect(page).toContain('id="search-status" class="visually-hidden" role="status" aria-live="polite"');
+    expect(page).toContain('<script src="/static/search.js"></script>');
+
+    const runtime = readFileSync(join(import.meta.dir, "static", "search.js"), "utf8");
+    // relevance ranking: score tiers + top-8 slice
+    expect(runtime).toContain("startsWith");
+    expect(runtime).toContain("function scoreItem");
+    expect(runtime).toContain(".slice(0, 8)");
+    // XSS-safe match highlighting: escape, treat query as literal, wrap in <mark>
+    expect(runtime).toContain("function escapeRegExp");
+    expect(runtime).toContain('<mark class="search-highlight">');
+    // keyboard: keep "/" and combobox ARIA, add Cmd/Ctrl-K
+    expect(runtime).toContain('event.key === "/"');
+    expect(runtime).toContain('event.key === "k"');
+    expect(runtime).toContain("event.metaKey || event.ctrlKey");
+    expect(runtime).toContain("aria-activedescendant");
+  });
 });
