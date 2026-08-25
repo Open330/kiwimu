@@ -562,28 +562,36 @@ function convertMermaidBlocks(html: string): string {
 }
 
 // Fix internal wiki links: /wiki/slug → /wiki/slug.html
-// Mark non-existent pages as "red links" (wiki convention for missing pages)
+// A link whose target page does not exist becomes a NON-navigating red-link
+// span (no href) so it can never resolve to a 404. Existing targets keep a
+// normal anchor with a normalized `.html` suffix. Link text is preserved
+// verbatim (it is already sanitized/escaped upstream).
 function fixWikiLinks(html: string, existingSlugs?: Set<string>): string {
-  return html.replace(/href="\/wiki\/([^"]+?)"/g, (_match, target: string) => {
-    const suffixIndex = target.search(/[?#]/);
-    const path = suffixIndex === -1 ? target : target.slice(0, suffixIndex);
-    const suffix = suffixIndex === -1 ? "" : target.slice(suffixIndex);
-    const hasHtmlSuffix = path.endsWith(".html");
-    const cleanSlug = hasHtmlSuffix ? path.slice(0, -".html".length) : path;
-    let decodedSlug: string;
-    try {
-      decodedSlug = decodeURIComponent(cleanSlug);
-    } catch {
-      decodedSlug = cleanSlug;
-    }
-    const href = `href="/wiki/${hasHtmlSuffix ? path : `${path}.html`}${suffix}"`;
+  return html.replace(
+    /<a\b([^>]*?)\shref="\/wiki\/([^"]+?)"([^>]*?)>([\s\S]*?)<\/a>/g,
+    (_match, pre: string, target: string, post: string, inner: string) => {
+      const suffixIndex = target.search(/[?#]/);
+      const path = suffixIndex === -1 ? target : target.slice(0, suffixIndex);
+      const suffix = suffixIndex === -1 ? "" : target.slice(suffixIndex);
+      const hasHtmlSuffix = path.endsWith(".html");
+      const cleanSlug = hasHtmlSuffix ? path.slice(0, -".html".length) : path;
+      let decodedSlug: string;
+      try {
+        decodedSlug = decodeURIComponent(cleanSlug);
+      } catch {
+        decodedSlug = cleanSlug;
+      }
 
-    // If we have slug list and this page doesn't exist, mark as red link
-    if (existingSlugs && !existingSlugs.has(decodedSlug) && !existingSlugs.has(cleanSlug)) {
-      return `${href} class="redlink" title="문서 없음: ${escapeHtmlAttribute(decodedSlug)}"`;
-    }
-    return href;
-  });
+      // Missing target: emit a non-navigating span (no href → cannot 404).
+      if (existingSlugs && !existingSlugs.has(decodedSlug) && !existingSlugs.has(cleanSlug)) {
+        return `<span class="redlink" title="아직 없는 페이지: ${escapeHtmlAttribute(decodedSlug)}">${inner}</span>`;
+      }
+
+      // Existing target (or no slug set): keep a real link, normalizing the suffix.
+      const normalizedPath = hasHtmlSuffix ? path : `${path}.html`;
+      return `<a${pre} href="/wiki/${normalizedPath}${suffix}"${post}>${inner}</a>`;
+    },
+  );
 }
 
 function mermaidBodyFromFence(markdown: string): string | null {
@@ -723,7 +731,7 @@ export async function renderPageContent(page: { content: string }, existingSlugs
       '*': ['id', 'class'],
       'img': ['src', 'alt', 'title', 'width', 'height'],
       'a': ['href', 'title', 'target', 'rel'],
-      'span': ['class'],  // For KaTeX
+      'span': ['class', 'title'],  // class: KaTeX; title: redlink tooltip for missing pages
       'pre': ['class'],   // For Mermaid
       'code': ['class'],
     },
@@ -1157,8 +1165,10 @@ export async function buildSinglePage(
   for (const s of store.listSources()) sourceUriMap.set(s.id, s.uri);
   const sourcePageLinks = sourcePages.map((sourcePage) => toSourcePageLink(sourcePage, sourceUriMap));
 
-  // Render the single page
-  const renderedContent = await renderPageContent(page);
+  // Render the single page. Pass the existing-slug set so incremental rebuilds
+  // handle dangling wiki links identically to the full-build path.
+  const allSlugs = new Set(store.listPages().map((p) => p.slug));
+  const renderedContent = await renderPageContent(page, allSlugs);
   const { html: htmlContent, toc } = decorateHeadingsAndGenerateToc(renderedContent);
 
   const { body, externalRefs } = extractExternalRefs(htmlContent);

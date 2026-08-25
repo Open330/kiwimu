@@ -47,9 +47,24 @@ describe("Markdown rendering boundaries", () => {
     expect(html).toContain("<code>[[target|inline example]]</code>");
     expect(html).toContain("[[target|fenced example]]");
     expect(html).toContain('<a href="/wiki/target.html">display text</a>');
-    expect(html).toContain('<a href="/wiki/target-page.html" class="redlink" title="문서 없음: target-page">target page</a>');
-    expect(html).toContain('href="/wiki/missing-page.html" class="redlink"');
-    expect(html).toContain(">missing label</a>");
+    expect(html).toContain('<span class="redlink" title="아직 없는 페이지: target-page">target page</span>');
+    expect(html).toContain('<span class="redlink" title="아직 없는 페이지: missing-page">missing label</span>');
+    // Dangling links must never emit a navigable /wiki/ href (would 404).
+    expect(html).not.toContain('href="/wiki/target-page');
+    expect(html).not.toContain('href="/wiki/missing-page');
+  });
+
+  test("dangling wiki links render as non-navigating redlink spans, existing ones as anchors", async () => {
+    const html = await renderPageContent({
+      content: "See [[Nonexistent]] and [[real-page|the real page]].",
+    }, new Set(["real-page"]));
+
+    // Missing target → <span class="redlink"> with no href, so it cannot 404.
+    expect(html).toContain('<span class="redlink"');
+    expect(html).toContain(">Nonexistent</span>");
+    expect(html).not.toMatch(/href="\/wiki\/Nonexistent/);
+    // Existing target → a normal anchor.
+    expect(html).toContain('<a href="/wiki/real-page.html">the real page</a>');
   });
 
   test("adds the HTML suffix before an internal link query or fragment", async () => {
