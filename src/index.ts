@@ -10,6 +10,7 @@ import { runCliContentJob } from "./cli/content-job";
 import { StaleContentFenceError } from "./repositories/content-fence-repository";
 import { LeaseOwnershipLostError } from "./server/runtime";
 import { formatEstimatedCost } from "./pipeline/cost-estimator";
+import { captureStdoutForJson, printJson } from "./cli/json-output";
 
 type ExpandProvider = "anthropic" | "openai" | "claude-cli" | "codex-cli";
 
@@ -250,14 +251,40 @@ program
   .description("URL, 파일, 또는 디렉토리를 추가합니다 (PDF, DOCX, PPTX, DOC, PPT, KEY, RTF, MD)")
   .option("-y, --yes", "비용 미리보기 확인 없이 바로 진행")
   .option("-f, --force", "내용이 변경되지 않아도 강제로 재인제스트")
-  .action(async (source: string, options: { yes?: boolean; force?: boolean }) => {
+  .option("--json", "사람용 텍스트 대신 machine-readable JSON을 출력합니다 (비용 미리보기 확인은 --yes처럼 건너뜁니다)")
+  .action(async (source: string, options: { yes?: boolean; force?: boolean; json?: boolean }) => {
     const root = findProjectRoot();
     const config = loadConfig(root);
     const persona = getActivePersona(config);
     const store = new Store(join(root, DB_FILE));
 
-    // Cost-preview confirmation hook (skipped with --yes). Returns false to abort.
-    const onCostEstimate = options.yes ? undefined : async (est: import("./pipeline/cost-estimator").IngestEstimate): Promise<boolean> => {
+    // Under --json the interactive cost-preview confirm is skipped (treated as --yes)
+    // and all progress output is routed to stderr so stdout carries only the JSON.
+    const jsonMode = options.json === true;
+    const capture = jsonMode ? captureStdoutForJson() : null;
+
+    // { source, added:{sources,concepts,links}, usage:{tokens,estimatedCostUsd}, skipped?, cancelled?, figures? }
+    const jsonAdded = { sources: 0, concepts: 0, links: 0 };
+    const jsonUsage = { tokens: 0, estimatedCostUsd: null as number | null };
+    let jsonSkipped = false;
+    let jsonCancelled = false;
+    let jsonFigures: { figureCount: number; captionedCount: number } | undefined;
+    const accumulate = (result: import("./services/ingest").IngestResult): typeof result => {
+      jsonAdded.sources += result.sourceCount;
+      jsonAdded.concepts += result.conceptCount;
+      jsonUsage.tokens += result.usage.totalTokens;
+      if (result.usage.estimatedCostUsd != null) {
+        jsonUsage.estimatedCostUsd = (jsonUsage.estimatedCostUsd ?? 0) + result.usage.estimatedCostUsd;
+      }
+      if (result.unchanged) jsonSkipped = true;
+      if (result.cancelled) jsonCancelled = true;
+      if (result.figures) jsonFigures = result.figures;
+      return result;
+    };
+    const linksBefore = store.countLinks();
+
+    // Cost-preview confirmation hook (skipped with --yes or --json). Returns false to abort.
+    const onCostEstimate = (options.yes || jsonMode) ? undefined : async (est: import("./pipeline/cost-estimator").IngestEstimate): Promise<boolean> => {
       console.log(`\x1b[34m📊 예상 사용량: ~${est.totalTokens.toLocaleString()} 토큰 (${est.chunks}청크), ${formatEstimatedCost(est.estimatedCostUsd)}\x1b[0m`);
       const { confirm, isCancel } = await import("@clack/prompts");
       const ok = await confirm({ message: "인제스트를 진행할까요?" });
@@ -296,7 +323,7 @@ program
           await validateUrl(source);
           console.log(`\x1b[34m📥 URL 가져오는 중: ${source}\x1b[0m`);
           const { ingestUrl } = await import("./services/ingest");
-          const result = await ingestUrl(root, store, source, config.llm, persona, (s) => console.log(`  ${s}`), schema, ingestOpts);
+          const result = accumulate(await ingestUrl(root, store, source, config.llm, persona, (s) => console.log(`  ${s}`), schema, ingestOpts));
           if (result.unchanged) {
             console.log(`\x1b[33m⏭️  변경 없음 — 재인제스트를 건너뛰었습니다 (--force로 강제)\x1b[0m`);
           } else if (result.cancelled) {
@@ -331,7 +358,7 @@ program
             const { ingestFile } = await import("./services/ingest");
             for (const mdFile of mdFiles) {
               console.log(`\x1b[34m📥 파일 처리 중: ${basename(mdFile)}\x1b[0m`);
-              const result = await ingestFile(root, store, mdFile, basename(mdFile), config.llm, persona, (s) => console.log(`  ${s}`), schema, ingestOpts);
+              const result = accumulate(await ingestFile(root, store, mdFile, basename(mdFile), config.llm, persona, (s) => console.log(`  ${s}`), schema, ingestOpts));
               if (result.unchanged) {
                 console.log(`\x1b[33m⏭️  ${basename(mdFile)} 변경 없음 — 건너뜀\x1b[0m`);
               } else if (result.cancelled) {
@@ -352,7 +379,7 @@ program
             }
             console.log(`\x1b[34m📥 파일 처리 중: ${source}\x1b[0m`);
             const { ingestFile } = await import("./services/ingest");
-            const result = await ingestFile(root, store, absPath, source, config.llm, persona, (s) => console.log(`  ${s}`), schema, ingestOpts);
+            const result = accumulate(await ingestFile(root, store, absPath, source, config.llm, persona, (s) => console.log(`  ${s}`), schema, ingestOpts));
             if (result.unchanged) {
               console.log(`\x1b[33m⏭️  변경 없음 — 재인제스트를 건너뛰었습니다 (--force로 강제)\x1b[0m`);
             } else if (result.cancelled) {
@@ -367,11 +394,23 @@ program
           }
         }
       });
+      if (capture) {
+        jsonAdded.links = store.countLinks() - linksBefore;
+        capture.writeJson({
+          source,
+          added: jsonAdded,
+          usage: jsonUsage,
+          skipped: jsonSkipped,
+          cancelled: jsonCancelled,
+          ...(jsonFigures ? { figures: jsonFigures } : {}),
+        });
+      }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       console.error(`\x1b[31m❌ ${message}\x1b[0m`);
       process.exit(1);
     } finally {
+      capture?.restore();
       store.close();
     }
   });
@@ -534,7 +573,8 @@ program
 program
   .command("ask <question>")
   .description("위키 전체에 질문합니다 (RAG)")
-  .action(async (question: string) => {
+  .option("--json", "사람용 텍스트 대신 machine-readable JSON을 출력합니다")
+  .action(async (question: string, opts: { json?: boolean }) => {
     const root = findProjectRoot();
     const config = loadConfig(root);
     const store = new Store(join(root, DB_FILE));
@@ -549,6 +589,17 @@ program
       }
       const { askWiki } = await import("./services/rag");
       const result = await askWiki(store, question, embConfig, llm);
+      if (opts.json) {
+        // { question, answer, citations:[{n,title,slug,snippet}], method, generated }
+        printJson({
+          question,
+          answer: result.answer,
+          citations: result.citations.map((c) => ({ n: c.n, title: c.title, slug: c.slug, snippet: c.snippet })),
+          method: result.method,
+          generated: result.generated,
+        });
+        return;
+      }
       console.log(`\n${result.answer}\n`);
       if (result.citations.length) {
         console.log("\x1b[2m출처:\x1b[0m");
@@ -778,7 +829,8 @@ program
 program
   .command("lint")
   .description("위키 건강 상태를 검사합니다 (orphan pages, dead links, etc.)")
-  .action(async () => {
+  .option("--json", "사람용 텍스트 대신 machine-readable JSON을 출력합니다")
+  .action(async (opts: { json?: boolean }) => {
     const root = findProjectRoot();
     const store = new Store(join(root, DB_FILE));
     try {
@@ -786,6 +838,31 @@ program
       const report = lintWiki(store);
 
       const { summary, issues } = report;
+
+      if (opts.json) {
+        // { ok, issues:[{type,severity,page,pageId,detail,suggestion}], counts:{...} }
+        // `ok` mirrors the exit status: nonzero exit happens only when errors > 0.
+        printJson({
+          ok: summary.errors === 0,
+          issues: issues.map((i) => ({
+            type: i.type,
+            severity: i.severity,
+            page: i.pageTitle ?? null,
+            pageId: i.pageId ?? null,
+            detail: i.message,
+            suggestion: i.suggestion ?? null,
+          })),
+          counts: {
+            errors: summary.errors,
+            warnings: summary.warnings,
+            info: summary.info,
+            total_pages: summary.total_pages,
+            total_links: summary.total_links,
+          },
+        });
+        if (summary.errors > 0) process.exit(1);
+        return;
+      }
 
       console.log(`\n\x1b[1m🔍 Wiki Lint Report\x1b[0m\n`);
       console.log(`  Pages: ${summary.total_pages}  Links: ${summary.total_links}\n`);
@@ -936,7 +1013,8 @@ Only include matches where you are confident the content derives from that sourc
 program
   .command("status")
   .description("현재 키위 상태를 표시합니다")
-  .action(() => {
+  .option("--json", "사람용 텍스트 대신 machine-readable JSON을 출력합니다")
+  .action((opts: { json?: boolean }) => {
     const root = findProjectRoot();
     const config = loadConfig(root);
     const store = new Store(join(root, DB_FILE));
@@ -945,6 +1023,32 @@ program
       const sourcePages = store.listSourcePages();
       const conceptPages = store.listConceptPages();
       const linkCount = store.countLinks();
+
+      if (opts.json) {
+        // { project, pages:{source,concept,total}, sources, links, quizzes, build, deploy, sourcePages[], conceptPages[] }
+        let quizzes: unknown = null;
+        try {
+          quizzes = store.getQuizStats();
+        } catch {
+          quizzes = null; // quizzes table may be absent on partially initialized projects
+        }
+        printJson({
+          project: config.project.name,
+          pages: {
+            source: sourcePages.length,
+            concept: conceptPages.length,
+            total: sourcePages.length + conceptPages.length,
+          },
+          sources: sources.length,
+          links: linkCount,
+          quizzes,
+          build: { outputDir: config.build.output_dir },
+          deploy: { target: config.deploy.target },
+          sourcePages: sourcePages.map((p) => ({ title: p.title, slug: p.slug })),
+          conceptPages: conceptPages.map((p) => ({ title: p.title, slug: p.slug })),
+        });
+        return;
+      }
 
       console.log(`\n\x1b[1m🥝 ${config.project.name}\x1b[0m\n`);
       console.log(`  소스     ${sources.length}`);
@@ -982,12 +1086,29 @@ program
   .description("활동 로그를 표시합니다")
   .option("-n, --count <count>", "표시할 항목 수", "20")
   .option("--action <action>", "액션으로 필터링 (ingest, page_created, quiz_attempted, query 등)")
-  .action((opts: { count: string; action?: string }) => {
+  .option("--json", "사람용 텍스트 대신 machine-readable JSON을 출력합니다")
+  .action((opts: { count: string; action?: string; json?: boolean }) => {
     const root = findProjectRoot();
     const store = new Store(join(root, DB_FILE));
     try {
       const limit = parsePositiveInteger(opts.count, 20);
       const entries = store.getActivityLog(limit, 0, normalizeOptionalText(opts.action));
+      if (opts.json) {
+        // { entries:[{time,action,detail,entityType,entityId}], count, total } — respects --action/-n filters
+        const stats = store.getActivityStats();
+        printJson({
+          entries: entries.map((e) => ({
+            time: e.created_at,
+            action: e.action,
+            detail: e.title,
+            entityType: e.entity_type,
+            entityId: e.entity_id,
+          })),
+          count: entries.length,
+          total: stats.total,
+        });
+        return;
+      }
       if (entries.length === 0) {
         console.log("\x1b[33m활동 로그가 없습니다.\x1b[0m");
         return;

@@ -234,3 +234,148 @@ esac
     reopened.close();
   });
 });
+
+describe("CLI --json output", () => {
+  test("status --json emits parseable JSON with the documented top-level keys", async () => {
+    const directory = temporaryDirectory();
+    const store = createProject(directory);
+    store.addPage("chapter-1", "Chapter 1", "source content here", undefined, undefined, "source");
+    store.addPage("neural-net", "Neural Net", "concept content here");
+    store.close();
+
+    const result = await runCli(["status", "--json"], directory);
+    expect(result.exitCode).toBe(0);
+
+    const parsed = JSON.parse(result.stdout);
+    expect(Object.keys(parsed)).toEqual(
+      expect.arrayContaining(["project", "pages", "sources", "links", "quizzes", "build", "deploy", "sourcePages", "conceptPages"]),
+    );
+    expect(parsed.pages).toEqual({ source: 1, concept: 1, total: 2 });
+    expect(parsed.project).toBe("CLI Test");
+    // No Korean human text or ANSI leaked onto stdout.
+    expect(result.stdout).not.toContain("원본");
+    expect(result.stdout).not.toContain("\x1b[");
+  });
+
+  test("log --json reflects the activity log and respects --action filter", async () => {
+    const directory = temporaryDirectory();
+    const store = createProject(directory);
+    store.addActivityLog("ingest", "Ingested A", "source", 1);
+    store.addActivityLog("page_created", "Created page: B", "page", 2);
+    store.close();
+
+    const all = await runCli(["log", "--json"], directory);
+    expect(all.exitCode).toBe(0);
+    const parsedAll = JSON.parse(all.stdout);
+    expect(Object.keys(parsedAll)).toEqual(expect.arrayContaining(["entries", "count", "total"]));
+    expect(Array.isArray(parsedAll.entries)).toBeTrue();
+    expect(parsedAll.count).toBe(2);
+    expect(parsedAll.entries[0]).toEqual(
+      expect.objectContaining({ time: expect.any(String), action: expect.any(String), detail: expect.any(String) }),
+    );
+
+    const filtered = await runCli(["log", "--json", "--action", "ingest"], directory);
+    const parsedFiltered = JSON.parse(filtered.stdout);
+    expect(parsedFiltered.count).toBe(1);
+    expect(parsedFiltered.entries[0].action).toBe("ingest");
+  });
+
+  test("log --json returns an empty envelope instead of Korean prose when the log is empty", async () => {
+    const directory = temporaryDirectory();
+    createProject(directory).close();
+
+    const result = await runCli(["log", "--json"], directory);
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed).toMatchObject({ entries: [], count: 0 });
+    expect(result.stdout).not.toContain("활동 로그가 없습니다");
+  });
+
+  test("ask --json emits question/answer/citations/method without an LLM", async () => {
+    const directory = temporaryDirectory();
+    createProject(directory).close();
+
+    const result = await runCli(["ask", "무엇을 배웠나요?", "--json"], directory);
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(Object.keys(parsed)).toEqual(
+      expect.arrayContaining(["question", "answer", "citations", "method", "generated"]),
+    );
+    expect(parsed.question).toBe("무엇을 배웠나요?");
+    expect(Array.isArray(parsed.citations)).toBeTrue();
+    expect(parsed.generated).toBeFalse();
+  });
+
+  test("lint --json emits ok/issues/counts and stays exit 0 without errors", async () => {
+    const directory = temporaryDirectory();
+    const store = createProject(directory);
+    store.addPage("lonely", "Lonely Page", "short"); // orphan + thin content warnings, no errors
+    store.close();
+
+    const result = await runCli(["lint", "--json"], directory);
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(Object.keys(parsed)).toEqual(expect.arrayContaining(["ok", "issues", "counts"]));
+    expect(parsed.ok).toBeTrue();
+    expect(Array.isArray(parsed.issues)).toBeTrue();
+    expect(parsed.counts).toEqual(
+      expect.objectContaining({ errors: 0, warnings: expect.any(Number), info: expect.any(Number) }),
+    );
+    expect(result.stdout).not.toContain("Wiki Lint Report");
+  });
+
+  test("add --json skips the cost confirm and prints one JSON document", async () => {
+    const directory = temporaryDirectory();
+    writeFileSync(join(directory, "note.md"), `# Note\n\n${"content ".repeat(40)}`);
+    const store = createProject(directory, config => {
+      config.llm.provider = "openai";
+      config.llm.model = "test-model";
+      config.llm.api_key = "saved-key";
+    });
+    store.close();
+
+    // A single response that satisfies every ingest phase parser
+    // (structure: title/content/level, concept: title/content, quiz: question/answer/type).
+    const universal = JSON.stringify([{
+      title: "Test Section",
+      content: "This is sufficiently long markdown content reused across all ingest phases in this test.",
+      level: 1,
+      question: "What does this exercise verify?",
+      answer: "JSON output",
+      type: "short_answer",
+    }]);
+    const server = Bun.serve({
+      port: 0,
+      fetch() {
+        return Response.json({
+          id: "chatcmpl-test",
+          object: "chat.completion",
+          created: 0,
+          model: "test-model",
+          choices: [{ index: 0, message: { role: "assistant", content: universal }, finish_reason: "stop" }],
+        });
+      },
+    });
+    try {
+      const result = await runCli(
+        ["add", join(directory, "note.md"), "--json"],
+        directory,
+        { OPENAI_API_KEY: "saved-key", OPENAI_BASE_URL: `${server.url}v1` },
+      );
+      expect(result.exitCode).toBe(0);
+      // Cost-preview confirm is skipped under --json (no prompt prose on stdout).
+      expect(result.stdout).not.toContain("예상 사용량");
+
+      const parsed = JSON.parse(result.stdout);
+      expect(Object.keys(parsed)).toEqual(expect.arrayContaining(["source", "added", "usage"]));
+      expect(parsed.added).toEqual(
+        expect.objectContaining({ sources: expect.any(Number), concepts: expect.any(Number), links: expect.any(Number) }),
+      );
+      expect(parsed.usage).toHaveProperty("tokens");
+      expect(parsed.usage).toHaveProperty("estimatedCostUsd");
+      expect(parsed.added.sources).toBeGreaterThan(0);
+    } finally {
+      server.stop(true);
+    }
+  });
+});
