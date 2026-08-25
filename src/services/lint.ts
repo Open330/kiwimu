@@ -1,5 +1,17 @@
-import type { Store } from "../store";
+import type { Store, Page } from "../store";
+import type { WikiSchema } from "../config";
 import { normalizeTitle } from "../utils";
+import { slugify } from "../pipeline/chunker";
+import { replaceWikiLinkMarkers } from "../pipeline/markdown-segments";
+
+/** Default minimum page length (chars) when schema.min_page_length is unset. */
+const DEFAULT_MIN_PAGE_LENGTH = 100;
+
+/**
+ * Inline `[label](/wiki/<slug>.html)` / `[label](/wiki/<slug>)` targets, mirroring
+ * the linker's EXISTING_WIKI_LINK grammar so content links resolve identically.
+ */
+const INLINE_WIKI_LINK = /\[[^\]\r\n]+\]\(\/wiki\/([^\s)?#]+?)(?:\.html)?(?:[?#][^)]*)?\)/gi;
 
 export interface LintIssue {
   type: 'orphan' | 'dead_link' | 'disconnected' | 'missing_backlink' | 'thin_content' | 'duplicate';
@@ -16,7 +28,7 @@ export interface LintReport {
   timestamp: string;
 }
 
-export function lintWiki(store: Store): LintReport {
+export function lintWiki(store: Store, schema?: WikiSchema): LintReport {
   const pages = store.listPages();
   const links = store.getAllLinks();
 
@@ -62,6 +74,49 @@ export function lintWiki(store: Store): LintReport {
         message: `Dead link from non-existent page (id: ${link.from_page_id}) to page id ${link.to_page_id}`,
         suggestion: 'Clean up orphaned link records',
       });
+    }
+  }
+
+  // --- b2) Content-level Dangling Links ---
+  // The link TABLE only holds resolved edges: linker.ts skips addLink when the
+  // target slug is missing, so dangling `[[X]]` / `[..](/wiki/x)` links never
+  // appear above. Scan page CONTENT and resolve each reference to a slug the
+  // same way the renderer/linker does, then flag targets that don't exist.
+  const existingSlugs = new Set(pages.map(p => p.slug));
+  const seenDeadLinks = new Set<string>();
+  const recordDeadLink = (page: Page, targetSlug: string, source: string) => {
+    if (!targetSlug || existingSlugs.has(targetSlug)) return;
+    const key = `${page.id}::${targetSlug}`;
+    if (seenDeadLinks.has(key)) return; // dedupe per (source page, missing target)
+    seenDeadLinks.add(key);
+    issues.push({
+      type: 'dead_link',
+      severity: 'error',
+      pageId: page.id,
+      pageTitle: page.title,
+      message: `"${page.title}" links to non-existent page "${targetSlug}" (${source})`,
+      suggestion: 'Create the target page or fix the broken link',
+    });
+  };
+  for (const page of pages) {
+    // `[[slug]]` / `[[slug|display]]` markers — reuse the shared grammar and
+    // slugify() so resolution matches llm-chunker's resolveWikiLinks exactly.
+    // (Return the raw marker unchanged; we only inspect, never rewrite.)
+    replaceWikiLinkMarkers(page.content, (marker) => {
+      recordDeadLink(page, slugify(marker.slug), marker.raw);
+      return marker.raw;
+    });
+    // Inline `[..](/wiki/<slug>)` targets — the slug is already rendered, so
+    // compare it directly to existing slugs (matching the linker's lookup).
+    INLINE_WIKI_LINK.lastIndex = 0;
+    for (const m of page.content.matchAll(INLINE_WIKI_LINK)) {
+      let slug: string;
+      try {
+        slug = decodeURIComponent(m[1]);
+      } catch {
+        continue; // malformed target: left byte-for-byte unchanged elsewhere
+      }
+      recordDeadLink(page, slug, `/wiki/${slug}`);
     }
   }
 
@@ -141,14 +196,16 @@ export function lintWiki(store: Store): LintReport {
   }
 
   // --- e) Thin Content ---
+  // Threshold is schema-driven when configured; otherwise the historical 100.
+  const minPageLength = schema?.min_page_length ?? DEFAULT_MIN_PAGE_LENGTH;
   for (const page of pages) {
-    if (page.content.length < 100) {
+    if (page.content.length < minPageLength) {
       issues.push({
         type: 'thin_content',
         severity: 'warning',
         pageId: page.id,
         pageTitle: page.title,
-        message: `"${page.title}" has very short content (${page.content.length} chars)`,
+        message: `"${page.title}" has very short content (${page.content.length} chars, minimum ${minPageLength})`,
         suggestion: 'Expand this page with more detailed content',
       });
     }
