@@ -70,6 +70,35 @@ export interface WikiSchema {
   page_template?: { sections?: string[] };
 }
 
+/**
+ * Default section headings for generated concept pages when the user schema does
+ * not define a `page_template.sections`. Kept here so out-of-box wiki output is
+ * structured and substantial even without any user-provided schema.
+ */
+export const DEFAULT_PAGE_SECTIONS: readonly string[] = ["정의", "자세한 설명", "예시", "관련 개념"];
+
+/**
+ * Modest default minimum body length (characters) for generated concept pages
+ * when the schema omits `min_page_length`. Used only to enrich generation
+ * prompts; the safety-net "expand if short" pass fires only when a schema
+ * explicitly sets `min_page_length`.
+ */
+export const DEFAULT_MIN_PAGE_LENGTH = 600;
+
+/** Resolve the effective concept-page sections (schema override or defaults). */
+export function resolvePageSections(schema?: WikiSchema): string[] {
+  return schema?.page_template?.sections?.length
+    ? schema.page_template.sections
+    : [...DEFAULT_PAGE_SECTIONS];
+}
+
+/** Resolve the effective minimum page length used to shape generation prompts. */
+export function resolveMinPageLength(schema?: WikiSchema): number {
+  return schema?.min_page_length && schema.min_page_length > 0
+    ? schema.min_page_length
+    : DEFAULT_MIN_PAGE_LENGTH;
+}
+
 /** A user-defined source category for sidebar/index grouping. */
 export interface SourceCategory {
   /** Display label, e.g. "📋 PRD". Korean/emoji OK. */

@@ -468,4 +468,81 @@ describe("llmChunkDocument", () => {
     expect(linkingPage?.content).toContain("[[Target Page|fenced label]]");
     expect(store.getForwardLinks(linkingPage!.id).map((page) => page.id)).toContain(targetPage!.id);
   });
+
+  test("concept prompts require sections + a length target and drop the concise cap", async () => {
+    const src = store.addSource("file:///prompts.md", "md", "Prompts", "raw");
+    const seen: Array<{ system: string; user: string }> = [];
+    const client = clientWith(async (system, user) => {
+      seen.push({ system, user });
+      if (system.includes("document analyzer")) return structureResponse();
+      if (system.includes("deepening an existing wiki page")) return "x".repeat(700);
+      if (system.includes("study wiki editor")) return conceptResponse;
+      return quizResponse;
+    });
+
+    // No schema -> falls back to the built-in section/length defaults.
+    await llmChunkDocument("document body", "Prompts", src.id, store, 0, null, client);
+
+    const conceptCall = seen.find(
+      (c) => c.system.includes("study wiki editor") && c.user.includes("Source pages already created"),
+    );
+    expect(conceptCall).toBeDefined();
+
+    // Default sections and the injected minimum length appear in the user prompt.
+    for (const section of ["정의", "자세한 설명", "예시", "관련 개념"]) {
+      expect(conceptCall!.user).toContain(section);
+    }
+    expect(conceptCall!.user).toContain("본문은 최소 600자");
+
+    // The depth caps are gone from both the user prompt and the system prompt.
+    expect(conceptCall!.user.toLowerCase()).not.toContain("concise");
+    expect(conceptCall!.user).not.toContain("간결");
+    expect(conceptCall!.user).not.toContain("2-3 paragraph");
+    expect(conceptCall!.system).not.toContain("2+ paragraphs");
+    // Wiki-link instruction is preserved.
+    expect(conceptCall!.system).toContain("[[wiki links]]");
+  });
+
+  test("expand-if-short makes one extra deepen call and lengthens short content", async () => {
+    const src = store.addSource("file:///deepen.md", "md", "Deepen", "raw");
+    const deepened = "# 정의\n\n" + "심화된 내용 ".repeat(120); // > 800 chars, distinctive marker
+    const seen: Array<{ system: string; user: string }> = [];
+    const client = clientWith(async (system, user) => {
+      seen.push({ system, user });
+      if (system.includes("document analyzer")) return structureResponse();
+      // Must be checked before the generic "study wiki editor" branch.
+      if (system.includes("deepening an existing wiki page")) return deepened;
+      if (system.includes("study wiki editor")) return conceptResponse; // short (~90 chars)
+      return quizResponse;
+    });
+
+    await llmChunkDocument(
+      "document body", "Deepen", src.id, store, 0, null, client, undefined, { min_page_length: 800 },
+    );
+
+    const deepenCalls = seen.filter((c) => c.system.includes("deepening an existing wiki page"));
+    expect(deepenCalls).toHaveLength(1);
+    expect(deepenCalls[0].user).toContain("too short");
+
+    const page = store.getPage("fundamentals");
+    expect(page).not.toBeNull();
+    expect(page!.content).toContain("심화된 내용");
+    expect(page!.content.length).toBeGreaterThanOrEqual(800);
+  });
+
+  test("does not deepen when no min_page_length is configured", async () => {
+    const src = store.addSource("file:///no-deepen.md", "md", "NoDeepen", "raw");
+    const seen: Array<{ system: string; user: string }> = [];
+    const client = clientWith(async (system) => {
+      seen.push({ system, user: "" });
+      if (system.includes("document analyzer")) return structureResponse();
+      if (system.includes("deepening an existing wiki page")) return "x".repeat(900);
+      if (system.includes("study wiki editor")) return conceptResponse;
+      return quizResponse;
+    });
+
+    await llmChunkDocument("document body", "NoDeepen", src.id, store, 0, null, client);
+
+    expect(seen.some((c) => c.system.includes("deepening an existing wiki page"))).toBe(false);
+  });
 });

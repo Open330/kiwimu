@@ -3,6 +3,7 @@ import { LLMClient } from "../llm-client";
 import type { Store } from "../store";
 import { slugify } from "./chunker";
 import type { Persona, WikiSchema } from "../config";
+import { resolvePageSections, resolveMinPageLength } from "../config";
 import { compileTerms, standardizeTerms } from "./standardizer";
 import { parseCitations } from "./citations";
 import { replaceWikiLinkMarkers } from "./markdown-segments";
@@ -31,11 +32,14 @@ Return at most 8 sections per response to keep output manageable.`;
 // ── Phase 2: Extract concepts for separate pages ──
 
 function getConceptSystem(persona: Persona | null, schema?: WikiSchema): string {
+  const sections = resolvePageSections(schema);
+  const minLength = resolveMinPageLength(schema);
   const base = `You are a study wiki editor. Given source material pages, identify important concepts, terms, and definitions that deserve their own dedicated wiki pages.
 
 Rules:
 - Pick terms that appear across multiple sections OR are fundamental domain concepts
-- Each concept page should have substantial educational content (2+ paragraphs)
+- Write a structured, substantial page for each concept — never a thin stub. Organize the body with these sections using ## headings: ${sections.join(", ")}
+- Write at least ${minLength} characters of substantial educational content per page (definitions, a detailed explanation, worked examples, and connections to related ideas)
 - Explain the concept clearly with definitions, formulas, examples, and context
 - Use [[wiki links]] to reference other concepts and source pages. Example: "[[Synchrotron Radiation]] is observed at [[radio frequencies]]"
 - Use LaTeX ($..$ inline, $$...$$ display) for equations
@@ -49,9 +53,6 @@ Return valid JSON only. No markdown fences.`;
     const rules: string[] = [];
     if (schema.categories?.length) {
       rules.push(`- Assign each concept to one of these categories: ${schema.categories.join(", ")}. Include a "category" field in your JSON output.`);
-    }
-    if (schema.page_template?.sections?.length) {
-      rules.push(`- Structure each concept page with these sections (use ## headings): ${schema.page_template.sections.join(", ")}`);
     }
     if (schema.naming_convention) {
       const conventions: Record<string, string> = {
@@ -85,6 +86,9 @@ function getConceptPrompt(persona: Persona | null, schema?: WikiSchema): string 
     ? `\n- "category": string — One of: ${schema.categories.join(", ")}`
     : "";
 
+  const sections = resolvePageSections(schema);
+  const minLength = resolveMinPageLength(schema);
+
   return `Based on these source pages, create concept/glossary wiki pages for important terms.
 
 Source pages already created:
@@ -92,7 +96,8 @@ Source pages already created:
 
 Create 3-6 concept pages for the most important terms, definitions, laws, and equations found in these pages.
 Do NOT duplicate the source pages — instead, create focused concept pages that the source pages can link to.
-Keep each page concise (2-3 paragraphs).${styleNote}
+Write each page as a thorough, structured explanation (NOT a short stub). Organize the body with these sections using ## headings: ${sections.join(", ")}.
+본문은 최소 ${minLength}자 이상으로 충실히 작성하세요. Include clear definitions, a detailed explanation, concrete examples, and connections to related concepts via [[wiki links]].${styleNote}
 
 IMPORTANT — Provenance citations:
 When a claim or fact comes from a specific source page, add an inline citation marker at the end of that sentence using the format [^src:SOURCE_PAGE_SLUG].
@@ -102,8 +107,84 @@ Only cite when a fact clearly originates from a specific source page. Not every 
 
 Return a JSON array where each element has:
 - "title": string — Short concept name, 1-3 words (e.g., "Synchrotron Radiation", "Flux Density", "Angular Resolution"). Keep titles short so they match naturally in text.
-- "content": string — Educational markdown content with [[wiki links]] to other concepts and source pages, and [^src:slug] citations where appropriate${categoryField}
+- "content": string — Structured, in-depth educational markdown organized as ${sections.join(" / ")} (## headings), with [[wiki links]] to other concepts and source pages, and [^src:slug] citations where appropriate${categoryField}
 - "suggested_links": Array<{text: string, url: string}> — Wikipedia/external reference links`;
+}
+
+/** Remove a single wrapping ```markdown code fence a model may add around prose. */
+function stripMarkdownFence(raw: string): string {
+  const trimmed = raw.trim();
+  const fenced = trimmed.match(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```$/);
+  return fenced ? fenced[1].trim() : trimmed;
+}
+
+/** Abort/deadline errors must propagate; other failures let generation skip gracefully. */
+function isAbortLike(error: unknown): boolean {
+  if (typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "AbortError") {
+    return true;
+  }
+  return error instanceof Error && (error.name === "AbortError" || error.name === "LlmDeadlineExceededError");
+}
+
+function getDeepenSystem(persona: Persona | null, schema?: WikiSchema): string {
+  const sections = resolvePageSections(schema);
+  const base = `You are a study wiki editor deepening an existing wiki page so it becomes thorough and detailed instead of a thin stub.
+
+Rules:
+- Preserve every existing fact, [[wiki link]], LaTeX equation, Mermaid diagram, and [^src:slug] citation. Do not remove information.
+- Add depth: expand explanations, add concrete examples, and connect to related concepts with [[wiki links]].
+- Organize the body with these sections using ## headings where they fit: ${sections.join(", ")}
+- Use LaTeX ($..$ inline, $$...$$ display) for equations when relevant.
+- Return ONLY the expanded page as markdown. No JSON, no surrounding code fences, no commentary.`;
+
+  if (persona) {
+    return `${persona.system_prompt}\n\n${base}\n\nIMPORTANT: ${persona.content_style}`;
+  }
+  return base;
+}
+
+function getDeepenPrompt(title: string, content: string, minLength: number, sections: string[]): string {
+  return `The wiki page "${title}" is too short (${content.length} characters) and reads as a thin stub. Rewrite it as a thorough, structured page of at least ${minLength} characters, keeping all existing information, links, equations, and citations.
+
+Suggested sections (## headings): ${sections.join(", ")}
+
+Current content:
+---
+${content}
+---
+
+Return only the expanded markdown content:`;
+}
+
+/**
+ * Bounded single "expand if short" pass: make ONE extra LLM call to lengthen a
+ * concept page that came back shorter than the requested minimum. Returns the
+ * deepened markdown, or null when the call fails / demo mode / no improvement —
+ * so the caller keeps the original content. Abort/deadline errors propagate.
+ */
+async function deepenConceptContent(
+  chat: (system: string, user: string, maxTokens?: number) => Promise<string>,
+  persona: Persona | null,
+  schema: WikiSchema | undefined,
+  title: string,
+  content: string,
+  minLength: number,
+): Promise<string | null> {
+  const sections = resolvePageSections(schema);
+  try {
+    const raw = await chat(
+      getDeepenSystem(persona, schema),
+      getDeepenPrompt(title, content, minLength, sections),
+      8192,
+    );
+    const cleaned = stripMarkdownFence(raw ?? "");
+    return cleaned.length > content.length ? cleaned : null;
+  } catch (error: unknown) {
+    if (isAbortLike(error)) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(`    \x1b[33m⚠ 심화 확장 건너뜀 (${title}): ${message}\x1b[0m`);
+    return null;
+  }
 }
 
 function getStructureSystem(persona: Persona | null): string {
@@ -563,6 +644,26 @@ export async function llmChunkDocument(
           const raw = await chat(conceptSystem, prompt, 16384);
           const concepts = parseConceptResponse(raw);
 
+          // Expand-if-short: when the schema explicitly sets a minimum length,
+          // make ONE bounded extra LLM call per short page to deepen it before
+          // persisting. Done here (async) because commitIngestStep is a sync
+          // transaction that cannot await. Best-effort: failures keep the
+          // original content, so demo/no-key runs degrade gracefully.
+          const minPageLength = schema?.min_page_length;
+          const deepenedContent = new Map<ConceptPage, string>();
+          if (minPageLength && minPageLength > 0) {
+            for (const concept of concepts) {
+              const baseline = compiledTerms
+                ? standardizeTerms(concept.content, compiledTerms)
+                : concept.content;
+              if (baseline.length >= minPageLength) continue;
+              const deepened = await deepenConceptContent(
+                chat, persona, schema, concept.title, concept.content, minPageLength,
+              );
+              if (deepened) deepenedContent.set(concept, deepened);
+            }
+          }
+
           store.commitIngestStep(() => {
             for (const concept of concepts) {
               const baseSlug = slugify(concept.title);
@@ -572,7 +673,7 @@ export async function llmChunkDocument(
               const existing = store.getPage(slug);
               if (existing?.page_type === "concept" && existing.source_id === sourceId) continue;
 
-              let content = concept.content;
+              let content = deepenedContent.get(concept) ?? concept.content;
               // Apply term standardization if schema.terms is defined
               if (compiledTerms) {
                 content = standardizeTerms(content, compiledTerms);
