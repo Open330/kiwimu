@@ -1406,15 +1406,26 @@ a.dynamic-link:hover {
     background: rgba(0, 164, 149, 0.1);
 }
 
-/* Red links — wiki convention for non-existent pages */
-a.redlink {
+/* Red links — wiki convention for non-existent pages.
+   Rendered as a non-navigating <span>, so it must NOT look or behave like a
+   real link: no solid underline, default cursor, muted-red to signal "missing". */
+.redlink {
     color: #d32f2f;
     text-decoration: none;
     border-bottom: 1px dotted #d32f2f;
-    cursor: help;
+    cursor: default;
 }
-a.redlink:hover {
+.redlink:hover {
     background: rgba(211, 47, 47, 0.08);
+}
+@media (prefers-color-scheme: dark) {
+    .redlink {
+        color: #ff8a8a;
+        border-bottom-color: #ff8a8a;
+    }
+    .redlink:hover {
+        background: rgba(255, 138, 138, 0.12);
+    }
 }
 
 .qa-popover-close {
