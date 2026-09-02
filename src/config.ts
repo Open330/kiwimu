@@ -17,7 +17,7 @@ export const CONFIG_FILE = "kiwi.toml";
 export const DB_FILE = "kiwi.db";
 export const SITE_DIR = "_site";
 export const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'pptx', 'doc', 'ppt', 'key', 'rtf', 'md'];
-export const DEFAULT_GEMINI_MODEL = "gemini-3.7-flash";
+export const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
 /** Default Ollama daemon base URL when the config `endpoint` is left blank. */
 export const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434";
 // Keep the retired identifier assembled so it cannot accidentally reappear in

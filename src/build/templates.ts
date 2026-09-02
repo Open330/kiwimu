@@ -947,7 +947,7 @@ export function renderAdmin(opts: {
                 </div>
                 <div class="config-row">
                     <label class="config-key" for="llm-model">모델</label>
-                    <input id="llm-model" class="config-input" value="${escapeHtml(opts.llmConfig.model)}" placeholder="gemini-3.1-flash-lite" required>
+                    <input id="llm-model" class="config-input" value="${escapeHtml(opts.llmConfig.model)}" placeholder="gemini-3.8-flash" required>
                 </div>
                 <div class="config-row">
                     <label class="config-key" for="llm-key">API Key</label>
