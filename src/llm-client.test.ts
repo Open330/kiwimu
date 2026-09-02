@@ -4,6 +4,7 @@ import { azureCredentialFile, estimateCostUsd, LLMClient, LlmDeadlineExceededErr
 
 describe("model-aware cost estimates", () => {
   test("uses current standard prices for supported default models", () => {
+    expect(estimateCostUsd("gemini", "gemini-3.8-flash", 1_000_000, 1_000_000)).toBe(9);
     expect(estimateCostUsd("gemini", "gemini-3.1-flash-lite", 1_000_000, 1_000_000)).toBe(1.75);
     expect(estimateCostUsd("openai", "gpt-5.4-nano", 1_000_000, 1_000_000)).toBe(1.45);
     expect(estimateCostUsd("openai", "gpt-5.4", 1_000_000, 1_000_000)).toBe(17.5);

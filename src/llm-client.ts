@@ -34,6 +34,10 @@ export interface LLMClientOptions {
 // Prices are keyed by the exact provider/model pair. A provider fallback would
 // make custom deployments look cheaper or more expensive with false precision.
 export const MODEL_PRICING: Readonly<Record<string, { input: number; output: number }>> = {
+  // Standard rate. Google is running gemini-3.8-flash at an introductory
+  // $0.75/$3.75 through 2026-12-31, so this over-states cost until then
+  // rather than under-stating it from 2027-01-01.
+  "gemini:gemini-3.8-flash": { input: 1.50, output: 7.50 },
   "gemini:gemini-3.1-flash-lite": { input: 0.25, output: 1.50 },
   "openai:gpt-5.4-nano": { input: 0.20, output: 1.25 },
   "openai:gpt-5.4": { input: 2.50, output: 15.00 },
