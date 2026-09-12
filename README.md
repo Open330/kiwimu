@@ -484,3 +484,6 @@ kiwimu가 운영하는 서버로 데이터를 보내는 콜백·핑·분석 비�
 ## License
 
 MIT
+
+---
+<p align="center"><sub>Part of <a href="https://github.com/Open330">Open330</a> · open source tools for AI-agent workflows · <a href="https://open330.github.io">open330.github.io</a></sub></p>
