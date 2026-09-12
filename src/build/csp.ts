@@ -55,17 +55,37 @@ export function inlineStyleHashes(html: string): string[] {
  * blocked outright, so generated UI state must be represented by classes,
  * semantic elements, or the `hidden` attribute.
  */
+const GA4_LOADER_PATTERN =
+  /<script\s+async\s+src="https:\/\/www\.googletagmanager\.com\/gtag\/js\?id=G-[A-Z0-9]{4,20}"\s+data-kiwimu-analytics="ga4"><\/script>/;
+
+/** Origins gtag.js needs once the opt-in GA4 loader is present in the page head. */
+const GA4_SCRIPT_SOURCES = ["https://www.googletagmanager.com"];
+const GA4_CONNECT_SOURCES = [
+  "https://www.google-analytics.com",
+  "https://region1.google-analytics.com",
+  "https://analytics.google.com",
+  "https://www.googletagmanager.com",
+];
+
+/** True only when the page carries the exact gtag loader emitted by `renderAnalyticsHead`. */
+export function hasAnalyticsLoader(html: string): boolean {
+  return GA4_LOADER_PATTERN.test(html);
+}
+
 export function buildContentSecurityPolicy(html: string): string {
   const styleSources = ["'self'", ...inlineStyleHashes(html)].join(" ");
+  const analytics = hasAnalyticsLoader(html);
+  const scriptSources = ["'self'", ...(analytics ? GA4_SCRIPT_SOURCES : [])].join(" ");
+  const connectSources = ["'self'", ...(analytics ? GA4_CONNECT_SOURCES : [])].join(" ");
 
   return [
     "default-src 'self'",
-    "script-src 'self'",
+    `script-src ${scriptSources}`,
     `style-src ${styleSources}`,
     "style-src-attr 'none'",
     "font-src 'self' data:",
     "img-src 'self' data: blob: https: http:",
-    "connect-src 'self'",
+    `connect-src ${connectSources}`,
     "object-src 'none'",
     "base-uri 'self'",
     "frame-ancestors 'none'",

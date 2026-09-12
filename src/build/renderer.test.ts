@@ -196,7 +196,8 @@ describe("atomic site publishing", () => {
 
     const sitemap = readFileSync(join(outputDir, "sitemap.xml"), "utf8");
     expect(sitemap).toContain('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">');
-    expect(sitemap).toContain("<loc>https://example.com/index.html</loc>");
+    expect(sitemap).toContain("<loc>https://example.com/</loc>");
+    expect(sitemap).not.toContain("index.html</loc>");
     expect(sitemap).toContain("<loc>https://example.com/wiki/atomic-page.html</loc>");
 
     const page = readFileSync(join(outputDir, "wiki", "atomic-page.html"), "utf8");

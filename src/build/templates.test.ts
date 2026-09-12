@@ -1,13 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildContentSecurityPolicy } from "./csp";
+import { buildContentSecurityPolicy, injectContentSecurityPolicyMeta, inlineScriptHashes } from "./csp";
 import {
   renderActivityPage,
   renderAdmin,
   renderCatalogPage,
   renderDashboardPage,
   renderGraph,
+  renderIndex,
   renderPage,
   renderProvenancePage,
   renderQuizPage,
@@ -308,6 +309,59 @@ describe("template security and accessibility", () => {
     expect(withoutSeo).not.toContain('property="og:url"');
     expect(withoutSeo).toContain('<meta property="og:image" content="/static/logo.png">');
     expect(withoutSeo).toContain('<meta property="og:site_name" content="Demo Wiki">');
+  });
+
+  test("directory index canonical is the site root, not index.html", () => {
+    const html = renderIndex({
+      wikiName: "Demo Wiki",
+      sourcePages: emptyLinks,
+      conceptPages: emptyLinks,
+      sourceCount: 0,
+      seo: { siteUrl: "https://open330.github.io/kiwimu" },
+    });
+
+    expect(html).toContain('<link rel="canonical" href="https://open330.github.io/kiwimu/">');
+    expect(html).toContain('<meta property="og:url" content="https://open330.github.io/kiwimu/">');
+    expect(html).not.toContain('href="https://open330.github.io/kiwimu/index.html"');
+    expect(html).toContain('<meta property="og:image" content="https://open330.github.io/kiwimu/static/logo.png">');
+  });
+
+  test("emits the gtag bootstrap only when a valid GA4 measurement ID is configured", () => {
+    const base = {
+      wikiName: "Demo Wiki",
+      sourcePages: emptyLinks,
+      conceptPages: emptyLinks,
+      sourceCount: 0,
+    };
+
+    const withGa = renderIndex({ ...base, seo: { siteUrl: "https://wiki.example.com", gaMeasurementId: "G-5X5MMTELJS" } });
+    const head = withGa.slice(0, withGa.indexOf("</head>"));
+    expect(head).toContain(
+      '<script async src="https://www.googletagmanager.com/gtag/js?id=G-5X5MMTELJS" data-kiwimu-analytics="ga4"></script>',
+    );
+    expect(head).toContain('<script src="/static/analytics.js" data-ga-id="G-5X5MMTELJS"></script>');
+    expect(inlineScriptHashes(withGa)).toEqual([]);
+    const policy = buildContentSecurityPolicy(withGa);
+    expect(policy).toContain("script-src 'self' https://www.googletagmanager.com");
+    expect(policy).toContain(
+      "connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com https://analytics.google.com https://www.googletagmanager.com",
+    );
+    expect(injectContentSecurityPolicyMeta(withGa)).toContain("https://www.googletagmanager.com");
+
+    const withoutGa = renderIndex({ ...base, seo: { siteUrl: "https://wiki.example.com" } });
+    expect(withoutGa).not.toContain("googletagmanager");
+    expect(withoutGa).not.toContain("/static/analytics.js");
+    expect(buildContentSecurityPolicy(withoutGa)).toContain("script-src 'self';");
+
+    for (const invalid of ["", "  ", "UA-12345-1", 'G-1234"><script>alert(1)</script>', "G-abc"]) {
+      const html = renderIndex({ ...base, seo: { gaMeasurementId: invalid } });
+      expect(html).not.toContain("googletagmanager");
+      expect(html).not.toContain("<script>alert");
+    }
+
+    const runtime = readFileSync(join(import.meta.dir, "static", "analytics.js"), "utf8");
+    expect(runtime).toContain('gtag("config", id)');
+    expect(runtime).toContain("data-ga-id");
   });
 
   test("wiki pages expose an accessible, ranked search combobox wired to search.js", () => {

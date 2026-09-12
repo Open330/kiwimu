@@ -36,6 +36,7 @@ import {
   renderCatalogPage,
   renderProvenancePage,
   type SiteSeo,
+  GA_MEASUREMENT_ID_PATTERN,
 } from "./templates";
 import { readGitOriginUrl, githubPagesSiteUrl } from "../deploy";
 
@@ -76,6 +77,16 @@ export function resolveSiteUrl(config: KiwiConfig, projectRoot: string): string 
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Resolve the opt-in GA4 measurement ID. `KIWIMU_GA_ID` (build-time env) wins
+ * over `build.ga_measurement_id`; invalid values are ignored so no page ever
+ * loads analytics unless explicitly and correctly configured.
+ */
+export function resolveGaMeasurementId(config: KiwiConfig, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const candidate = (env.KIWIMU_GA_ID ?? config.build?.ga_measurement_id ?? "").trim();
+  return GA_MEASUREMENT_ID_PATTERN.test(candidate) ? candidate : undefined;
 }
 
 async function writeGeneratedHtml(path: string, html: string): Promise<void> {
@@ -811,7 +822,7 @@ async function renderSiteToDirectory(
   const allSlugs = new Set(pages.map(p => p.slug));
   const categories = config.categories;
   const siteUrl = resolveSiteUrl(config, projectRoot);
-  const siteSeo: SiteSeo = { siteUrl, lang: config.build?.lang };
+  const siteSeo: SiteSeo = { siteUrl, lang: config.build?.lang, gaMeasurementId: resolveGaMeasurementId(config) };
 
   // Build source_id → uri map so PageLink rows can carry sourceUri (used by templates for category grouping)
   const sourceUriMap = new Map<number, string>();
@@ -988,7 +999,7 @@ async function renderSiteToDirectory(
   await Bun.write(join(outputDir, "robots.txt"), `${robotsLines.join("\n")}\n`);
 
   if (siteUrl) {
-    const routes = ["/index.html", ...pages.map((p) => `/wiki/${p.slug}.html`)];
+    const routes = ["/", ...pages.map((p) => `/wiki/${p.slug}.html`)];
     const urlEntries = routes
       .map((route) => `  <url><loc>${escapeXml(`${siteUrl}${route}`)}</loc></url>`)
       .join("\n");
@@ -1173,7 +1184,11 @@ export async function buildSinglePage(
 
   const { body, externalRefs } = extractExternalRefs(htmlContent);
   const firstFigure = htmlContent.match(new RegExp(`<img[^>]+src="(${FIGURE_PUBLIC_PREFIX}[^"]+)"`, "i"));
-  const seo: SiteSeo = { siteUrl: resolveSiteUrl(config, root), lang: config.build?.lang };
+  const seo: SiteSeo = {
+    siteUrl: resolveSiteUrl(config, root),
+    lang: config.build?.lang,
+    gaMeasurementId: resolveGaMeasurementId(config),
+  };
   const backlinks = (backlinksMap.get(page.id) || []).map((bl) => ({
     slug: bl.slug,
     title: bl.title,

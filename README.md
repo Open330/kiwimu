@@ -260,6 +260,7 @@ bunx @open330/kiwimu serve -p 3000
 | `KIWIMU_COORDINATOR_NAMESPACE` | 비어 있음 | 외부 coordinator를 공유하는 동일 프로젝트 식별자 (URL 설정 시 필수) |
 | `KIWI_TRUST_PROXY` | `false` | 신뢰된 private reverse proxy의 `X-Forwarded-For`·`X-Forwarded-Proto` 사용 |
 | `KIWIMU_EXTERNAL_HTTPS` | `false` | TLS 종료 프록시 뒤에서 외부 HTTPS origin과 `Secure` 인증 쿠키를 강제 |
+| `KIWIMU_GA_ID` | 비어 있음 | 빌드 시 opt-in Google Analytics 4 측정 ID (`G-XXXXXXXXXX`). `kiwi.toml`의 `build.ga_measurement_id`보다 우선하며, 설정하지 않으면 어떤 분석 스크립트도 삽입되지 않음 |
 
 상한 26초는 Compose의 30초 `stop_grace_period` 안에 timeout cleanup, listener와 저장소 종료를 위한 4초를 남깁니다. 범위를 벗어난 명시적 설정은 조용히 보정하지 않고 서버 시작을 거부합니다. 종료 drain이 시간 초과되면 진행 중인 서버 작업의 URL 요청, LLM·embedding 요청과 외부 변환 subprocess에 취소 신호를 전달합니다. DOCX/PPTX 파서는 안전한 단계 사이에서 취소를 확인합니다. `pdf-parse`는 프로세스 내부 CPU 파싱을 중단하는 API가 없으므로 PDF는 파싱 진입 전과 반환 직후에만 취소를 확인하며, 이미 시작된 파싱의 CPU 사용은 프로세스가 종료될 때까지 계속될 수 있습니다.
 

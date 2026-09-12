@@ -45,6 +45,9 @@ jobs:
           mkdir -p .demo-build
           cd .demo-build
           bun run "$GITHUB_WORKSPACE/src/index.ts" init --demo --no-serve
+        env:
+          # Open330 org GA4 property; opt-in, only the public demo site reports to it.
+          KIWIMU_GA_ID: G-5X5MMTELJS
 
       - name: Deploy to GitHub Pages (gh-pages branch)
         run: |

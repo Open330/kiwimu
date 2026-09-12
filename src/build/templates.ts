@@ -21,6 +21,27 @@ export interface SiteSeo {
   siteUrl?: string;
   /** `<html lang>` value; defaults to "ko". */
   lang?: string;
+  /** Opt-in GA4 measurement ID; when present the gtag bootstrap is emitted into <head>. */
+  gaMeasurementId?: string;
+}
+
+/** Accepts GA4 measurement IDs only (e.g. "G-5X5MMTELJS"); anything else is ignored. */
+export const GA_MEASUREMENT_ID_PATTERN = /^G-[A-Z0-9]{4,20}$/;
+
+/** Marker attribute that lets the CSP builder recognise the gtag loader it emitted itself. */
+export const ANALYTICS_SCRIPT_MARKER = 'data-kiwimu-analytics="ga4"';
+
+/**
+ * Standard gtag bootstrap. The generated-page CSP forbids inline scripts by
+ * design, so the `dataLayer`/`gtag('config')` half lives in the self-hosted
+ * `/static/analytics.js` and reads the ID from its `data-ga-id` attribute.
+ */
+export function renderAnalyticsHead(gaMeasurementId?: string): string {
+  const id = gaMeasurementId?.trim();
+  if (!id || !GA_MEASUREMENT_ID_PATTERN.test(id)) return "";
+  return `
+    <script async src="https://www.googletagmanager.com/gtag/js?id=${id}" ${ANALYTICS_SCRIPT_MARKER}></script>
+    <script src="/static/analytics.js" data-ga-id="${id}"></script>`;
 }
 
 /**
@@ -214,6 +235,7 @@ function base(opts: {
   const canonicalUrl = siteUrl && opts.route ? escapeHtml(`${siteUrl}${opts.route}`) : undefined;
   const canonicalTag = canonicalUrl ? `\n    <link rel="canonical" href="${canonicalUrl}">` : '';
   const ogUrlTag = canonicalUrl ? `\n    <meta property="og:url" content="${canonicalUrl}">` : '';
+  const analyticsTags = renderAnalyticsHead(opts.seo?.gaMeasurementId);
   return `<!DOCTYPE html>
 <html lang="${lang}">
 <head>
@@ -233,7 +255,7 @@ function base(opts: {
     <link rel="stylesheet" href="/static/peek-panel.css">
     <link rel="stylesheet" href="/static/ask-wiki.css">
     <script defer src="/static/vendor/katex/katex.min.js"></script>
-    <script defer src="/static/vendor-runtime.js"></script>
+    <script defer src="/static/vendor-runtime.js"></script>${analyticsTags}
 </head>
 <body>
     <a class="skip-link" href="#main-content">본문으로 건너뛰기</a>
@@ -462,7 +484,8 @@ export function renderIndex(opts: {
     categories: opts.categories,
     description: `${opts.wikiName} — LLM으로 자동 생성된 학습 위키`,
     seo: opts.seo,
-    route: "/index.html",
+    // Directory index: canonical must be the directory URL, never ".../index.html".
+    route: "/",
     content,
   });
 }

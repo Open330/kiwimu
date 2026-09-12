@@ -122,6 +122,12 @@ export interface KiwiConfig {
     site_url?: string;
     /** `<html lang>` value for generated pages. Defaults to "ko". */
     lang?: string;
+    /**
+     * Opt-in Google Analytics 4 measurement ID (e.g. "G-XXXXXXXXXX"). When set
+     * (or when `KIWIMU_GA_ID` is exported at build time) every generated page
+     * loads gtag.js; nothing is injected otherwise.
+     */
+    ga_measurement_id?: string;
   };
   llm: LLMConfig;
   embedding?: EmbeddingConfig; // separate config for embeddings (optional, falls back to llm)
