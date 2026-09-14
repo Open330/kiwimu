@@ -68,7 +68,7 @@
   },
   "optionalDependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
-    "openai": "^6.31.0"
+    "openai": "^7.15.0"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.12.1",
