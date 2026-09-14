@@ -56,7 +56,7 @@
     "katex": "^0.18.4",
     "mammoth": "^1.12.0",
     "marked": "^18.0.10",
-    "mermaid": "^11.16.1",
+    "mermaid": "^12.0.0",
     "pdf-parse": "1.1.1",
     "sanitize-html": "^2.17.7",
     "smol-toml": "^1.7.0",
