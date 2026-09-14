@@ -31,7 +31,7 @@
       },
       "optionalDependencies": {
         "@anthropic-ai/sdk": "^0.111.0",
-        "openai": "^6.31.0",
+        "openai": "^7.15.0",
       },
     },
   },
@@ -430,7 +430,7 @@
 
     "nth-check": ["nth-check@2.1.1", "", { "dependencies": { "boolbase": "^1.0.0" } }, "sha512-lqjrjmaOoAnWfMmBPL+XNnynZh2+swxiX3WUE0s4yEHI6m+AwrK2UZOimIRl3X/4QctVqS8AiZjFqyOGrMXb/w=="],
 
-    "openai": ["openai@6.31.0", "", { "peerDependencies": { "ws": "^8.18.0", "zod": "^3.25 || ^4.0" }, "optionalPeers": ["ws", "zod"], "bin": { "openai": "bin/cli" } }, "sha512-iqEn3QY1NnVrDOynUWA2Fjs04gzZ0m7fbwR9xZVFmcN1cqQwslMQM2sjQBNkTVFK/rrSvV78SXiBgU+Pyqz1Aw=="],
+    "openai": ["openai@7.15.0", "", { "peerDependencies": { "@aws-sdk/credential-provider-node": ">=3.972.0 <4", "@smithy/hash-node": ">=4.3.0 <5", "@smithy/signature-v4": ">=5.4.0 <6", "undici": ">=5 <9", "ws": "^8.21.0", "zod": "^3.25 || ^4.0" }, "optionalPeers": ["@aws-sdk/credential-provider-node", "@smithy/hash-node", "@smithy/signature-v4", "undici", "ws", "zod"] }, "sha512-2DIwesnPSduw68MFx7nAdgvshrgvS8WOan5W8+tgUMlAy/tY+Q41g80Pa+w/v64rHA6rtn+dketa8QvMVxU96w=="],
 
     "option": ["option@0.2.4", "", {}, "sha512-pkEqbDyl8ou5cpq+VsnQbe/WlEy5qS7xPzMS1U55OCG9KPvwFD46zDbxQIj3egJSFc3D+XhYOPUzz49zQAVy7A=="],
 
