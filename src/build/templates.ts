@@ -970,7 +970,7 @@ export function renderAdmin(opts: {
                 </div>
                 <div class="config-row">
                     <label class="config-key" for="llm-model">모델</label>
-                    <input id="llm-model" class="config-input" value="${escapeHtml(opts.llmConfig.model)}" placeholder="gemini-3.8-flash" required>
+                    <input id="llm-model" class="config-input" value="${escapeHtml(opts.llmConfig.model)}" placeholder="gemini-4-hydrogen" required>
                 </div>
                 <div class="config-row">
                     <label class="config-key" for="llm-key">API Key</label>

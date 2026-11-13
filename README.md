@@ -168,7 +168,7 @@ Interactive 프롬프트가 실행됩니다:
 │  ○ Anthropic Claude
 
 ◆ 모델명
-│  gemini-3.8-flash
+│  gemini-4-hydrogen
 
 ◆ API Key
 │  ••••••••••••
@@ -364,7 +364,7 @@ DOC/PPT/KEY/RTF는 선택적 레거시 지원입니다. `kiwimu add`를 실행�
 
 | 프로바이더 | 추천 모델 | 비고 |
 |-----------|----------|------|
-| **Google Gemini** | `gemini-3.8-flash` | [무료 API key](https://aistudio.google.com/) |
+| **Google Gemini** | `gemini-4-hydrogen` | [무료 API key](https://aistudio.google.com/) |
 | Azure OpenAI | `gpt-5.4-nano` | Azure 구독 필요 |
 | OpenAI | `gpt-5.4` | API key 필요 |
 | Anthropic | `claude-sonnet-4-6` | API key 필요 |
